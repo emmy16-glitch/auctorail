@@ -1,0 +1,23 @@
+{
+  "name": "proof-gate",
+  "version": "1.0.0",
+  "description": "**Agent confidence is not permission to act.**",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@x402/core": "^2.24.0",
+    "@x402/evm": "^2.24.0",
+    "@x402/fetch": "^2.24.0",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
+    "viem": "^2.56.1"
+  }
+}

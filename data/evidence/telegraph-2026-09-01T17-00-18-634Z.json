@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "proofgate.telegraph-evidence.v1",
+  "source": "telegraph",
+  "intent": "FRAUD_DETECTION",
+  "miner": {
+    "id": "95822412",
+    "name": "Refut On-Chain Risk",
+    "slug": "refut-onchain-risk"
+  },
+  "request": {
+    "endpoint": "/assess",
+    "target": "0xaFb077A0869c6B5bD3DC2aAF7aBb2f971Eb53d08",
+    "chainId": 84532
+  },
+  "result": {
+    "chainId": 84532,
+    "confidence": 0.5,
+    "reasoning": "Subject is an externally-owned account with no deployed code, so the on-chain contract-control checks do not apply. This reports only that no contract-control risk surface exists here; it is not an assessment of the account's transaction history.",
+    "signals": [
+      {
+        "key": "isContract",
+        "present": false
+      },
+      {
+        "key": "upgradeable",
+        "present": false
+      },
+      {
+        "key": "hasAdmin",
+        "present": false
+      },
+      {
+        "key": "hasOwner",
+        "present": false
+      },
+      {
+        "key": "pausable",
+        "present": false
+      }
+    ],
+    "subject": "0xaFb077A0869c6B5bD3DC2aAF7aBb2f971Eb53d08",
+    "verdict": "ALLOW"
+  },
+  "telegraph": {
+    "signalHash": "0x28c002c52731ed59f12573408aa2c918ba0dd6cf7691535c7699f54d4fc8f12c",
+    "costUsd": 0.01,
+    "durationMs": 204,
+    "timestamp": "2026-09-01T17:00:17.776725025Z",
+    "reasoning": null
+  },
+  "payment": {
+    "network": "eip155:84532",
+    "settlementPresent": true,
+    "settlement": "eyJzdWNjZXNzIjp0cnVlLCJwYXllciI6IjB4YWZiMDc3YTA4NjljNmI1YmQzZGMyYWFmN2FiYjJmOTcxZWI1M2QwOCIsInRyYW5zYWN0aW9uIjoiMHgxNmYwNmE3NzdjMzU1OWI0YWQ0ZmU2M2JiZGJjMzkxODllYTQ5ZTFjNzg5NzE0OTM4MzBlMGRiZmIxODRhMjljIiwibmV0d29yayI6ImVpcDE1NTo4NDUzMiJ9"
+  },
+  "capturedAt": {
+    "startedAt": "2026-09-01T17:00:11.399Z",
+    "finishedAt": "2026-09-01T17:00:18.634Z"
+  },
+  "rawResponse": {
+    "cost_usd": 0.01,
+    "duration_ms": 204,
+    "miner_id": "95822412",
+    "miner_name": "Refut On-Chain Risk",
+    "result": {
+      "chainId": 84532,
+      "confidence": 0.5,
+      "reasoning": "Subject is an externally-owned account with no deployed code, so the on-chain contract-control checks do not apply. This reports only that no contract-control risk surface exists here; it is not an assessment of the account's transaction history.",
+      "signals": [
+        {
+          "key": "isContract",
+          "present": false
+        },
+        {
+          "key": "upgradeable",
+          "present": false
+        },
+        {
+          "key": "hasAdmin",
+          "present": false
+        },
+        {
+          "key": "hasOwner",
+          "present": false
+        },
+        {
+          "key": "pausable",
+          "present": false
+        }
+      ],
+      "subject": "0xaFb077A0869c6B5bD3DC2aAF7aBb2f971Eb53d08",
+      "verdict": "ALLOW"
+    },
+    "signal_hash": "0x28c002c52731ed59f12573408aa2c918ba0dd6cf7691535c7699f54d4fc8f12c",
+    "timestamp": "2026-09-01T17:00:17.776725025Z"
+  }
+}
