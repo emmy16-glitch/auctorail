@@ -8,10 +8,9 @@ import {
   BASE_SEPOLIA_USDC,
   createActionContract
 } from "../src/core/action-contract.js";
+import { createMandateContract } from "../src/core/mandate-contract.js";
 import { normalizeTelegraphEvidence } from "../src/evidence/telegraph.js";
-import {
-  executeProtectedAction
-} from "../src/executor/controlled-executor.js";
+import { executeProtectedAction } from "../src/executor/controlled-executor.js";
 import { FilePermitConsumptionStore } from "../src/executor/permit-store.js";
 import { evaluatePaymentsStrictV1 } from "../src/policy/payments-strict-v1.js";
 import { mintPermit } from "../src/permit/permit.js";
@@ -21,12 +20,10 @@ import {
 } from "../src/receipt/proof-receipt.js";
 
 const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
+const AGENT = "procurement-agent";
 const SECRET = "proofgate-e2e-unit-secret-" + "k".repeat(64);
 
 function applicableAllowEvidence() {
-  // Deterministic unit fixture only. The final demo must use a saved response
-  // produced by a live Telegraph Miner; this fixture exists to test the
-  // internal ALLOW -> permit -> executor -> receipt security plumbing.
   return normalizeTelegraphEvidence({
     schemaVersion: "proofgate.telegraph-evidence.v1",
     source: "telegraph",
@@ -73,7 +70,22 @@ function applicableAllowEvidence() {
 }
 
 describe("ProofGate end-to-end security plumbing", () => {
-  it("requires policy ALLOW, executes once, and emits a verifiable receipt", async () => {
+  it("binds Mandate -> Action -> evidence -> ALLOW -> permit -> execution -> receipt", async () => {
+    const mandate = createMandateContract({
+      mandateId: "treasury-demo-v1",
+      principalId: "company-demo",
+      agentId: AGENT,
+      allowedActionTypes: ["payment"],
+      allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
+      allowedAssets: [BASE_SEPOLIA_USDC],
+      allowedDestinations: [VENDOR],
+      maxPerActionRaw: "10000000",
+      requiredIntents: ["FRAUD_DETECTION"],
+      policyId: "payments.strict.v1",
+      issuedAt: "2026-09-01T00:00:00.000Z",
+      expiresAt: "2026-09-08T01:00:00.000Z",
+      version: 1
+    });
     const evidence = applicableAllowEvidence();
     const action = createActionContract({
       type: "payment",
@@ -85,21 +97,28 @@ describe("ProofGate end-to-end security plumbing", () => {
       policyId: "payments.strict.v1"
     });
     const now = new Date("2026-09-01T19:20:01.000Z");
-    const decision = evaluatePaymentsStrictV1(action, evidence, { now });
+    const decision = evaluatePaymentsStrictV1(mandate, action, evidence, {
+      agentId: AGENT,
+      now
+    });
 
     expect(decision.decision).toBe("ALLOW");
+    expect(decision.mandate.mandateHash).toBe(mandate.mandateHash);
     expect(decision.checks.every((item) => item.status === "PASS")).toBe(true);
 
-    const permit = mintPermit(action, evidence, decision, SECRET, {
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, {
       now,
       ttlSeconds: 30
     });
+    expect(permit.payload.mandateHash).toBe(mandate.mandateHash);
+
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "proofgate-e2e-"));
     const store = new FilePermitConsumptionStore(directory);
     let executions = 0;
     const txHash = "0x" + "b".repeat(64);
 
     const result = await executeProtectedAction({
+      mandate,
       permit,
       action,
       evidence,
@@ -117,6 +136,7 @@ describe("ProofGate end-to-end security plumbing", () => {
     expect(executions).toBe(1);
 
     const receipt = createProofReceipt({
+      mandate,
       action,
       evidence,
       decision,
@@ -130,9 +150,11 @@ describe("ProofGate end-to-end security plumbing", () => {
       }
     });
 
+    expect(receipt.mandate.mandateHash).toBe(mandate.mandateHash);
     expect(verifyProofReceipt(receipt)).toBe(true);
 
     const replay = await executeProtectedAction({
+      mandate,
       permit,
       action,
       evidence,

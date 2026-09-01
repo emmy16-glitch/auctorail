@@ -12,6 +12,7 @@ export type OperationState =
   | "PAYMENT_ATTEMPT_STARTED"
   | "BROADCAST"
   | "CONFIRMED"
+  | "BLOCKED"
   | "HOLD"
   | "FAILED"
   | "AMBIGUOUS";
@@ -50,12 +51,14 @@ const ALLOWED_TRANSITIONS: Record<OperationState, ReadonlySet<OperationState>> =
     "PAYMENT_ATTEMPT_STARTED",
     "BROADCAST",
     "CONFIRMED",
+    "BLOCKED",
     "HOLD",
     "FAILED",
     "AMBIGUOUS"
   ]),
   PAYMENT_ATTEMPT_STARTED: new Set([
     "CONFIRMED",
+    "BLOCKED",
     "HOLD",
     "FAILED",
     "AMBIGUOUS"
@@ -72,6 +75,7 @@ const ALLOWED_TRANSITIONS: Record<OperationState, ReadonlySet<OperationState>> =
     "HOLD"
   ]),
   CONFIRMED: new Set(),
+  BLOCKED: new Set(),
   HOLD: new Set(),
   FAILED: new Set()
 };
@@ -86,10 +90,7 @@ function validateOperationId(operationId: string): void {
   }
 }
 
-function assertTransition(
-  from: OperationState,
-  to: OperationState
-): void {
+function assertTransition(from: OperationState, to: OperationState): void {
   if (from === to) {
     return;
   }

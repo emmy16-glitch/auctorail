@@ -5,15 +5,16 @@ import {
   BASE_SEPOLIA_USDC,
   createActionContract
 } from "../src/core/action-contract.js";
+import { createMandateContract } from "../src/core/mandate-contract.js";
+import { findLatestMatchingTelegraphEvidence } from "../src/evidence/evidence-store.js";
 import {
-  findLatestMatchingTelegraphEvidence
-} from "../src/evidence/evidence-store.js";
-import {
-  loadTelegraphEvidence
+  loadTelegraphEvidence,
+  type TelegraphEvidenceRecord
 } from "../src/evidence/telegraph.js";
-import {
-  evaluatePaymentsStrictV1
-} from "../src/policy/payments-strict-v1.js";
+import { evaluatePaymentsStrictV1 } from "../src/policy/payments-strict-v1.js";
+
+const DEMO_AGENT_ID = "procurement-agent";
+const CANONICAL_VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 
 const target = process.argv[2];
 const explicitEvidence = process.argv[3];
@@ -24,8 +25,22 @@ if (!target || !/^0x[0-9a-fA-F]{40}$/.test(target)) {
   );
 }
 
-// The proposal is frozen first. Evidence is never allowed to choose or mutate
-// the destination, amount, token, chain, or policy.
+const mandate = createMandateContract({
+  mandateId: "treasury-demo-v1",
+  principalId: "company-demo",
+  agentId: DEMO_AGENT_ID,
+  allowedActionTypes: ["payment"],
+  allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
+  allowedAssets: [BASE_SEPOLIA_USDC],
+  allowedDestinations: [CANONICAL_VENDOR],
+  maxPerActionRaw: "10000000",
+  requiredIntents: ["FRAUD_DETECTION"],
+  policyId: "payments.strict.v1",
+  issuedAt: "2026-09-01T00:00:00.000Z",
+  expiresAt: "2026-09-08T01:00:00.000Z",
+  version: 1
+});
+
 const action = createActionContract({
   type: "payment",
   chainId: BASE_SEPOLIA_CHAIN_ID,
@@ -37,11 +52,11 @@ const action = createActionContract({
 });
 
 let evidencePath: string | null = null;
-let evidence = null;
+let evidence: TelegraphEvidenceRecord | null = null;
 
 if (explicitEvidence) {
   evidencePath = path.resolve(explicitEvidence);
-  evidence = loadTelegraphEvidence(evidencePath);
+  evidence = loadTelegraphEvidence(path.resolve(explicitEvidence));
 } else {
   const match = findLatestMatchingTelegraphEvidence(
     path.join(process.cwd(), "data", "evidence"),
@@ -53,12 +68,18 @@ if (explicitEvidence) {
   evidence = match?.evidence ?? null;
 }
 
-const decision = evaluatePaymentsStrictV1(action, evidence);
+const decision = evaluatePaymentsStrictV1(mandate, action, evidence, {
+  agentId: DEMO_AGENT_ID
+});
 
 console.log("");
 console.log("PROOFGATE POLICY DECISION");
 console.log("=========================");
 console.log("");
+console.log("Mandate:", mandate.mandateId);
+console.log("Mandate hash:", mandate.mandateHash);
+console.log("Principal:", mandate.principalId);
+console.log("Agent:", DEMO_AGENT_ID);
 console.log("Action target:", action.payload.destination);
 console.log("Amount:", "1 USDC");
 console.log("Action hash:", action.actionHash);

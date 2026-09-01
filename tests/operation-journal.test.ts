@@ -51,22 +51,16 @@ describe("ProofGate operation journal", () => {
       state: "BROADCAST",
       transactionHash: "0x" + "c".repeat(64)
     });
-
-    journal.update(operation.operationId, {
-      state: "CONFIRMED"
-    });
+    journal.update(operation.operationId, { state: "CONFIRMED" });
 
     expect(() =>
-      journal.update(operation.operationId, {
-        state: "BROADCAST"
-      })
+      journal.update(operation.operationId, { state: "BROADCAST" })
     ).toThrow("invalid_operation_transition:CONFIRMED->BROADCAST");
   });
 
   it("records ambiguous outcomes instead of guessing that execution failed", () => {
     const journal = new FileOperationJournal(temporaryDirectory());
     const operation = journal.create({ kind: "onchain_execution" });
-
     const ambiguous = journal.update(operation.operationId, {
       state: "AMBIGUOUS",
       metadata: { reason: "rpc_confirmation_timeout" }
@@ -74,5 +68,23 @@ describe("ProofGate operation journal", () => {
 
     expect(ambiguous.state).toBe("AMBIGUOUS");
     expect(ambiguous.metadata.reason).toBe("rpc_confirmation_timeout");
+  });
+
+  it("records deterministic authorization blocks as terminal BLOCKED", () => {
+    const journal = new FileOperationJournal(temporaryDirectory());
+    const operation = journal.create({
+      kind: "telegraph_proof",
+      metadata: { mandateHash: "0x" + "d".repeat(64) }
+    });
+    const blocked = journal.update(operation.operationId, {
+      state: "BLOCKED",
+      metadata: { reason: "mandate_destination_violation" }
+    });
+
+    expect(blocked.state).toBe("BLOCKED");
+    expect(blocked.metadata.reason).toBe("mandate_destination_violation");
+    expect(() =>
+      journal.update(operation.operationId, { state: "PAYMENT_ATTEMPT_STARTED" })
+    ).toThrow("invalid_operation_transition:BLOCKED->PAYMENT_ATTEMPT_STARTED");
   });
 });

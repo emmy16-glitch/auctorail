@@ -3,14 +3,8 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  wrapFetchWithPayment,
-  x402Client
-} from "@x402/fetch";
-import {
-  ExactEvmScheme,
-  toClientEvmSigner
-} from "@x402/evm";
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
+import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import { privateKeyToAccount } from "viem/accounts";
 
 import {
@@ -20,6 +14,11 @@ import {
   type ActionContract
 } from "../src/core/action-contract.js";
 import {
+  createMandateContract,
+  evaluateMandate,
+  type MandateContract
+} from "../src/core/mandate-contract.js";
+import {
   normalizeTelegraphEvidence,
   type TelegraphEvidenceRecord
 } from "../src/evidence/telegraph.js";
@@ -28,9 +27,7 @@ import {
   evaluatePaymentsStrictV1,
   type DecisionRecord
 } from "../src/policy/payments-strict-v1.js";
-import {
-  createProofReceipt
-} from "../src/receipt/proof-receipt.js";
+import { createProofReceipt } from "../src/receipt/proof-receipt.js";
 import {
   TELEGRAPH_X402_POLICY,
   classifyPaymentResponseHeader,
@@ -62,10 +59,12 @@ interface TelegraphRequestPlan {
   verificationPlan: TelegraphVerificationPlan;
 }
 
+const DEMO_AGENT_ID = "procurement-agent";
+const CANONICAL_VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
+
 const PRIVATE_KEY = process.env.TELEGRAPH_EVM_PRIVATE_KEY as
   | `0x${string}`
   | undefined;
-
 const TARGET = process.argv[2];
 const DIRECT_REFUT = process.argv.includes("--direct-refut");
 
@@ -78,6 +77,22 @@ if (!TARGET || !/^0x[0-9a-fA-F]{40}$/.test(TARGET)) {
     "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--direct-refut]"
   );
 }
+
+const mandate = createMandateContract({
+  mandateId: "treasury-demo-v1",
+  principalId: "company-demo",
+  agentId: DEMO_AGENT_ID,
+  allowedActionTypes: ["payment"],
+  allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
+  allowedAssets: [BASE_SEPOLIA_USDC],
+  allowedDestinations: [CANONICAL_VENDOR],
+  maxPerActionRaw: "10000000",
+  requiredIntents: ["FRAUD_DETECTION"],
+  policyId: "payments.strict.v1",
+  issuedAt: "2026-09-01T00:00:00.000Z",
+  expiresAt: "2026-09-08T01:00:00.000Z",
+  version: 1
+});
 
 const action = createActionContract({
   type: "payment",
@@ -93,10 +108,7 @@ const verificationPlan = createPaymentVerificationPlan(action);
 const miners = loadMinerRegistry();
 const account = privateKeyToAccount(PRIVATE_KEY);
 const signer = toClientEvmSigner(account);
-const engine =
-  process.env.TELEGRAPH_ENGINE_URL ||
-  "https://devnode.telegraphprotocol.com/engine";
-
+const engine = process.env.TELEGRAPH_ENGINE_URL || "https://devnode.telegraphprotocol.com/engine";
 const requestPlan = buildRequestPlan({
   engine,
   verificationPlan,
@@ -110,6 +122,10 @@ const operation = journal.create({
   actionHash: action.actionHash,
   target: action.payload.destination,
   metadata: {
+    mandateId: mandate.mandateId,
+    mandateHash: mandate.mandateHash,
+    principalId: mandate.principalId,
+    agentId: DEMO_AGENT_ID,
     routeMode: requestPlan.routeMode,
     requiredIntent: verificationPlan.requiredIntent,
     requestEndpoint: requestPlan.requestEndpoint,
@@ -124,6 +140,8 @@ console.log("");
 console.log("PROOFGATE LIVE PROOF");
 console.log("====================");
 console.log("Operation:", operation.operationId);
+console.log("Mandate:", mandate.mandateId);
+console.log("Mandate hash:", mandate.mandateHash);
 console.log("Action hash:", action.actionHash);
 console.log("Action: 1 USDC →", action.payload.destination);
 console.log("Required Intent:", verificationPlan.requiredIntent);
@@ -136,14 +154,44 @@ console.log(
 console.log("x402 payer:", account.address);
 console.log("");
 
+// Refuse to spend on Telegraph proof for an action that is already outside
+// delegated authority. External evidence can never override a mandate breach.
+const mandatePrecheck = evaluateMandate(
+  mandate,
+  action,
+  DEMO_AGENT_ID,
+  new Date()
+);
+
+if (!mandatePrecheck.valid) {
+  const failed = mandatePrecheck.checks.find((item) => item.status === "BLOCK");
+  const reason = failed?.code ?? "mandate_violation";
+
+  journal.update(operation.operationId, {
+    state: "BLOCKED",
+    metadata: {
+      reason,
+      telegraphCalled: false
+    }
+  });
+
+  await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
+    action,
+    reason,
+    failed?.reason ?? "Action is outside delegated authority.",
+    operation.operationId
+  );
+  process.exit(3);
+}
+
 let preflight: Response;
 
 try {
   preflight = await fetchWithReadRetry(requestPlan.url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestPlan.requestBody)
   });
 } catch (error) {
@@ -156,6 +204,8 @@ try {
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     "telegraph_preflight_unavailable",
     errorMessage(error),
@@ -167,6 +217,8 @@ try {
 if (preflight.ok) {
   await completeSuccessfulProof({
     response: preflight,
+    mandate,
+    agentId: DEMO_AGENT_ID,
     action,
     operationId: operation.operationId,
     requestPlan,
@@ -187,6 +239,8 @@ if (preflight.status !== 402) {
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     `telegraph_preflight_http_${preflight.status}`,
     `Telegraph preflight returned HTTP ${preflight.status}.`,
@@ -200,12 +254,12 @@ const paymentRequired = preflight.headers.get("payment-required");
 if (!paymentRequired) {
   journal.update(operation.operationId, {
     state: "HOLD",
-    metadata: {
-      reason: "payment_challenge_missing"
-    }
+    metadata: { reason: "payment_challenge_missing" }
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     "payment_challenge_missing",
     "Telegraph returned 402 without PAYMENT-REQUIRED.",
@@ -223,12 +277,12 @@ try {
   if (!laneDecision.approved) {
     journal.update(operation.operationId, {
       state: "HOLD",
-      metadata: {
-        reason: laneDecision.code
-      }
+      metadata: { reason: laneDecision.code }
     });
 
     await finishWithoutEvidence(
+      mandate,
+      DEMO_AGENT_ID,
       action,
       laneDecision.code,
       "The x402 challenge did not satisfy ProofGate's standing payment policy.",
@@ -248,6 +302,8 @@ try {
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     "payment_challenge_malformed",
     errorMessage(error),
@@ -271,7 +327,6 @@ const client = x402Client.fromConfig({
     }
   ]
 });
-
 const paidFetch = wrapFetchWithPayment(fetch, client);
 
 journal.update(operation.operationId, {
@@ -287,13 +342,9 @@ journal.update(operation.operationId, {
 let response: Response;
 
 try {
-  // No automatic retry after this boundary. A paid transport failure is
-  // ambiguous until settlement is reconciled.
   response = await paidFetch(requestPlan.url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestPlan.requestBody)
   });
 } catch (error) {
@@ -307,6 +358,8 @@ try {
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     "x402_transport_ambiguous",
     "The paid attempt lost a definitive response. ProofGate will not retry it blindly.",
@@ -344,6 +397,8 @@ if (!response.ok) {
     console.log("Automatic retry: NO");
 
     await finishWithoutEvidence(
+      mandate,
+      DEMO_AGENT_ID,
       action,
       settlement.code,
       settlement.errorReason ?? `Telegraph returned HTTP ${response.status}.`,
@@ -364,6 +419,8 @@ if (!response.ok) {
     });
 
     await finishWithoutEvidence(
+      mandate,
+      DEMO_AGENT_ID,
       action,
       "miner_failed_after_payment",
       "The payment settled but Telegraph did not return successful Miner evidence. No automatic retry.",
@@ -383,6 +440,8 @@ if (!response.ok) {
   });
 
   await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
     action,
     "payment_outcome_ambiguous",
     "Telegraph returned a failed response without a definitive settlement result. No automatic retry.",
@@ -393,6 +452,8 @@ if (!response.ok) {
 
 await completeSuccessfulProof({
   response,
+  mandate,
+  agentId: DEMO_AGENT_ID,
   action,
   operationId: operation.operationId,
   requestPlan,
@@ -411,9 +472,7 @@ function buildRequestPlan(input: {
     return {
       routeMode: "AUTO_ROUTE",
       url: `${input.engine}/v1/ask`,
-      requestBody: {
-        query: input.verificationPlan.query
-      },
+      requestBody: { query: input.verificationPlan.query },
       requestEndpoint: "/v1/ask",
       requestedMiner: null,
       verificationPlan: input.verificationPlan
@@ -449,6 +508,8 @@ function buildRequestPlan(input: {
 
 async function completeSuccessfulProof(input: {
   response: Response;
+  mandate: MandateContract;
+  agentId: string;
   action: ActionContract;
   operationId: string;
   requestPlan: TelegraphRequestPlan;
@@ -460,18 +521,10 @@ async function completeSuccessfulProof(input: {
 
   try {
     const parsed = await input.response.json();
-
-    if (!isObject(parsed)) {
-      throw new Error("miner_response_not_object");
-    }
-
+    if (!isObject(parsed)) throw new Error("miner_response_not_object");
     body = parsed;
   } catch (error) {
-    await holdInvalidEvidence(
-      input,
-      "miner_response_invalid",
-      errorMessage(error)
-    );
+    await holdInvalidEvidence(input, "miner_response_invalid", errorMessage(error));
     return;
   }
 
@@ -484,9 +537,6 @@ async function completeSuccessfulProof(input: {
     return;
   }
 
-  // The final authorization path requires the Miner result itself to assert
-  // subject and chain. We never infer these security bindings from our own
-  // request, because that would turn request metadata into fake evidence.
   if (
     typeof body.result.subject !== "string" ||
     body.result.subject.toLowerCase() !== input.action.payload.destination.toLowerCase()
@@ -552,6 +602,7 @@ async function completeSuccessfulProof(input: {
       chainId: input.action.payload.chainId,
       routeMode: input.requestPlan.routeMode,
       actionHash: input.action.actionHash,
+      mandateHash: input.mandate.mandateHash,
       query:
         input.requestPlan.routeMode === "AUTO_ROUTE"
           ? input.requestPlan.verificationPlan.query
@@ -559,22 +610,10 @@ async function completeSuccessfulProof(input: {
     },
     result: body.result,
     telegraph: {
-      signalHash:
-        typeof body.signal_hash === "string"
-          ? body.signal_hash
-          : null,
-      costUsd:
-        typeof body.cost_usd === "number"
-          ? body.cost_usd
-          : null,
-      durationMs:
-        typeof body.duration_ms === "number"
-          ? body.duration_ms
-          : null,
-      timestamp:
-        typeof body.timestamp === "string"
-          ? body.timestamp
-          : null
+      signalHash: typeof body.signal_hash === "string" ? body.signal_hash : null,
+      costUsd: typeof body.cost_usd === "number" ? body.cost_usd : null,
+      durationMs: typeof body.duration_ms === "number" ? body.duration_ms : null,
+      timestamp: typeof body.timestamp === "string" ? body.timestamp : null
     },
     payment: input.paymentLane
       ? {
@@ -615,22 +654,21 @@ async function completeSuccessfulProof(input: {
     evidenceDirectory,
     `telegraph-${finishedAt.replace(/[:.]/g, "-")}.json`
   );
-
-  fs.writeFileSync(
-    evidencePath,
-    JSON.stringify(savedEvidence, null, 2),
-    { mode: 0o600 }
-  );
+  fs.writeFileSync(evidencePath, JSON.stringify(savedEvidence, null, 2), {
+    mode: 0o600
+  });
 
   const decision = evaluatePaymentsStrictV1(
+    input.mandate,
     input.action,
     evidence,
-    { now: new Date() }
+    { agentId: input.agentId, now: new Date() }
   );
 
   journal.update(input.operationId, {
     state: "CONFIRMED",
     metadata: {
+      mandateHash: input.mandate.mandateHash,
       routeMode: input.requestPlan.routeMode,
       requiredIntent: input.requestPlan.verificationPlan.requiredIntent,
       servingMinerId: servingMiner.id,
@@ -658,6 +696,7 @@ async function completeSuccessfulProof(input: {
 
   if (decision.decision !== "ALLOW") {
     saveReceipt(
+      input.mandate,
       input.action,
       evidence,
       decision,
@@ -669,6 +708,8 @@ async function completeSuccessfulProof(input: {
 
 async function holdInvalidEvidence(
   input: {
+    mandate: MandateContract;
+    agentId: string;
     action: ActionContract;
     operationId: string;
   },
@@ -677,13 +718,12 @@ async function holdInvalidEvidence(
 ): Promise<void> {
   journal.update(input.operationId, {
     state: "HOLD",
-    metadata: {
-      reason,
-      detail
-    }
+    metadata: { reason, detail }
   });
 
   await finishWithoutEvidence(
+    input.mandate,
+    input.agentId,
     input.action,
     reason,
     detail,
@@ -702,21 +742,16 @@ function resolveServingMiner(
       : requestedMiner
         ? String(requestedMiner.id)
         : null;
-
   const byId = id
     ? miners.find((candidate) => String(candidate.id) === id)
     : null;
-
   const name =
     typeof body.miner_name === "string"
       ? body.miner_name
       : byId?.name ?? requestedMiner?.name ?? null;
-
   const slug = byId?.slug ?? requestedMiner?.slug ?? null;
 
-  if (!id || !name) {
-    return null;
-  }
+  if (!id || !name) return null;
 
   return {
     id,
@@ -726,24 +761,28 @@ function resolveServingMiner(
 }
 
 async function finishWithoutEvidence(
+  mandate: MandateContract,
+  agentId: string,
   proposedAction: ActionContract,
   reason: string,
   detail: string,
   operationId?: string
 ): Promise<void> {
   const decision = evaluatePaymentsStrictV1(
+    mandate,
     proposedAction,
     null,
-    { now: new Date() }
+    { agentId, now: new Date() }
   );
 
-  console.log("PROOFGATE: HOLD");
-  console.log("Reason:", reason);
+  console.log("PROOFGATE:", decision.decision);
+  console.log("Reason:", decision.reason === "telegraph_evidence" ? reason : decision.reason);
   console.log("Detail:", detail);
   console.log("Action remains unexecuted.");
   console.log("");
 
   saveReceipt(
+    mandate,
     proposedAction,
     null,
     decision,
@@ -753,6 +792,7 @@ async function finishWithoutEvidence(
 }
 
 function saveReceipt(
+  mandate: MandateContract,
   proposedAction: ActionContract,
   evidence: TelegraphEvidenceRecord | null,
   decision: DecisionRecord,
@@ -760,12 +800,13 @@ function saveReceipt(
   operationId?: string
 ): string {
   const receipt = createProofReceipt({
+    mandate,
     action: proposedAction,
     evidence,
     decision,
     permit: null,
     execution: {
-      status: "NOT_EXECUTED",
+      status: decision.decision === "BLOCK" ? "BLOCKED" : "NOT_EXECUTED",
       code: executionCode,
       chainId: proposedAction.payload.chainId
     },
@@ -775,12 +816,7 @@ function saveReceipt(
   const directory = path.join("data", "receipts");
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, `${receipt.receiptId}.json`);
-
-  fs.writeFileSync(
-    file,
-    JSON.stringify(receipt, null, 2),
-    { mode: 0o600 }
-  );
+  fs.writeFileSync(file, JSON.stringify(receipt, null, 2), { mode: 0o600 });
 
   console.log("Proof receipt:", file);
   console.log("Receipt hash:", receipt.receiptHash);
@@ -802,9 +838,7 @@ function printDecision(decision: DecisionRecord): void {
 
 function loadMinerRegistry(): MinerRecord[] {
   try {
-    return JSON.parse(
-      fs.readFileSync("data/miners.json", "utf8")
-    ) as MinerRecord[];
+    return JSON.parse(fs.readFileSync("data/miners.json", "utf8")) as MinerRecord[];
   } catch {
     return [];
   }

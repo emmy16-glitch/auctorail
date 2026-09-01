@@ -9,21 +9,18 @@ import {
   canonicalize,
   type ActionContract
 } from "../core/action-contract.js";
-
-import type {
-  TelegraphEvidenceRecord
-} from "../evidence/telegraph.js";
-
-import type {
-  DecisionRecord
-} from "../policy/payments-strict-v1.js";
-
 import {
-  createDecisionHash
-} from "./decision-hash.js";
+  evaluateMandate,
+  type MandateContract,
+  type MandateViolationCode
+} from "../core/mandate-contract.js";
+import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
+import type { DecisionRecord } from "../policy/payments-strict-v1.js";
+import { createDecisionHash } from "./decision-hash.js";
 
 export interface PermitPayload {
   permitId: string;
+  mandateHash: string;
   actionHash: string;
   decisionHash: string;
   nonce: string;
@@ -40,6 +37,8 @@ export interface Permit {
 export type PermitVerificationCode =
   | "permit_valid"
   | "invalid_permit_signature"
+  | "mandate_hash_mismatch"
+  | MandateViolationCode
   | "action_hash_mismatch"
   | "decision_hash_mismatch"
   | "decision_action_mismatch"
@@ -56,16 +55,11 @@ export interface PermitVerificationResult {
 
 function requireStrongSecret(secret: string): void {
   if (!secret || secret.length < 32) {
-    throw new Error(
-      "PROOFGATE_SECRET must contain at least 32 characters"
-    );
+    throw new Error("PROOFGATE_SECRET must contain at least 32 characters");
   }
 }
 
-function signPermitPayload(
-  payload: PermitPayload,
-  secret: string
-): string {
+function signPermitPayload(payload: PermitPayload, secret: string): string {
   requireStrongSecret(secret);
 
   return (
@@ -76,10 +70,7 @@ function signPermitPayload(
   );
 }
 
-function safeSignatureEqual(
-  supplied: string,
-  expected: string
-): boolean {
+function safeSignatureEqual(supplied: string, expected: string): boolean {
   try {
     if (
       !/^0x[0-9a-fA-F]{64}$/.test(supplied) ||
@@ -108,7 +99,21 @@ function evidenceMatchesAction(
   );
 }
 
+function decisionMatchesMandate(
+  mandate: MandateContract,
+  decision: DecisionRecord
+): boolean {
+  return (
+    decision.mandate.mandateId === mandate.mandateId &&
+    decision.mandate.mandateHash === mandate.mandateHash &&
+    decision.mandate.principalId === mandate.principalId &&
+    decision.mandate.agentId === mandate.agentId &&
+    decision.mandate.version === mandate.version
+  );
+}
+
 function decisionIsInternallyAllowing(
+  mandate: MandateContract,
   action: ActionContract,
   decision: DecisionRecord
 ): boolean {
@@ -116,6 +121,8 @@ function decisionIsInternallyAllowing(
     decision.decision === "ALLOW" &&
     decision.actionId === action.id &&
     decision.policyId === action.policyId &&
+    decision.agentId === mandate.agentId &&
+    decisionMatchesMandate(mandate, decision) &&
     decision.checks.length > 0 &&
     decision.checks.every((item) => item.status === "PASS")
   );
@@ -136,8 +143,6 @@ function validatePermitTimes(
     return "permit_time_invalid";
   }
 
-  // Five seconds of clock skew is tolerated, but a permit cannot be
-  // meaningfully issued far in the future.
   if (issuedAt > now.getTime() + 5_000) {
     return "permit_time_invalid";
   }
@@ -149,7 +154,20 @@ function validatePermitTimes(
   return null;
 }
 
+function firstMandateFailure(
+  mandate: MandateContract,
+  action: ActionContract,
+  agentId: string,
+  now: Date
+): MandateViolationCode | null {
+  const result = evaluateMandate(mandate, action, agentId, now);
+  const failed = result.checks.find((item) => item.status === "BLOCK");
+
+  return failed?.code ?? null;
+}
+
 export function mintPermit(
+  mandate: MandateContract,
   action: ActionContract,
   evidence: TelegraphEvidenceRecord,
   decision: DecisionRecord,
@@ -169,8 +187,15 @@ export function mintPermit(
     throw new Error("decision_action_mismatch");
   }
 
-  if (decision.policyId !== action.policyId) {
+  if (
+    decision.policyId !== action.policyId ||
+    mandate.policyId !== action.policyId
+  ) {
     throw new Error("policy_id_mismatch");
+  }
+
+  if (!decisionMatchesMandate(mandate, decision)) {
+    throw new Error("mandate_hash_mismatch");
   }
 
   if (!evidenceMatchesAction(action, evidence)) {
@@ -195,10 +220,31 @@ export function mintPermit(
     throw new Error("invalid_permit_ttl");
   }
 
-  const decisionHash = createDecisionHash(action, evidence, decision);
+  const mandateFailure = firstMandateFailure(
+    mandate,
+    action,
+    decision.agentId,
+    now
+  );
+
+  if (mandateFailure) {
+    throw new Error(mandateFailure);
+  }
+
+  if (!decisionIsInternallyAllowing(mandate, action, decision)) {
+    throw new Error("decision_not_allow");
+  }
+
+  const decisionHash = createDecisionHash(
+    mandate,
+    action,
+    evidence,
+    decision
+  );
 
   const payload: PermitPayload = {
     permitId: randomUUID(),
+    mandateHash: mandate.mandateHash,
     actionHash: action.actionHash,
     decisionHash,
     nonce: randomBytes(16).toString("hex"),
@@ -214,6 +260,7 @@ export function mintPermit(
 }
 
 export function verifyPermit(
+  mandate: MandateContract,
   permit: Permit,
   action: ActionContract,
   evidence: TelegraphEvidenceRecord,
@@ -234,6 +281,16 @@ export function verifyPermit(
     };
   }
 
+  if (
+    permit.payload.mandateHash !== mandate.mandateHash ||
+    !decisionMatchesMandate(mandate, decision)
+  ) {
+    return {
+      valid: false,
+      code: "mandate_hash_mismatch"
+    };
+  }
+
   if (decision.decision !== "ALLOW") {
     return {
       valid: false,
@@ -243,6 +300,7 @@ export function verifyPermit(
 
   if (
     decision.policyId !== action.policyId ||
+    mandate.policyId !== action.policyId ||
     permit.payload.policyId !== action.policyId ||
     permit.payload.policyId !== decision.policyId
   ) {
@@ -259,10 +317,8 @@ export function verifyPermit(
     };
   }
 
-  const timeFailure = validatePermitTimes(
-    permit,
-    options?.now ?? new Date()
-  );
+  const now = options?.now ?? new Date();
+  const timeFailure = validatePermitTimes(permit, now);
 
   if (timeFailure) {
     return {
@@ -271,8 +327,8 @@ export function verifyPermit(
     };
   }
 
-  // Exact semantic action binding takes precedence over proposal-instance
-  // binding so mutation attacks receive the stable public error code.
+  // Exact semantic action binding takes precedence so post-authorization
+  // mutations retain stable attack-specific error codes.
   if (permit.payload.actionHash !== action.actionHash) {
     return {
       valid: false,
@@ -287,7 +343,21 @@ export function verifyPermit(
     };
   }
 
-  if (!decisionIsInternallyAllowing(action, decision)) {
+  const mandateFailure = firstMandateFailure(
+    mandate,
+    action,
+    decision.agentId,
+    now
+  );
+
+  if (mandateFailure) {
+    return {
+      valid: false,
+      code: mandateFailure
+    };
+  }
+
+  if (!decisionIsInternallyAllowing(mandate, action, decision)) {
     return {
       valid: false,
       code: "decision_not_allow"
@@ -295,6 +365,7 @@ export function verifyPermit(
   }
 
   const expectedDecisionHash = createDecisionHash(
+    mandate,
     action,
     evidence,
     decision

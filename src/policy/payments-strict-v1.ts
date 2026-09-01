@@ -1,148 +1,105 @@
-import {
-  getAddress
-} from "ethers";
+import { getAddress } from "ethers";
 
 import {
-  ActionContract,
+  type ActionContract,
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC
 } from "../core/action-contract.js";
+import {
+  evaluateMandate,
+  type MandateContract,
+  type MandateViolationCode
+} from "../core/mandate-contract.js";
+import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
 
-import type {
-  TelegraphEvidenceRecord
-} from "../evidence/telegraph.js";
-
-export type ProofGateDecision =
-  | "ALLOW"
-  | "HOLD"
-  | "BLOCK";
-
-export type CheckStatus =
-  | "PASS"
-  | "HOLD"
-  | "BLOCK";
+export type ProofGateDecision = "ALLOW" | "HOLD" | "BLOCK";
+export type CheckStatus = "PASS" | "HOLD" | "BLOCK";
 
 export interface PolicyCheck {
   name: string;
   status: CheckStatus;
   reason: string;
+  code?: string;
+}
+
+export interface DecisionMandateContext {
+  mandateId: string;
+  mandateHash: string;
+  principalId: string;
+  agentId: string;
+  version: number;
 }
 
 export interface DecisionRecord {
+  mandate: DecisionMandateContext;
+  agentId: string;
   actionId: string;
-
-  decision:
-    ProofGateDecision;
-
+  decision: ProofGateDecision;
   reason: string;
-
-  policyId:
-    "payments.strict.v1";
-
-  checks:
-    PolicyCheck[];
-
+  policyId: "payments.strict.v1";
+  checks: PolicyCheck[];
   decidedAt: string;
 }
 
+export interface PaymentsStrictEvaluationOptions {
+  agentId: string;
+  now?: Date;
+}
+
 export const PAYMENTS_STRICT_V1 = {
-  id:
-    "payments.strict.v1" as const,
-
-  allowedChainId:
-    BASE_SEPOLIA_CHAIN_ID,
-
-  allowedToken:
-    BASE_SEPOLIA_USDC,
-
-  // 10 USDC, using 6 decimals.
-  maxAutonomousAmountRaw:
-    10_000_000n,
-
-  minimumEvidenceConfidence:
-    0.80,
-
-  maxEvidenceAgeSeconds:
-    300,
-
-  requireTelegraphEvidence:
-    true,
-
-  requireSignalHash:
-    true,
-
-  failClosed:
-    true
+  id: "payments.strict.v1" as const,
+  allowedChainId: BASE_SEPOLIA_CHAIN_ID,
+  allowedToken: BASE_SEPOLIA_USDC,
+  maxAutonomousAmountRaw: 10_000_000n,
+  minimumEvidenceConfidence: 0.80,
+  maxEvidenceAgeSeconds: 300,
+  requireTelegraphEvidence: true,
+  requireSignalHash: true,
+  failClosed: true
 };
 
 function check(
   name: string,
   status: CheckStatus,
-  reason: string
+  reason: string,
+  code?: string
 ): PolicyCheck {
   return {
     name,
     status,
-    reason
+    reason,
+    ...(code ? { code } : {})
   };
 }
 
-function addressesEqual(
-  a: string,
-  b: string
-): boolean {
+function addressesEqual(a: string, b: string): boolean {
   try {
-    return (
-      getAddress(a) ===
-      getAddress(b)
-    );
+    return getAddress(a) === getAddress(b);
   } catch {
     return false;
   }
 }
 
-function classifyMinerLabel(
-  label: string | null
-): CheckStatus {
+function classifyMinerLabel(label: string | null): CheckStatus {
   if (!label) {
     return "HOLD";
   }
 
-  const normalized =
-    label.toUpperCase();
+  const normalized = label.toUpperCase();
 
   if (
-    [
-      "BLOCK",
-      "DENY",
-      "DENIED",
-      "MALICIOUS",
-      "SUSPICIOUS",
-      "FAILED"
-    ].includes(normalized)
+    ["BLOCK", "DENY", "DENIED", "MALICIOUS", "SUSPICIOUS", "FAILED"].includes(
+      normalized
+    )
   ) {
     return "BLOCK";
   }
 
-  if (
-    [
-      "RECHECK",
-      "UNKNOWN",
-      "UNAVAILABLE",
-      "PENDING"
-    ].includes(normalized)
-  ) {
+  if (["RECHECK", "UNKNOWN", "UNAVAILABLE", "PENDING"].includes(normalized)) {
     return "HOLD";
   }
 
-  if (
-    [
-      "ALLOW",
-      "SAFE",
-      "VALID",
-      "SUCCESS"
-    ].includes(normalized)
-  ) {
+  if (["ALLOW", "SAFE", "VALID", "SUCCESS"].includes(normalized)) {
     return "PASS";
   }
 
@@ -150,74 +107,48 @@ function classifyMinerLabel(
 }
 
 export function evaluatePaymentsStrictV1(
+  mandate: MandateContract,
   action: ActionContract,
-  evidence:
-    TelegraphEvidenceRecord | null,
-  options?: {
-    now?: Date;
-  }
+  evidence: TelegraphEvidenceRecord | null,
+  options: PaymentsStrictEvaluationOptions
 ): DecisionRecord {
-  const checks:
-    PolicyCheck[] = [];
+  const checks: PolicyCheck[] = [];
+  const now = options.now ?? new Date();
 
-  const now =
-    options?.now ??
-    new Date();
+  const mandateEvaluation = evaluateMandate(
+    mandate,
+    action,
+    options.agentId,
+    now
+  );
 
-  if (
-    action.payload.chainId ===
-    PAYMENTS_STRICT_V1.allowedChainId
-  ) {
-    checks.push(
-      check(
-        "allowed_chain",
-        "PASS",
-        "Action uses Base Sepolia."
-      )
-    );
-  } else {
-    checks.push(
-      check(
-        "allowed_chain",
-        "BLOCK",
-        "Action uses a prohibited chain."
-      )
-    );
-  }
-
-  if (
-    addressesEqual(
-      action.payload.token,
-      PAYMENTS_STRICT_V1.allowedToken
+  checks.push(
+    ...mandateEvaluation.checks.map((item) =>
+      check(item.name, item.status, item.reason, item.code)
     )
-  ) {
-    checks.push(
-      check(
-        "allowed_asset",
-        "PASS",
-        "Action uses approved Base Sepolia USDC."
-      )
-    );
+  );
+
+  if (action.payload.chainId === PAYMENTS_STRICT_V1.allowedChainId) {
+    checks.push(check("allowed_chain", "PASS", "Action uses Base Sepolia."));
   } else {
     checks.push(
-      check(
-        "allowed_asset",
-        "BLOCK",
-        "Action uses an unauthorized asset."
-      )
+      check("allowed_chain", "BLOCK", "Action uses a prohibited chain.")
     );
   }
 
-  const amount =
-    BigInt(
-      action.payload.amountRaw
+  if (addressesEqual(action.payload.token, PAYMENTS_STRICT_V1.allowedToken)) {
+    checks.push(
+      check("allowed_asset", "PASS", "Action uses approved Base Sepolia USDC.")
     );
+  } else {
+    checks.push(
+      check("allowed_asset", "BLOCK", "Action uses an unauthorized asset.")
+    );
+  }
 
-  if (
-    amount <=
-    PAYMENTS_STRICT_V1
-      .maxAutonomousAmountRaw
-  ) {
+  const amount = BigInt(action.payload.amountRaw);
+
+  if (amount <= PAYMENTS_STRICT_V1.maxAutonomousAmountRaw) {
     checks.push(
       check(
         "autonomous_amount_limit",
@@ -244,25 +175,14 @@ export function evaluatePaymentsStrictV1(
       )
     );
 
-    return finalize(
-      action,
-      checks,
-      now
-    );
+    return finalize(mandate, options.agentId, action, checks, now);
   }
 
   checks.push(
-    check(
-      "telegraph_evidence",
-      "PASS",
-      "Real Telegraph evidence is present."
-    )
+    check("telegraph_evidence", "PASS", "Real Telegraph evidence is present.")
   );
 
-  if (
-    evidence.intent ===
-    "FRAUD_DETECTION"
-  ) {
+  if (evidence.intent === "FRAUD_DETECTION") {
     checks.push(
       check(
         "required_intent",
@@ -280,12 +200,7 @@ export function evaluatePaymentsStrictV1(
     );
   }
 
-  if (
-    addressesEqual(
-      evidence.subject,
-      action.payload.destination
-    )
-  ) {
+  if (addressesEqual(evidence.subject, action.payload.destination)) {
     checks.push(
       check(
         "evidence_subject_binding",
@@ -303,10 +218,7 @@ export function evaluatePaymentsStrictV1(
     );
   }
 
-  if (
-    evidence.chainId ===
-    action.payload.chainId
-  ) {
+  if (evidence.chainId === action.payload.chainId) {
     checks.push(
       check(
         "evidence_chain_binding",
@@ -324,10 +236,7 @@ export function evaluatePaymentsStrictV1(
     );
   }
 
-  if (
-    evidence.applicability ===
-    "APPLICABLE"
-  ) {
+  if (evidence.applicability === "APPLICABLE") {
     checks.push(
       check(
         "evidence_applicability",
@@ -347,9 +256,7 @@ export function evaluatePaymentsStrictV1(
 
   if (
     evidence.confidence !== null &&
-    evidence.confidence >=
-      PAYMENTS_STRICT_V1
-        .minimumEvidenceConfidence
+    evidence.confidence >= PAYMENTS_STRICT_V1.minimumEvidenceConfidence
   ) {
     checks.push(
       check(
@@ -368,11 +275,7 @@ export function evaluatePaymentsStrictV1(
     );
   }
 
-  const minerStatus =
-    classifyMinerLabel(
-      evidence.label
-    );
-
+  const minerStatus = classifyMinerLabel(evidence.label);
   checks.push(
     check(
       "miner_result",
@@ -381,51 +284,22 @@ export function evaluatePaymentsStrictV1(
     )
   );
 
-  if (
-    evidence.signalHash
-  ) {
+  if (evidence.signalHash) {
     checks.push(
-      check(
-        "telegraph_signal_hash",
-        "PASS",
-        "Telegraph signal hash is present."
-      )
+      check("telegraph_signal_hash", "PASS", "Telegraph signal hash is present.")
     );
   } else {
     checks.push(
-      check(
-        "telegraph_signal_hash",
-        "HOLD",
-        "Telegraph signal hash is missing."
-      )
+      check("telegraph_signal_hash", "HOLD", "Telegraph signal hash is missing.")
     );
   }
 
-  const receivedAt =
-    new Date(
-      evidence.receivedAt
-    ).getTime();
+  const receivedAt = new Date(evidence.receivedAt).getTime();
+  const ageMs = now.getTime() - receivedAt;
+  const maximumAgeMs = PAYMENTS_STRICT_V1.maxEvidenceAgeSeconds * 1000;
 
-  const ageMs =
-    now.getTime() -
-    receivedAt;
-
-  const maximumAgeMs =
-    PAYMENTS_STRICT_V1
-      .maxEvidenceAgeSeconds *
-    1000;
-
-  if (
-    ageMs >= 0 &&
-    ageMs <= maximumAgeMs
-  ) {
-    checks.push(
-      check(
-        "evidence_freshness",
-        "PASS",
-        "Evidence is fresh."
-      )
-    );
+  if (ageMs >= 0 && ageMs <= maximumAgeMs) {
+    checks.push(check("evidence_freshness", "PASS", "Evidence is fresh."));
   } else {
     checks.push(
       check(
@@ -436,88 +310,56 @@ export function evaluatePaymentsStrictV1(
     );
   }
 
-  return finalize(
-    action,
-    checks,
-    now
-  );
+  return finalize(mandate, options.agentId, action, checks, now);
 }
 
 function finalize(
+  mandate: MandateContract,
+  agentId: string,
   action: ActionContract,
   checks: PolicyCheck[],
   now: Date
 ): DecisionRecord {
-  const blocked =
-    checks.find(
-      (item) =>
-        item.status === "BLOCK"
-    );
+  const context: Pick<DecisionRecord, "mandate" | "agentId" | "actionId" | "policyId" | "checks" | "decidedAt"> = {
+    mandate: {
+      mandateId: mandate.mandateId,
+      mandateHash: mandate.mandateHash,
+      principalId: mandate.principalId,
+      agentId: mandate.agentId,
+      version: mandate.version
+    },
+    agentId: agentId.trim(),
+    actionId: action.id,
+    policyId: "payments.strict.v1",
+    checks,
+    decidedAt: now.toISOString()
+  };
+
+  const blocked = checks.find((item) => item.status === "BLOCK");
 
   if (blocked) {
     return {
-      actionId:
-        action.id,
-
-      decision:
-        "BLOCK",
-
-      reason:
-        blocked.name,
-
-      policyId:
-        "payments.strict.v1",
-
-      checks,
-
-      decidedAt:
-        now.toISOString()
+      ...context,
+      decision: "BLOCK",
+      reason: blocked.code ?? blocked.name
     };
   }
 
-  const held =
-    checks.find(
-      (item) =>
-        item.status === "HOLD"
-    );
+  const held = checks.find((item) => item.status === "HOLD");
 
   if (held) {
     return {
-      actionId:
-        action.id,
-
-      decision:
-        "HOLD",
-
-      reason:
-        held.name,
-
-      policyId:
-        "payments.strict.v1",
-
-      checks,
-
-      decidedAt:
-        now.toISOString()
+      ...context,
+      decision: "HOLD",
+      reason: held.code ?? held.name
     };
   }
 
   return {
-    actionId:
-      action.id,
-
-    decision:
-      "ALLOW",
-
-    reason:
-      "all_required_checks_passed",
-
-    policyId:
-      "payments.strict.v1",
-
-    checks,
-
-    decidedAt:
-      now.toISOString()
+    ...context,
+    decision: "ALLOW",
+    reason: "all_required_checks_passed"
   };
 }
+
+export type { MandateViolationCode };

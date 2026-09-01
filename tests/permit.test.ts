@@ -1,422 +1,227 @@
 import fs from "node:fs";
 import path from "node:path";
-
-import {
-  describe,
-  expect,
-  it
-} from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC,
   createActionContract
 } from "../src/core/action-contract.js";
-
+import {
+  createMandateContract,
+  type MandateContract
+} from "../src/core/mandate-contract.js";
 import {
   loadTelegraphEvidence,
   type TelegraphEvidenceRecord
 } from "../src/evidence/telegraph.js";
-
 import {
   evaluatePaymentsStrictV1,
   type DecisionRecord
 } from "../src/policy/payments-strict-v1.js";
+import { mintPermit, verifyPermit } from "../src/permit/permit.js";
 
-import {
-  mintPermit,
-  verifyPermit
-} from "../src/permit/permit.js";
+const AGENT = "procurement-agent";
+const SECRET = "proofgate-unit-test-secret-" + "a".repeat(64);
 
-const SECRET =
-  "proofgate-unit-test-secret-" +
-  "a".repeat(64);
-
-function latestEvidence():
-  TelegraphEvidenceRecord {
-  const directory =
-    path.join(
-      process.cwd(),
-      "data",
-      "evidence"
-    );
-
-  const file =
-    fs.readdirSync(directory)
-      .filter(
-        (name) =>
-          name.endsWith(".json")
-      )
-      .sort()
-      .at(-1);
+function latestEvidence(): TelegraphEvidenceRecord {
+  const directory = path.join(process.cwd(), "data", "evidence");
+  const file = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort().at(-1);
 
   if (!file) {
-    throw new Error(
-      "Real Telegraph evidence missing"
-    );
+    throw new Error("Real Telegraph evidence missing");
   }
 
-  return loadTelegraphEvidence(
-    path.join(
-      directory,
-      file
-    )
-  );
+  return loadTelegraphEvidence(path.join(directory, file));
 }
 
-function createAction(
-  destination: string,
-  amountRaw =
-    "5000000"
-) {
+function createAction(destination: string, amountRaw = "5000000") {
   return createActionContract({
     type: "payment",
-
-    chainId:
-      BASE_SEPOLIA_CHAIN_ID,
-
-    token:
-      BASE_SEPOLIA_USDC,
-
+    chainId: BASE_SEPOLIA_CHAIN_ID,
+    token: BASE_SEPOLIA_USDC,
     amountRaw,
-
     destination,
+    reason: "Invoice INV-1042",
+    policyId: "payments.strict.v1"
+  });
+}
 
-    reason:
-      "Invoice INV-1042",
-
-    policyId:
-      "payments.strict.v1"
+function createMandate(destination: string, overrides: Partial<{ version: number; maxPerActionRaw: string }> = {}) {
+  return createMandateContract({
+    mandateId: "permit-unit-mandate",
+    principalId: "unit-principal",
+    agentId: AGENT,
+    allowedActionTypes: ["payment"],
+    allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
+    allowedAssets: [BASE_SEPOLIA_USDC],
+    allowedDestinations: [destination],
+    maxPerActionRaw: overrides.maxPerActionRaw ?? "20000000",
+    requiredIntents: ["FRAUD_DETECTION"],
+    policyId: "payments.strict.v1",
+    issuedAt: "2026-09-01T00:00:00.000Z",
+    expiresAt: "2026-09-08T01:00:00.000Z",
+    version: overrides.version ?? 1
   });
 }
 
 function unitAllowDecision(
+  mandate: MandateContract,
   actionId: string,
   now: Date
 ): DecisionRecord {
-  // Cryptographic unit-test fixture only.
-  // This is NOT presented as real Telegraph evidence.
   return {
+    mandate: {
+      mandateId: mandate.mandateId,
+      mandateHash: mandate.mandateHash,
+      principalId: mandate.principalId,
+      agentId: mandate.agentId,
+      version: mandate.version
+    },
+    agentId: AGENT,
     actionId,
-
-    decision:
-      "ALLOW",
-
-    reason:
-      "all_required_checks_passed",
-
-    policyId:
-      "payments.strict.v1",
-
+    decision: "ALLOW",
+    reason: "all_required_checks_passed",
+    policyId: "payments.strict.v1",
     checks: [
       {
-        name:
-          "unit_test_policy",
-        status:
-          "PASS",
-        reason:
-          "Cryptographic permit test."
+        name: "unit_test_policy",
+        status: "PASS",
+        reason: "Cryptographic permit test."
       }
     ],
-
-    decidedAt:
-      now.toISOString()
+    decidedAt: now.toISOString()
   };
 }
 
-describe(
-  "ProofGate exact-action permits",
-  () => {
-    it(
-      "does not mint a permit for the real HOLD decision",
-      () => {
-        const evidence =
-          latestEvidence();
+describe("ProofGate exact-action and exact-mandate permits", () => {
+  it("does not mint a permit for the real HOLD decision", () => {
+    const evidence = latestEvidence();
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const now = new Date(new Date(evidence.receivedAt).getTime() + 1000);
+    const decision = evaluatePaymentsStrictV1(mandate, action, evidence, {
+      agentId: AGENT,
+      now
+    });
 
-        const action =
-          createAction(
-            evidence.subject
-          );
+    expect(decision.decision).toBe("HOLD");
+    expect(() =>
+      mintPermit(mandate, action, evidence, decision, SECRET, { now })
+    ).toThrow("decision_not_allow");
+  });
 
-        const now =
-          new Date(
-            new Date(
-              evidence.receivedAt
-            ).getTime() +
-              1000
-          );
+  it("mints and verifies a permit bound to mandate and exact action", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, action.id, now);
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, {
+      now,
+      ttlSeconds: 30
+    });
 
-        const decision =
-          evaluatePaymentsStrictV1(
-            action,
-            evidence,
-            { now }
-          );
+    expect(
+      verifyPermit(mandate, permit, action, evidence, decision, SECRET, {
+        now: new Date(now.getTime() + 5000)
+      })
+    ).toEqual({ valid: true, code: "permit_valid" });
 
-        expect(
-          decision.decision
-        ).toBe("HOLD");
+    expect(permit.payload.actionHash).toBe(action.actionHash);
+    expect(permit.payload.mandateHash).toBe(mandate.mandateHash);
+  });
 
-        expect(() =>
-          mintPermit(
-            action,
-            evidence,
-            decision,
-            SECRET,
-            { now }
-          )
-        ).toThrow(
-          "decision_not_allow"
-        );
-      }
-    );
+  it("blocks amount mutation with the stable action hash code", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const approved = createAction(evidence.subject, "5000000");
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, approved.id, now);
+    const permit = mintPermit(mandate, approved, evidence, decision, SECRET, { now });
+    const tampered = createAction(evidence.subject, "15000000");
 
-    it(
-      "mints and verifies an exact-action permit for ALLOW",
-      () => {
-        const evidence =
-          latestEvidence();
+    expect(
+      verifyPermit(mandate, permit, tampered, evidence, decision, SECRET, {
+        now: new Date(now.getTime() + 1000)
+      }).code
+    ).toBe("action_hash_mismatch");
+  });
 
-        const now =
-          new Date(
-            "2026-09-01T18:30:00.000Z"
-          );
+  it("rejects an expired permit", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, action.id, now);
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, {
+      now,
+      ttlSeconds: 30
+    });
 
-        const action =
-          createAction(
-            evidence.subject
-          );
+    expect(
+      verifyPermit(mandate, permit, action, evidence, decision, SECRET, {
+        now: new Date(now.getTime() + 31_000)
+      }).code
+    ).toBe("permit_expired");
+  });
 
-        const decision =
-          unitAllowDecision(
-            action.id,
-            now
-          );
+  it("detects evidence or decision mutation", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, action.id, now);
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, { now });
+    const changedEvidence = { ...evidence, signalHash: "0x" + "f".repeat(64) };
 
-        const permit =
-          mintPermit(
-            action,
-            evidence,
-            decision,
-            SECRET,
-            {
-              now,
-              ttlSeconds: 30
-            }
-          );
+    expect(
+      verifyPermit(mandate, permit, action, changedEvidence, decision, SECRET, {
+        now: new Date(now.getTime() + 1000)
+      }).code
+    ).toBe("decision_hash_mismatch");
+  });
 
-        const result =
-          verifyPermit(
-            permit,
-            action,
-            evidence,
-            decision,
-            SECRET,
-            {
-              now:
-                new Date(
-                  now.getTime() +
-                    5000
-                )
-            }
-          );
+  it("rejects a mandate object whose authority fields were mutated after hashing", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, action.id, now);
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, { now });
+    const tamperedMandate = {
+      ...mandate,
+      allowedDestinations: [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    };
 
-        expect(
-          result
-        ).toEqual({
-          valid: true,
-          code:
-            "permit_valid"
-        });
+    expect(
+      verifyPermit(
+        tamperedMandate,
+        permit,
+        action,
+        evidence,
+        decision,
+        SECRET,
+        { now: new Date(now.getTime() + 1000) }
+      ).code
+    ).toBe("mandate_integrity_violation");
+  });
 
-        expect(
-          permit.payload.actionHash
-        ).toBe(
-          action.actionHash
-        );
-      }
-    );
+  it("rejects a different mandate even when the permit signature is valid", () => {
+    const evidence = latestEvidence();
+    const now = new Date("2026-09-01T18:30:00.000Z");
+    const action = createAction(evidence.subject);
+    const mandate = createMandate(evidence.subject);
+    const decision = unitAllowDecision(mandate, action.id, now);
+    const permit = mintPermit(mandate, action, evidence, decision, SECRET, { now });
+    const otherMandate = createMandate(evidence.subject, { version: 2 });
 
-    it(
-      "blocks amount mutation",
-      () => {
-        const evidence =
-          latestEvidence();
-
-        const now =
-          new Date(
-            "2026-09-01T18:30:00.000Z"
-          );
-
-        const approved =
-          createAction(
-            evidence.subject,
-            "5000000"
-          );
-
-        const decision =
-          unitAllowDecision(
-            approved.id,
-            now
-          );
-
-        const permit =
-          mintPermit(
-            approved,
-            evidence,
-            decision,
-            SECRET,
-            { now }
-          );
-
-        const tampered =
-          createAction(
-            evidence.subject,
-            "15000000"
-          );
-
-        const result =
-          verifyPermit(
-            permit,
-            tampered,
-            evidence,
-            decision,
-            SECRET,
-            {
-              now:
-                new Date(
-                  now.getTime() +
-                    1000
-                )
-            }
-          );
-
-        expect(
-          result.code
-        ).toBe(
-          "action_hash_mismatch"
-        );
-      }
-    );
-
-    it(
-      "rejects an expired permit",
-      () => {
-        const evidence =
-          latestEvidence();
-
-        const now =
-          new Date(
-            "2026-09-01T18:30:00.000Z"
-          );
-
-        const action =
-          createAction(
-            evidence.subject
-          );
-
-        const decision =
-          unitAllowDecision(
-            action.id,
-            now
-          );
-
-        const permit =
-          mintPermit(
-            action,
-            evidence,
-            decision,
-            SECRET,
-            {
-              now,
-              ttlSeconds: 30
-            }
-          );
-
-        const result =
-          verifyPermit(
-            permit,
-            action,
-            evidence,
-            decision,
-            SECRET,
-            {
-              now:
-                new Date(
-                  now.getTime() +
-                    31_000
-                )
-            }
-          );
-
-        expect(
-          result.code
-        ).toBe(
-          "permit_expired"
-        );
-      }
-    );
-
-    it(
-      "detects evidence or decision mutation",
-      () => {
-        const evidence =
-          latestEvidence();
-
-        const now =
-          new Date(
-            "2026-09-01T18:30:00.000Z"
-          );
-
-        const action =
-          createAction(
-            evidence.subject
-          );
-
-        const decision =
-          unitAllowDecision(
-            action.id,
-            now
-          );
-
-        const permit =
-          mintPermit(
-            action,
-            evidence,
-            decision,
-            SECRET,
-            { now }
-          );
-
-        const changedEvidence = {
-          ...evidence,
-          signalHash:
-            "0x" +
-            "f".repeat(64)
-        };
-
-        const result =
-          verifyPermit(
-            permit,
-            action,
-            changedEvidence,
-            decision,
-            SECRET,
-            {
-              now:
-                new Date(
-                  now.getTime() +
-                    1000
-                )
-            }
-          );
-
-        expect(
-          result.code
-        ).toBe(
-          "decision_hash_mismatch"
-        );
-      }
-    );
-  }
-);
+    expect(
+      verifyPermit(otherMandate, permit, action, evidence, decision, SECRET, {
+        now: new Date(now.getTime() + 1000)
+      }).code
+    ).toBe("mandate_hash_mismatch");
+  });
+});

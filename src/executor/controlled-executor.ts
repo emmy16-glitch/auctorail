@@ -1,24 +1,13 @@
-import type {
-  ActionContract
-} from "../core/action-contract.js";
-
-import type {
-  TelegraphEvidenceRecord
-} from "../evidence/telegraph.js";
-
-import type {
-  DecisionRecord
-} from "../policy/payments-strict-v1.js";
-
+import type { ActionContract } from "../core/action-contract.js";
+import type { MandateContract } from "../core/mandate-contract.js";
+import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
+import type { DecisionRecord } from "../policy/payments-strict-v1.js";
 import {
   type Permit,
   type PermitVerificationCode,
   verifyPermit
 } from "../permit/permit.js";
-
-import type {
-  PermitConsumptionStore
-} from "./permit-store.js";
+import type { PermitConsumptionStore } from "./permit-store.js";
 
 export type ExecutorCode =
   | "executed"
@@ -28,15 +17,8 @@ export type ExecutorCode =
   | PermitVerificationCode;
 
 export interface ExecutorResult<T> {
-  status:
-    | "EXECUTED"
-    | "BLOCKED"
-    | "FAILED"
-    | "AMBIGUOUS";
-
-  code:
-    ExecutorCode;
-
+  status: "EXECUTED" | "BLOCKED" | "FAILED" | "AMBIGUOUS";
+  code: ExecutorCode;
   result?: T;
   consumedAt?: string;
   error?: string;
@@ -53,15 +35,14 @@ export class AmbiguousExecutionError extends Error {
 }
 
 export interface ExecuteProtectedInput<T> {
+  mandate: MandateContract;
   permit: Permit;
   action: ActionContract;
   evidence: TelegraphEvidenceRecord;
   decision: DecisionRecord;
   secret: string;
   store: PermitConsumptionStore;
-  execute: (
-    action: ActionContract
-  ) => Promise<T>;
+  execute: (action: ActionContract) => Promise<T>;
   now?: Date;
 }
 
@@ -70,8 +51,8 @@ export async function executeProtectedAction<T>(
 ): Promise<ExecutorResult<T>> {
   const now = input.now ?? new Date();
 
-  // Authorization is independently re-verified at the execution boundary.
   const verification = verifyPermit(
+    input.mandate,
     input.permit,
     input.action,
     input.evidence,
@@ -87,7 +68,6 @@ export async function executeProtectedAction<T>(
     };
   }
 
-  // Claim the permit atomically before the irreversible operation.
   const consumption = input.store.consume(
     input.permit.payload.permitId,
     input.permit.payload.nonce,
@@ -111,10 +91,6 @@ export async function executeProtectedAction<T>(
       consumedAt: now.toISOString()
     };
   } catch (error: unknown) {
-    // The permit intentionally stays consumed in every failure mode.
-    // A caller that has broadcast an irreversible write but cannot confirm
-    // its outcome MUST raise AmbiguousExecutionError. That state is never
-    // collapsed into FAILED and must be reconciled before any replacement.
     if (error instanceof AmbiguousExecutionError) {
       return {
         status: "AMBIGUOUS",
