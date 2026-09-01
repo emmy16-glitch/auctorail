@@ -37,7 +37,7 @@ function baseAction() {
 
     policyId:
       "payments.strict.v1" as const
-  };
+  } as const;
 }
 
 describe("ProofGate Action Contract", () => {
