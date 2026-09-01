@@ -18,6 +18,7 @@
     "vendor:deploy": "tsx scripts/deploy-vendor.ts",
     "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
     "execute:approved": "tsx scripts/execute-approved-payment.ts",
+    "attack:lab": "tsx scripts/attack-lab.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts"
   },
   "keywords": [],
