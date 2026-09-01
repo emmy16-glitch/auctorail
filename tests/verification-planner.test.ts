@@ -54,6 +54,8 @@ describe("Telegraph verification planner", () => {
     expect(plan.query).toContain("generic LLM-only speculation");
     expect(plan.query).toContain("schema-declared signal field");
     expect(plan.query).toContain("numeric confidence");
+    expect(plan.query).toContain("Base Sepolia testnet");
+    expect(plan.query).toContain("Do not substitute Base mainnet");
   });
 
   it("requires explicit evidence bindings and a Telegraph signal hash", () => {

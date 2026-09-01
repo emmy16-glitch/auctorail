@@ -33,6 +33,7 @@ export function createPaymentVerificationPlan(
     "Assess the proposed payment destination before autonomous execution.",
     `Exact EVM subject: ${subject}.`,
     `Exact chainId: ${chainId}.`,
+    "Network: Base Sepolia testnet. Do not substitute Base mainnet for Base Sepolia chainId 84532.",
     "Return verifiable fraud/risk intelligence that is explicitly bound to this exact subject and chain.",
     "Prefer live on-chain measurements over generic LLM-only speculation when a capable Miner is available.",
     "Explicitly repeat the exact subject address and exact chainId in structured output or in a schema-declared signal field so the evidence can be machine-bound without relying on request metadata.",

@@ -43,6 +43,9 @@ import {
   type TelegraphVerificationPlan
 } from "../src/telegraph/verification-planner.js";
 import {
+  buildTelegraphEngineAskBody
+} from "../src/telegraph/engine-ask.js";
+import {
   adaptBoundMinerResultForPolicy,
   proofExitCode,
   resolveServingMiner,
@@ -150,6 +153,12 @@ console.log("Mandate hash:", mandate.mandateHash);
 console.log("Action hash:", action.actionHash);
 console.log("Action: 1 USDC →", action.payload.destination);
 console.log("Required Intent:", verificationPlan.requiredIntent);
+if (requestPlan.routeMode === "AUTO_ROUTE") {
+  console.log(
+    "Engine context:",
+    "exact address + chainId supplied as routing/request context only"
+  );
+}
 console.log(
   "Telegraph route:",
   requestPlan.routeMode === "AUTO_ROUTE"
@@ -526,7 +535,7 @@ function buildRequestPlan(input: {
     return {
       routeMode: "AUTO_ROUTE",
       url: `${input.engine}/v1/ask`,
-      requestBody: { query: input.verificationPlan.query },
+      requestBody: buildTelegraphEngineAskBody(input.verificationPlan),
       requestEndpoint: "/v1/ask",
       requestedMiner: null,
       verificationPlan: input.verificationPlan
