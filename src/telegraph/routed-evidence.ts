@@ -253,6 +253,53 @@ function validateTextBinding(input: {
   };
 }
 
+function findDeclaredTextChainBinding(
+  result: Record<string, unknown>,
+  miner: TelegraphMinerRecord | null,
+  expectedChainId: number
+):
+  | { valid: true; chainField: string }
+  | { valid: false; code: EvidenceBindingFailureCode; detail: string }
+  | null {
+  for (const candidate of declaredTextFields(result, miner)) {
+    const chainIds = explicitChainIdsInText(candidate.text);
+
+    if (chainIds.length === 0) continue;
+
+    if (!chainIds.includes(expectedChainId)) {
+      return {
+        valid: false,
+        code: "evidence_chain_mismatch",
+        detail:
+          `Schema-declared text field ${candidate.field} explicitly named ` +
+          `chain IDs ${chainIds.join(", ")}, not ${expectedChainId}.`
+      };
+    }
+
+    const conflicting = chainIds.filter(
+      (chainId) => chainId !== expectedChainId
+    );
+
+    if (conflicting.length > 0) {
+      return {
+        valid: false,
+        code: "evidence_chain_mismatch",
+        detail:
+          `Schema-declared text field ${candidate.field} named exact chainId ` +
+          `${expectedChainId} but also conflicting chain IDs ` +
+          `(${conflicting.join(", ")}).`
+      };
+    }
+
+    return {
+      valid: true,
+      chainField: `${candidate.field}:text`
+    };
+  }
+
+  return null;
+}
+
 export function resolveServingMiner(
   body: Record<string, unknown>,
   requestedMiner: TelegraphMinerRecord | null,
@@ -322,6 +369,7 @@ export function validateExplicitEvidenceBinding(input: {
     "address",
     "target",
     "destination",
+    "wallet",
     "wallet_address",
     "entity_address"
   ] as const;
@@ -353,7 +401,35 @@ export function validateExplicitEvidenceBinding(input: {
       input.expectedChainId
     );
 
-    if (!chain.valid) return chain;
+    if (!chain.valid) {
+      // A Miner may expose the wallet/address as a structured field while
+      // stating the exact chain only in a schema-declared answer/reason field.
+      // That is acceptable only when the structured chain was absent. An
+      // explicit structured mismatch (for example "base") remains fatal.
+      if (chain.code === "evidence_chain_not_asserted") {
+        const textChain = findDeclaredTextChainBinding(
+          input.result,
+          input.miner,
+          input.expectedChainId
+        );
+
+        if (textChain?.valid) {
+          return {
+            valid: true,
+            subject: value.toLowerCase(),
+            chainId: input.expectedChainId,
+            subjectField: field,
+            chainField: textChain.chainField
+          };
+        }
+
+        if (textChain && !textChain.valid) {
+          return textChain;
+        }
+      }
+
+      return chain;
+    }
 
     return {
       valid: true,
@@ -435,12 +511,30 @@ function findStructuredChainBinding(
   };
 }
 
+function mappedValue(
+  result: Record<string, unknown>,
+  field: string | undefined
+): unknown {
+  if (!field) return undefined;
+
+  const parts = field.split(".").filter(Boolean);
+  let value: unknown = result;
+
+  for (const part of parts) {
+    if (!isObject(value) || !(part in value)) {
+      return undefined;
+    }
+    value = value[part];
+  }
+
+  return value;
+}
+
 function mappedString(
   result: Record<string, unknown>,
   field: string | undefined
 ): string | null {
-  if (!field) return null;
-  const value = result[field];
+  const value = mappedValue(result, field);
   return typeof value === "string" && value.trim() ? value : null;
 }
 
@@ -448,8 +542,7 @@ function mappedConfidence(
   result: Record<string, unknown>,
   field: string | undefined
 ): number | null {
-  if (!field) return null;
-  const value = result[field];
+  const value = mappedValue(result, field);
 
   return typeof value === "number" &&
     Number.isFinite(value) &&
@@ -457,6 +550,53 @@ function mappedConfidence(
     value <= 1
     ? value
     : null;
+}
+
+function deriveStructuredRiskApplicability(input: {
+  result: Record<string, unknown>;
+  mappedLabel: string | null;
+  mappedConfidence: number | null;
+}): "APPLICABLE" | "NOT_APPLICABLE" | "UNKNOWN" | null {
+  const statusCandidates = [
+    input.result.assessment_status,
+    input.result.status,
+    input.result.coverage
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  if (
+    statusCandidates.some((value) =>
+      /out[_ -]?of[_ -]?coverage|not[_ -]?applicable|unsupported|unavailable/.test(value)
+    )
+  ) {
+    return "NOT_APPLICABLE";
+  }
+
+  if (input.result.coverage_complete === false) {
+    return "UNKNOWN";
+  }
+
+  const riskScore = input.result.risk_score;
+
+  if (
+    typeof riskScore === "number" &&
+    Number.isFinite(riskScore) &&
+    riskScore >= 0 &&
+    riskScore <= 1 &&
+    input.mappedLabel &&
+    input.mappedConfidence !== null
+  ) {
+    // The result is already exact-subject/exact-chain bound before this helper
+    // runs. A bounded structured risk score + registered label + registered
+    // confidence is therefore sufficient to establish that the fraud-risk
+    // assessment applies to this exact target. This does NOT create ALLOW:
+    // policy still independently checks label, confidence, signal hash,
+    // freshness, mandate, amount, chain, asset, and destination.
+    return "APPLICABLE";
+  }
+
+  return null;
 }
 
 export function canonicalizeBoundMinerResult(
@@ -489,6 +629,13 @@ export function adaptBoundMinerResultForPolicy(
   const mappedConfidenceValue =
     mappedConfidence(result, mapping?.confidence_field);
 
+  const structuredApplicability =
+    deriveStructuredRiskApplicability({
+      result,
+      mappedLabel,
+      mappedConfidence: mappedConfidenceValue
+    });
+
   return {
     ...canonical,
     ...(
@@ -507,6 +654,12 @@ export function adaptBoundMinerResultForPolicy(
       typeof canonical.confidence !== "number" &&
       mappedConfidenceValue !== null
         ? { confidence: mappedConfidenceValue }
+        : {}
+    ),
+    ...(
+      typeof canonical.applicability !== "string" &&
+      structuredApplicability
+        ? { applicability: structuredApplicability }
         : {}
     )
   };

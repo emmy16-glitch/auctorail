@@ -64,6 +64,8 @@ describe(
             verificationPlan.query,
           address:
             verificationPlan.subject,
+          wallet:
+            verificationPlan.subject,
           chainId:
             verificationPlan.chainId
         });

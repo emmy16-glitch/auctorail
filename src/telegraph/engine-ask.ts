@@ -5,6 +5,7 @@ import type {
 export interface TelegraphEngineAskContext {
   query: string;
   address: string;
+  wallet: string;
   chainId: number;
 }
 
@@ -28,6 +29,7 @@ export function buildTelegraphEngineAskBody(
       // result before evidence can be normalized or authorize anything.
       query: plan.query,
       address: plan.subject,
+      wallet: plan.subject,
       chainId: plan.chainId
     }
   };

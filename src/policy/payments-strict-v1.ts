@@ -261,7 +261,7 @@ export function evaluatePaymentsStrictV1(
       check(
         "evidence_applicability",
         "HOLD",
-        "Miner completed the request but its contract-control evidence is not sufficiently applicable to this target."
+        "Miner completed the request, but ProofGate could not establish that the returned risk assessment is sufficiently applicable to this exact target."
       )
     );
   }

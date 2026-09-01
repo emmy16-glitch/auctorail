@@ -33,6 +33,9 @@ const SavedTelegraphEvidenceSchema = z.object({
         .optional(),
 
       reasoning: z.string().optional(),
+      applicability: z
+        .enum(["APPLICABLE", "NOT_APPLICABLE", "UNKNOWN"])
+        .optional(),
       subject: z.string(),
       verdict: z.string().optional(),
 
@@ -159,6 +162,9 @@ function hashRawResponse(
 }
 
 function determineApplicability(
+  explicit:
+    | EvidenceApplicability
+    | undefined,
   signals:
     | Array<{
         key: string;
@@ -166,6 +172,10 @@ function determineApplicability(
       }>
     | undefined
 ): EvidenceApplicability {
+  if (explicit) {
+    return explicit;
+  }
+
   if (!signals) {
     return "UNKNOWN";
   }
@@ -224,6 +234,7 @@ export function normalizeTelegraphEvidence(
 
     applicability:
       determineApplicability(
+        parsed.result.applicability,
         parsed.result.signals
       ),
 
