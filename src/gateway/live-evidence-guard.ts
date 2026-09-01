@@ -5,13 +5,18 @@ import {
 } from "../core/action-contract.js";
 import type { MandateContract } from "../core/mandate-contract.js";
 import { TELEGRAPH_X402_POLICY } from "../telegraph/x402-policy.js";
+import {
+  CONTRACT_CONTROL_MINER_SLUG,
+  CONTRACT_CONTROL_SELECTION_POLICY
+} from "../telegraph/capability-route.js";
 
 export type LiveEvidenceGuardCode =
   | "live_evidence_valid"
   | "live_evidence_malformed"
   | "live_evidence_source_mismatch"
   | "live_evidence_intent_mismatch"
-  | "live_evidence_route_not_auto"
+  | "live_evidence_route_unapproved"
+  | "live_evidence_capability_route_invalid"
   | "live_evidence_action_hash_mismatch"
   | "live_evidence_mandate_hash_mismatch"
   | "live_evidence_target_mismatch"
@@ -93,11 +98,32 @@ export function validateLiveExecutionEvidenceEnvelope(
     );
   }
 
-  if (request.routeMode !== "AUTO_ROUTE") {
+  if (
+    request.routeMode !== "AUTO_ROUTE" &&
+    request.routeMode !== "CAPABILITY_ROUTE"
+  ) {
     return fail(
-      "live_evidence_route_not_auto",
-      "Direct Miner diagnostics cannot authorize the flagship live execution path."
+      "live_evidence_route_unapproved",
+      "Only AUTO_ROUTE or a ProofGate capability-selected Telegraph route may authorize live execution."
     );
+  }
+
+  if (request.routeMode === "CAPABILITY_ROUTE") {
+    const miner = raw.miner;
+
+    if (
+      request.selectionPolicy !==
+        CONTRACT_CONTROL_SELECTION_POLICY ||
+      request.endpoint !== "/assess" ||
+      !isObject(miner) ||
+      miner.slug !==
+        CONTRACT_CONTROL_MINER_SLUG
+    ) {
+      return fail(
+        "live_evidence_capability_route_invalid",
+        "Capability-routed evidence does not match ProofGate's locked contract-control selection policy."
+      );
+    }
   }
 
   if (request.actionHash !== action.actionHash) {

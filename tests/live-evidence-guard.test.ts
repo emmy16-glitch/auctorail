@@ -15,6 +15,9 @@ import {
 import {
   validateLiveExecutionEvidenceEnvelope
 } from "../src/gateway/live-evidence-guard.js";
+import {
+  CONTRACT_CONTROL_SELECTION_POLICY
+} from "../src/telegraph/capability-route.js";
 
 const VENDOR =
   "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
@@ -158,7 +161,89 @@ describe(
         expect(result).toMatchObject({
           valid: false,
           code:
-            "live_evidence_route_not_auto"
+            "live_evidence_route_unapproved"
+        });
+      }
+    );
+
+    it(
+      "accepts exact capability-selected Refut evidence with proven x402 settlement",
+      () => {
+        const {
+          mandate,
+          action,
+          raw
+        } = setup();
+
+        const capabilityRaw = {
+          ...raw,
+          miner: {
+            id: "95822412",
+            name: "Refut On-Chain Risk",
+            slug: "refut-onchain-risk"
+          },
+          request: {
+            ...raw.request,
+            routeMode:
+              "CAPABILITY_ROUTE",
+            endpoint:
+              "/assess",
+            selectionPolicy:
+              CONTRACT_CONTROL_SELECTION_POLICY
+          }
+        };
+
+        expect(
+          validateLiveExecutionEvidenceEnvelope(
+            capabilityRaw,
+            mandate,
+            action
+          )
+        ).toEqual({
+          valid: true,
+          code:
+            "live_evidence_valid"
+        });
+      }
+    );
+
+    it(
+      "rejects forged capability-route provenance",
+      () => {
+        const {
+          mandate,
+          action,
+          raw
+        } = setup();
+
+        const forged = {
+          ...raw,
+          miner: {
+            id: "302",
+            name: "ChainSight",
+            slug: "chainsight-oracle"
+          },
+          request: {
+            ...raw.request,
+            routeMode:
+              "CAPABILITY_ROUTE",
+            endpoint:
+              "/assess",
+            selectionPolicy:
+              CONTRACT_CONTROL_SELECTION_POLICY
+          }
+        };
+
+        expect(
+          validateLiveExecutionEvidenceEnvelope(
+            forged,
+            mandate,
+            action
+          )
+        ).toMatchObject({
+          valid: false,
+          code:
+            "live_evidence_capability_route_invalid"
         });
       }
     );

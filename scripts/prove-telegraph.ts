@@ -46,6 +46,10 @@ import {
   buildTelegraphEngineAskBody
 } from "../src/telegraph/engine-ask.js";
 import {
+  CONTRACT_CONTROL_SELECTION_POLICY,
+  selectContractControlMiner
+} from "../src/telegraph/capability-route.js";
+import {
   adaptBoundMinerResultForPolicy,
   proofExitCode,
   resolveServingMiner,
@@ -56,7 +60,10 @@ import {
 
 type MinerRecord = TelegraphMinerRecord;
 
-type RouteMode = "AUTO_ROUTE" | "DIRECT_REFUT_DIAGNOSTIC";
+type RouteMode =
+  | "AUTO_ROUTE"
+  | "CAPABILITY_ROUTE"
+  | "DIRECT_REFUT_DIAGNOSTIC";
 
 interface TelegraphRequestPlan {
   routeMode: RouteMode;
@@ -64,6 +71,7 @@ interface TelegraphRequestPlan {
   requestBody: Record<string, unknown>;
   requestEndpoint: string;
   requestedMiner: MinerRecord | null;
+  selectionPolicy: string | null;
   verificationPlan: TelegraphVerificationPlan;
 }
 
@@ -74,7 +82,16 @@ const PRIVATE_KEY = process.env.TELEGRAPH_EVM_PRIVATE_KEY as
   | `0x${string}`
   | undefined;
 const TARGET = process.argv[2];
-const DIRECT_REFUT = process.argv.includes("--direct-refut");
+const DIRECT_REFUT =
+  process.argv.includes("--direct-refut");
+const CAPABILITY_ROUTE =
+  process.argv.includes("--capability-route");
+
+if (DIRECT_REFUT && CAPABILITY_ROUTE) {
+  throw new Error(
+    "Choose only one Telegraph route mode: --capability-route or --direct-refut."
+  );
+}
 
 if (!PRIVATE_KEY) {
   throw new Error("TELEGRAPH_EVM_PRIVATE_KEY is missing");
@@ -82,7 +99,7 @@ if (!PRIVATE_KEY) {
 
 if (!TARGET || !/^0x[0-9a-fA-F]{40}$/.test(TARGET)) {
   throw new Error(
-    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--direct-refut]"
+    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--capability-route|--direct-refut]"
   );
 }
 
@@ -121,6 +138,7 @@ const requestPlan = buildRequestPlan({
   engine,
   verificationPlan,
   miners,
+  capabilityRoute: CAPABILITY_ROUTE,
   directRefut: DIRECT_REFUT
 });
 
@@ -140,7 +158,8 @@ const operation = journal.create({
     requestedMinerId: requestPlan.requestedMiner
       ? String(requestPlan.requestedMiner.id)
       : null,
-    requestedMinerName: requestPlan.requestedMiner?.name ?? null
+    requestedMinerName: requestPlan.requestedMiner?.name ?? null,
+    selectionPolicy: requestPlan.selectionPolicy
   }
 });
 
@@ -163,7 +182,9 @@ console.log(
   "Telegraph route:",
   requestPlan.routeMode === "AUTO_ROUTE"
     ? "AUTO / ranked Engine routing"
-    : `DIRECT DIAGNOSTIC / ${requestPlan.requestedMiner?.name ?? "Refut"}`
+    : requestPlan.routeMode === "CAPABILITY_ROUTE"
+      ? `CAPABILITY / ${requestPlan.requestedMiner?.name ?? "selected Miner"} / ${requestPlan.selectionPolicy}`
+      : `DIRECT DIAGNOSTIC / ${requestPlan.requestedMiner?.name ?? "Refut"}`
 );
 console.log("x402 payer:", account.address);
 console.log("");
@@ -529,43 +550,90 @@ function buildRequestPlan(input: {
   engine: string;
   verificationPlan: TelegraphVerificationPlan;
   miners: MinerRecord[];
+  capabilityRoute: boolean;
   directRefut: boolean;
 }): TelegraphRequestPlan {
+  if (input.capabilityRoute) {
+    const selection =
+      selectContractControlMiner(input.miners);
+
+    if (!selection.selected) {
+      throw new Error(selection.code);
+    }
+
+    return {
+      routeMode: "CAPABILITY_ROUTE",
+      url:
+        `${input.engine}/v1/ask/${selection.miner.id}`,
+      requestBody: {
+        method: "POST",
+        endpoint: "/assess",
+        payload: {
+          address:
+            input.verificationPlan.subject,
+          chainId:
+            input.verificationPlan.chainId
+        }
+      },
+      requestEndpoint: "/assess",
+      requestedMiner: selection.miner,
+      selectionPolicy:
+        CONTRACT_CONTROL_SELECTION_POLICY,
+      verificationPlan:
+        input.verificationPlan
+    };
+  }
+
   if (!input.directRefut) {
     return {
       routeMode: "AUTO_ROUTE",
       url: `${input.engine}/v1/ask`,
-      requestBody: buildTelegraphEngineAskBody(input.verificationPlan),
+      requestBody:
+        buildTelegraphEngineAskBody(
+          input.verificationPlan
+        ),
       requestEndpoint: "/v1/ask",
       requestedMiner: null,
-      verificationPlan: input.verificationPlan
+      selectionPolicy: null,
+      verificationPlan:
+        input.verificationPlan
     };
   }
 
   const refut = input.miners.find(
     (candidate) =>
-      candidate.slug === "refut-onchain-risk" &&
-      candidate.activation_status === "active"
+      candidate.slug ===
+        "refut-onchain-risk" &&
+      candidate.activation_status ===
+        "active"
   );
 
   if (!refut) {
-    throw new Error("direct_refut_miner_unavailable");
+    throw new Error(
+      "direct_refut_miner_unavailable"
+    );
   }
 
   return {
-    routeMode: "DIRECT_REFUT_DIAGNOSTIC",
-    url: `${input.engine}/v1/ask/${refut.id}`,
+    routeMode:
+      "DIRECT_REFUT_DIAGNOSTIC",
+    url:
+      `${input.engine}/v1/ask/${refut.id}`,
     requestBody: {
       method: "POST",
       endpoint: "/assess",
       payload: {
-        address: input.verificationPlan.subject,
-        chainId: input.verificationPlan.chainId
+        address:
+          input.verificationPlan.subject,
+        chainId:
+          input.verificationPlan.chainId
       }
     },
     requestEndpoint: "/assess",
     requestedMiner: refut,
-    verificationPlan: input.verificationPlan
+    selectionPolicy: null,
+    verificationPlan:
+      input.verificationPlan
   };
 }
 
@@ -707,6 +775,8 @@ async function completeSuccessfulProof(input: {
       routeMode: input.requestPlan.routeMode,
       actionHash: input.action.actionHash,
       mandateHash: input.mandate.mandateHash,
+      selectionPolicy:
+        input.requestPlan.selectionPolicy,
       query:
         input.requestPlan.routeMode === "AUTO_ROUTE"
           ? input.requestPlan.verificationPlan.query

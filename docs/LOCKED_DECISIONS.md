@@ -173,19 +173,47 @@ ProofGate does not invent aggregate safety percentages.
 
 ## Telegraph Routing
 
-The polished final application path must request Telegraph through its routed
-Engine endpoint. ProofGate expresses the required capability/Intent and lets
-Telegraph's ranking/routing layer select an eligible live Miner.
+ProofGate prefers Telegraph AUTO_ROUTE for ordinary proof acquisition. The
+required capability/Intent is expressed to Telegraph and the actual serving
+Miner is recorded in the Proof Receipt.
 
 For the flagship payment flow the required Intent is currently:
 
 FRAUD_DETECTION
 
-The final Proof Receipt records which Miner actually served the request.
+However, ProofGate is an authorization system, so the evidence provider must be
+capable of satisfying the locked evidence contract. A real protocol constraint
+was observed on 2026-09-01: repeated paid AUTO_ROUTE calls selected the same
+ChainSight Miner even after exact address, wallet, chainId, and Base Sepolia
+context were supplied. ChainSight returned explicit subject/chain-bound negative
+risk intelligence, but its registered response semantics did not supply the
+numeric confidence/applicability shape required by payments.strict.v1.
 
-Direct Miner calls such as a hard-coded Refut route are allowed only as
-bring-up, diagnostics, and protocol-debug tooling. They are not the final
-flagship application architecture.
+Therefore v1 permits a second final route mode:
+
+CAPABILITY_ROUTE
+
+CAPABILITY_ROUTE is not arbitrary manual Miner selection. ProofGate applies a
+deterministic local provider-selection policy to the live Telegraph registry,
+then calls Telegraph's official direct Engine Miner endpoint. For the deployed
+vendor contract, the locked v1 selection policy is:
+
+proofgate.contract-control.v1
+
+It selects the active Refut On-Chain Risk Miner because that capability accepts
+the exact EVM address plus numeric chainId and returns contract-control risk
+evidence suitable for the vendor-contract action. The direct request still goes
+through Telegraph, still uses x402, still records the real serving Miner, still
+requires real signalHash, and still passes through the exact same deterministic
+ProofGate policy.
+
+The security rule is:
+
+Proof requirements may constrain provider selection.
+Provider selection may never relax proof requirements.
+
+Manually forced direct Miner calls remain diagnostics only and cannot authorize
+live execution.
 
 No fake or simulated Miner data may be used in the final demo.
 
