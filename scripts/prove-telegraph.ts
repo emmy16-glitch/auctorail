@@ -10,7 +10,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC,
+  canonicalize,
   createActionContract,
+  hashCanonicalPayload,
   type ActionContract
 } from "../src/core/action-contract.js";
 import {
@@ -40,13 +42,16 @@ import {
   createPaymentVerificationPlan,
   type TelegraphVerificationPlan
 } from "../src/telegraph/verification-planner.js";
+import {
+  canonicalizeBoundMinerResult,
+  proofExitCode,
+  resolveServingMiner,
+  validateExplicitEvidenceBinding,
+  type ServingMinerIdentity,
+  type TelegraphMinerRecord
+} from "../src/telegraph/routed-evidence.js";
 
-interface MinerRecord {
-  id: string | number;
-  name: string;
-  slug: string;
-  activation_status: string;
-}
+type MinerRecord = TelegraphMinerRecord;
 
 type RouteMode = "AUTO_ROUTE" | "DIRECT_REFUT_DIAGNOSTIC";
 
@@ -226,7 +231,7 @@ if (preflight.ok) {
     paymentLane: null,
     settlement: null
   });
-  process.exit(0);
+  process.exit(Number(process.exitCode ?? 0));
 }
 
 if (preflight.status !== 402) {
@@ -373,6 +378,55 @@ const paymentResponse =
   response.headers.get("x-payment-response") ??
   null;
 const settlement = classifyPaymentResponseHeader(paymentResponse);
+
+if (response.ok && !settlement.success) {
+  const detail =
+    settlement.errorReason ??
+    `Telegraph returned HTTP ${response.status}, but ProofGate could not prove x402 settlement (${settlement.code}).`;
+
+  const rawBody = await readResponseBody(response.clone());
+  const quarantinePath = saveQuarantinedEvidence(
+    {
+      mandate,
+      action,
+      operationId: operation.operationId,
+      requestPlan,
+      paymentLane: lane,
+      settlement
+    },
+    rawBody,
+    "payment_settlement_unproven",
+    detail,
+    null
+  );
+
+  journal.update(operation.operationId, {
+    state: "HOLD",
+    metadata: {
+      reason: "payment_settlement_unproven",
+      httpStatus: response.status,
+      settlement,
+      quarantinePath,
+      automaticRetry: false
+    }
+  });
+
+  console.log("PROOFGATE: HOLD");
+  console.log("Reason: payment_settlement_unproven");
+  console.log("Settlement:", settlement.code);
+  console.log("Quarantined response:", quarantinePath);
+  console.log("Automatic retry: NO");
+
+  await finishWithoutEvidence(
+    mandate,
+    DEMO_AGENT_ID,
+    action,
+    "payment_settlement_unproven",
+    detail,
+    operation.operationId
+  );
+  process.exit(2);
+}
 
 if (!response.ok) {
   if (
@@ -529,34 +583,19 @@ async function completeSuccessfulProof(input: {
   }
 
   if (!isObject(body.result)) {
+    const quarantinePath = saveQuarantinedEvidence(
+      input,
+      body,
+      "miner_result_missing",
+      "Telegraph returned HTTP 200 without a usable Miner result.",
+      null
+    );
+    console.log("Quarantined Telegraph response:", quarantinePath);
+
     await holdInvalidEvidence(
       input,
       "miner_result_missing",
       "Telegraph returned HTTP 200 without a usable Miner result."
-    );
-    return;
-  }
-
-  if (
-    typeof body.result.subject !== "string" ||
-    body.result.subject.toLowerCase() !== input.action.payload.destination.toLowerCase()
-  ) {
-    await holdInvalidEvidence(
-      input,
-      "evidence_subject_not_asserted",
-      "The routed Miner result did not explicitly bind its result to the exact payment destination."
-    );
-    return;
-  }
-
-  if (
-    typeof body.result.chainId !== "number" ||
-    body.result.chainId !== input.action.payload.chainId
-  ) {
-    await holdInvalidEvidence(
-      input,
-      "evidence_chain_not_asserted",
-      "The routed Miner result did not explicitly bind its result to the Action Contract chain."
     );
     return;
   }
@@ -568,6 +607,15 @@ async function completeSuccessfulProof(input: {
   );
 
   if (!servingMiner) {
+    const quarantinePath = saveQuarantinedEvidence(
+      input,
+      body,
+      "serving_miner_identity_missing",
+      "Telegraph returned evidence without enough Miner identity to record provenance.",
+      null
+    );
+    console.log("Quarantined Telegraph response:", quarantinePath);
+
     await holdInvalidEvidence(
       input,
       "serving_miner_identity_missing",
@@ -576,16 +624,58 @@ async function completeSuccessfulProof(input: {
     return;
   }
 
+  const binding = validateExplicitEvidenceBinding({
+    result: body.result,
+    miner: servingMiner.record,
+    expectedSubject: input.action.payload.destination,
+    expectedChainId: input.action.payload.chainId
+  });
+
+  if (!binding.valid) {
+    const quarantinePath = saveQuarantinedEvidence(
+      input,
+      body,
+      binding.code,
+      binding.detail,
+      servingMiner
+    );
+    console.log("Quarantined Telegraph response:", quarantinePath);
+
+    await holdInvalidEvidence(
+      input,
+      binding.code,
+      binding.detail
+    );
+    return;
+  }
+
+  const canonicalResult = canonicalizeBoundMinerResult(
+    body.result,
+    binding
+  );
+
   const returnedIntent =
     typeof body.intent === "string"
       ? body.intent
       : input.requestPlan.verificationPlan.requiredIntent;
 
   if (returnedIntent !== input.requestPlan.verificationPlan.requiredIntent) {
+    const detail =
+      `Telegraph returned intent ${returnedIntent}, but ProofGate required ${input.requestPlan.verificationPlan.requiredIntent}.`;
+
+    const quarantinePath = saveQuarantinedEvidence(
+      input,
+      body,
+      "routed_intent_mismatch",
+      detail,
+      servingMiner
+    );
+    console.log("Quarantined Telegraph response:", quarantinePath);
+
     await holdInvalidEvidence(
       input,
       "routed_intent_mismatch",
-      `Telegraph returned intent ${returnedIntent}, but ProofGate required ${input.requestPlan.verificationPlan.requiredIntent}.`
+      detail
     );
     return;
   }
@@ -595,7 +685,11 @@ async function completeSuccessfulProof(input: {
     schemaVersion: "proofgate.telegraph-evidence.v1",
     source: "telegraph" as const,
     intent: returnedIntent,
-    miner: servingMiner,
+    miner: {
+      id: servingMiner.id,
+      name: servingMiner.name,
+      slug: servingMiner.slug
+    },
     request: {
       endpoint: input.requestPlan.requestEndpoint,
       target: input.action.payload.destination,
@@ -608,12 +702,16 @@ async function completeSuccessfulProof(input: {
           ? input.requestPlan.verificationPlan.query
           : null
     },
-    result: body.result,
+    result: canonicalResult,
     telegraph: {
       signalHash: typeof body.signal_hash === "string" ? body.signal_hash : null,
       costUsd: typeof body.cost_usd === "number" ? body.cost_usd : null,
       durationMs: typeof body.duration_ms === "number" ? body.duration_ms : null,
-      timestamp: typeof body.timestamp === "string" ? body.timestamp : null
+      timestamp: typeof body.timestamp === "string" ? body.timestamp : null,
+      binding: {
+        subjectField: binding.subjectField,
+        chainField: binding.chainField
+      }
     },
     payment: input.paymentLane
       ? {
@@ -703,6 +801,8 @@ async function completeSuccessfulProof(input: {
       `policy_${decision.decision.toLowerCase()}`,
       input.operationId
     );
+
+    process.exitCode = proofExitCode(decision.decision);
   }
 }
 
@@ -731,33 +831,98 @@ async function holdInvalidEvidence(
   );
 }
 
-function resolveServingMiner(
-  body: Record<string, unknown>,
-  requestedMiner: MinerRecord | null,
-  miners: MinerRecord[]
-): { id: string; name: string; slug: string } | null {
-  const id =
-    body.miner_id !== undefined && body.miner_id !== null
-      ? String(body.miner_id)
-      : requestedMiner
-        ? String(requestedMiner.id)
-        : null;
-  const byId = id
-    ? miners.find((candidate) => String(candidate.id) === id)
-    : null;
-  const name =
-    typeof body.miner_name === "string"
-      ? body.miner_name
-      : byId?.name ?? requestedMiner?.name ?? null;
-  const slug = byId?.slug ?? requestedMiner?.slug ?? null;
+interface QuarantineContext {
+  mandate: MandateContract;
+  action: ActionContract;
+  operationId: string;
+  requestPlan: TelegraphRequestPlan;
+  paymentLane: X402PaymentLane | null;
+  settlement: X402SettlementResult | null;
+}
 
-  if (!id || !name) return null;
+async function readResponseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
 
-  return {
-    id,
-    name,
-    slug: slug ?? `telegraph-miner-${id}`
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function saveQuarantinedEvidence(
+  input: QuarantineContext,
+  rawResponse: unknown,
+  reason: string,
+  detail: string,
+  servingMiner: ServingMinerIdentity | null
+): string {
+  const capturedAt = new Date().toISOString();
+  const directory = path.join("data", "evidence", "quarantine");
+  fs.mkdirSync(directory, { recursive: true });
+
+  const rawResponseHash = hashCanonicalPayload(
+    canonicalize(rawResponse)
+  );
+
+  const record = {
+    schemaVersion: "proofgate.telegraph-quarantine.v1",
+    reason,
+    detail,
+    operationId: input.operationId,
+    mandate: {
+      mandateId: input.mandate.mandateId,
+      mandateHash: input.mandate.mandateHash
+    },
+    action: {
+      actionId: input.action.id,
+      actionHash: input.action.actionHash,
+      subject: input.action.payload.destination,
+      chainId: input.action.payload.chainId
+    },
+    routing: {
+      routeMode: input.requestPlan.routeMode,
+      requiredIntent: input.requestPlan.verificationPlan.requiredIntent,
+      endpoint: input.requestPlan.requestEndpoint
+    },
+    servingMiner: servingMiner
+      ? {
+          id: servingMiner.id,
+          name: servingMiner.name,
+          slug: servingMiner.slug
+        }
+      : null,
+    payment: input.paymentLane
+      ? {
+          network: input.paymentLane.network,
+          asset: input.paymentLane.asset,
+          amountRaw: input.paymentLane.amount,
+          payTo: input.paymentLane.payTo,
+          settlement: input.settlement
+        }
+      : {
+          mode: "free",
+          settlement: input.settlement
+        },
+    rawResponseHash,
+    rawResponse,
+    capturedAt
   };
+
+  const file = path.join(
+    directory,
+    `telegraph-invalid-${capturedAt.replace(/[:.]/g, "-")}.json`
+  );
+
+  fs.writeFileSync(
+    file,
+    JSON.stringify(record, null, 2),
+    { mode: 0o600 }
+  );
+
+  return file;
 }
 
 async function finishWithoutEvidence(
@@ -789,6 +954,8 @@ async function finishWithoutEvidence(
     reason,
     operationId
   );
+
+  process.exitCode = proofExitCode(decision.decision);
 }
 
 function saveReceipt(

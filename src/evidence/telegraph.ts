@@ -25,7 +25,7 @@ const SavedTelegraphEvidenceSchema = z.object({
 
   result: z
     .object({
-      chainId: z.number().optional(),
+      chainId: z.number(),
       confidence: z
         .number()
         .min(0)
@@ -33,7 +33,7 @@ const SavedTelegraphEvidenceSchema = z.object({
         .optional(),
 
       reasoning: z.string().optional(),
-      subject: z.string().optional(),
+      subject: z.string(),
       verdict: z.string().optional(),
 
       signals: z
@@ -205,12 +205,10 @@ export function normalizeTelegraphEvidence(
     miner: parsed.miner,
 
     subject:
-      parsed.result.subject ??
-      parsed.request.target,
+      parsed.result.subject,
 
     chainId:
-      parsed.result.chainId ??
-      parsed.request.chainId,
+      parsed.result.chainId,
 
     label:
       parsed.result.verdict ??
