@@ -18,6 +18,13 @@
     "@x402/fetch": "^2.24.0",
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0",
-    "viem": "^2.56.1"
+    "viem": "^2.56.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
