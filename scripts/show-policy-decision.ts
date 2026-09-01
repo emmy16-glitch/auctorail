@@ -15,6 +15,21 @@ import {
   evaluatePaymentsStrictV1
 } from "../src/policy/payments-strict-v1.js";
 
+const TARGET =
+  process.argv[2];
+
+const explicitEvidence =
+  process.argv[3];
+
+if (
+  !TARGET ||
+  !/^0x[0-9a-fA-F]{40}$/.test(TARGET)
+) {
+  throw new Error(
+    "Usage: npx tsx scripts/show-policy-decision.ts <ACTION_TARGET> [EVIDENCE_FILE]"
+  );
+}
+
 const directory =
   path.join(
     process.cwd(),
@@ -22,29 +37,44 @@ const directory =
     "evidence"
   );
 
-const file =
-  fs.readdirSync(directory)
-    .filter(
-      (name) =>
-        name.endsWith(".json")
-    )
-    .sort()
-    .at(-1);
+let evidencePath;
 
-if (!file) {
-  throw new Error(
-    "No Telegraph evidence found."
-  );
+if (explicitEvidence) {
+  evidencePath =
+    path.resolve(
+      explicitEvidence
+    );
+} else {
+  const file =
+    fs.readdirSync(directory)
+      .filter(
+        (name) =>
+          name.endsWith(".json")
+      )
+      .sort()
+      .at(-1);
+
+  if (!file) {
+    throw new Error(
+      "No Telegraph evidence found."
+    );
+  }
+
+  evidencePath =
+    path.join(
+      directory,
+      file
+    );
 }
 
 const evidence =
   loadTelegraphEvidence(
-    path.join(
-      directory,
-      file
-    )
+    evidencePath
   );
 
+// IMPORTANT:
+// The action target comes from the proposed
+// Action Contract, NEVER from evidence.
 const action =
   createActionContract({
     type:
@@ -57,10 +87,10 @@ const action =
       BASE_SEPOLIA_USDC,
 
     amountRaw:
-      "5000000",
+      "1000000",
 
     destination:
-      evidence.subject,
+      TARGET,
 
     reason:
       "Invoice INV-1042",
@@ -72,39 +102,45 @@ const action =
 const decision =
   evaluatePaymentsStrictV1(
     action,
-    evidence,
-    {
-      now:
-        new Date(
-          new Date(
-            evidence.receivedAt
-          ).getTime() +
-            1000
-        )
-    }
+    evidence
   );
 
 console.log("");
 console.log(
-  "PROOFGATE POLICY DEMO"
+  "PROOFGATE POLICY DECISION"
 );
+
 console.log(
-  "====================="
+  "========================="
 );
 
 console.log("");
 console.log(
-  "Action:",
-  "5 USDC →",
+  "Action target:",
   action.payload.destination
 );
 
 console.log(
-  "Action fingerprint:",
+  "Amount:",
+  "1 USDC"
+);
+
+console.log(
+  "Action hash:",
   action.actionHash
 );
 
 console.log("");
+console.log(
+  "Evidence file:",
+  evidencePath
+);
+
+console.log(
+  "Evidence subject:",
+  evidence.subject
+);
+
 console.log(
   "Telegraph Miner:",
   evidence.miner.name

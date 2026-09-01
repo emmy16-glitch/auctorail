@@ -30,6 +30,16 @@ if (!miner) {
 
 const account = privateKeyToAccount(PRIVATE_KEY);
 
+const TARGET =
+  process.argv[2] ??
+  account.address;
+
+if (!/^0x[0-9a-fA-F]{40}$/.test(TARGET)) {
+  throw new Error(
+    "Usage: node scripts/test-telegraph-x402.mjs <EVM_ADDRESS>"
+  );
+}
+
 const signer = toClientEvmSigner(account);
 
 const client = x402Client.fromConfig({
@@ -53,7 +63,7 @@ const request = {
   method: "POST",
   endpoint: "/assess",
   payload: {
-    address: account.address,
+    address: TARGET,
     chainId: 84532
   }
 };
@@ -61,7 +71,8 @@ const request = {
 console.log("");
 console.log("ProofGate → Telegraph LIVE x402");
 console.log("--------------------------------");
-console.log("Wallet:", account.address);
+console.log("Payment wallet:", account.address);
+console.log("Assessment target:", TARGET);
 console.log("Miner:", miner.name);
 console.log("Miner ID:", miner.id);
 console.log("Intent: FRAUD_DETECTION");
@@ -126,7 +137,7 @@ const evidence = {
 
   request: {
     endpoint: "/assess",
-    target: account.address,
+    target: TARGET,
     chainId: 84532
   },
 
