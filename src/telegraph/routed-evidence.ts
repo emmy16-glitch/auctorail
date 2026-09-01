@@ -7,6 +7,11 @@ export interface TelegraphMinerRecord {
   output_schema?: {
     properties?: Record<string, unknown>;
   };
+  signal_mapping?: {
+    label_field?: string;
+    confidence_field?: string;
+    reason_field?: string;
+  };
 }
 
 export interface ServingMinerIdentity {
@@ -97,6 +102,155 @@ function parseExactChainId(value: unknown, expectedChainId: number): number | nu
   }
 
   return null;
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
+}
+
+function explicitAddressesInText(text: string): string[] {
+  return unique(
+    [...text.matchAll(/\b0x[0-9a-fA-F]{40}\b/g)]
+      .map((match) => match[0].toLowerCase())
+  );
+}
+
+function explicitChainIdsInText(text: string): number[] {
+  const ids: number[] = [];
+  const chainIdPattern = /\bchain\s*id\s*[:=#]?\s*(\d+)\b/gi;
+  const caipPattern = /\beip155:(\d+)\b/gi;
+
+  for (const match of text.matchAll(chainIdPattern)) {
+    const parsed = Number(match[1]);
+    if (Number.isSafeInteger(parsed)) ids.push(parsed);
+  }
+
+  for (const match of text.matchAll(caipPattern)) {
+    const parsed = Number(match[1]);
+    if (Number.isSafeInteger(parsed)) ids.push(parsed);
+  }
+
+  if (/\bbase[\s_-]+sepolia(?:[\s_-]+testnet)?\b/i.test(text)) {
+    ids.push(84532);
+  }
+
+  return unique(ids);
+}
+
+function declaredTextFields(
+  result: Record<string, unknown>,
+  miner: TelegraphMinerRecord | null
+): Array<{ field: string; text: string }> {
+  const declared = schemaProperties(miner);
+  const mapping = miner?.signal_mapping;
+
+  const candidates = unique(
+    [
+      mapping?.label_field,
+      mapping?.reason_field,
+      "signal",
+      "answer",
+      "summary",
+      "reasoning"
+    ].filter((value): value is string => Boolean(value))
+  );
+
+  return candidates
+    .filter((field) => declared.has(field))
+    .map((field) => ({ field, value: result[field] }))
+    .filter(
+      (entry): entry is { field: string; value: string } =>
+        typeof entry.value === "string" && entry.value.trim().length > 0
+    )
+    .map((entry) => ({
+      field: entry.field,
+      text: entry.value
+    }));
+}
+
+function validateTextBinding(input: {
+  field: string;
+  text: string;
+  expectedSubject: string;
+  expectedChainId: number;
+}): ExplicitEvidenceBinding | null {
+  const addresses = explicitAddressesInText(input.text);
+
+  if (addresses.length === 0) {
+    return null;
+  }
+
+  const expectedSubject = input.expectedSubject.toLowerCase();
+
+  if (!addresses.includes(expectedSubject)) {
+    return {
+      valid: false,
+      code: "evidence_subject_mismatch",
+      detail:
+        `Schema-declared text field ${input.field} explicitly named ` +
+        `${addresses.join(", ")}, not ${input.expectedSubject}.`
+    };
+  }
+
+  const conflictingAddresses = addresses.filter(
+    (address) => address !== expectedSubject
+  );
+
+  if (conflictingAddresses.length > 0) {
+    return {
+      valid: false,
+      code: "evidence_subject_mismatch",
+      detail:
+        `Schema-declared text field ${input.field} named the expected subject ` +
+        `but also named different EVM subjects (${conflictingAddresses.join(", ")}); ` +
+        "ProofGate refuses ambiguous text binding."
+    };
+  }
+
+  const chainIds = explicitChainIdsInText(input.text);
+
+  if (chainIds.length === 0) {
+    return {
+      valid: false,
+      code: "evidence_chain_not_asserted",
+      detail:
+        `Schema-declared text field ${input.field} explicitly named the exact ` +
+        "subject but did not explicitly identify the chain."
+    };
+  }
+
+  if (!chainIds.includes(input.expectedChainId)) {
+    return {
+      valid: false,
+      code: "evidence_chain_mismatch",
+      detail:
+        `Schema-declared text field ${input.field} explicitly named chain IDs ` +
+        `${chainIds.join(", ")}, not ${input.expectedChainId}.`
+    };
+  }
+
+  const conflictingChains = chainIds.filter(
+    (chainId) => chainId !== input.expectedChainId
+  );
+
+  if (conflictingChains.length > 0) {
+    return {
+      valid: false,
+      code: "evidence_chain_mismatch",
+      detail:
+        `Schema-declared text field ${input.field} named the expected chain ` +
+        `but also named different chain IDs (${conflictingChains.join(", ")}); ` +
+        "ProofGate refuses ambiguous text binding."
+    };
+  }
+
+  return {
+    valid: true,
+    subject: expectedSubject,
+    chainId: input.expectedChainId,
+    subjectField: `${input.field}:text`,
+    chainField: `${input.field}:text`
+  };
 }
 
 export function resolveServingMiner(
@@ -193,7 +347,7 @@ export function validateExplicitEvidenceBinding(input: {
       };
     }
 
-    const chain = findChainBinding(
+    const chain = findStructuredChainBinding(
       input.result,
       declared,
       input.expectedChainId
@@ -210,6 +364,17 @@ export function validateExplicitEvidenceBinding(input: {
     };
   }
 
+  for (const candidate of declaredTextFields(input.result, input.miner)) {
+    const textBinding = validateTextBinding({
+      field: candidate.field,
+      text: candidate.text,
+      expectedSubject: input.expectedSubject,
+      expectedChainId: input.expectedChainId
+    });
+
+    if (textBinding) return textBinding;
+  }
+
   return {
     valid: false,
     code: sawSubjectField
@@ -217,11 +382,11 @@ export function validateExplicitEvidenceBinding(input: {
       : "evidence_subject_not_asserted",
     detail: sawSubjectField
       ? "Miner returned a subject-like field, but it was not a valid exact EVM subject."
-      : "The Miner result did not explicitly assert the exact payment subject in a canonical or schema-declared field."
+      : "The Miner result did not explicitly assert the exact payment subject in a canonical, schema-declared structured field, or deterministically bindable schema-declared text field."
   };
 }
 
-function findChainBinding(
+function findStructuredChainBinding(
   result: Record<string, unknown>,
   declared: Set<string>,
   expectedChainId: number
@@ -266,8 +431,32 @@ function findChainBinding(
       : "evidence_chain_not_asserted",
     detail: sawChainField
       ? `Miner returned a chain-like field, but it did not prove exact chainId ${expectedChainId}.`
-      : `The Miner result did not explicitly assert exact chainId ${expectedChainId} in a canonical or schema-declared field.`
+      : `The Miner result did not explicitly assert exact chainId ${expectedChainId} in a canonical or schema-declared structured field.`
   };
+}
+
+function mappedString(
+  result: Record<string, unknown>,
+  field: string | undefined
+): string | null {
+  if (!field) return null;
+  const value = result[field];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function mappedConfidence(
+  result: Record<string, unknown>,
+  field: string | undefined
+): number | null {
+  if (!field) return null;
+  const value = result[field];
+
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+    ? value
+    : null;
 }
 
 export function canonicalizeBoundMinerResult(
@@ -278,6 +467,48 @@ export function canonicalizeBoundMinerResult(
     ...result,
     subject: binding.subject,
     chainId: binding.chainId
+  };
+}
+
+export function adaptBoundMinerResultForPolicy(
+  result: Record<string, unknown>,
+  miner: TelegraphMinerRecord | null,
+  binding: Extract<ExplicitEvidenceBinding, { valid: true }>
+): Record<string, unknown> {
+  const canonical =
+    canonicalizeBoundMinerResult(result, binding);
+
+  const mapping = miner?.signal_mapping;
+
+  const mappedLabel =
+    mappedString(result, mapping?.label_field);
+
+  const mappedReason =
+    mappedString(result, mapping?.reason_field);
+
+  const mappedConfidenceValue =
+    mappedConfidence(result, mapping?.confidence_field);
+
+  return {
+    ...canonical,
+    ...(
+      typeof canonical.verdict !== "string" &&
+      mappedLabel
+        ? { verdict: mappedLabel }
+        : {}
+    ),
+    ...(
+      typeof canonical.reasoning !== "string" &&
+      mappedReason
+        ? { reasoning: mappedReason }
+        : {}
+    ),
+    ...(
+      typeof canonical.confidence !== "number" &&
+      mappedConfidenceValue !== null
+        ? { confidence: mappedConfidenceValue }
+        : {}
+    )
   };
 }
 

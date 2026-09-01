@@ -85,7 +85,8 @@ function classifyMinerLabel(label: string | null): CheckStatus {
     return "HOLD";
   }
 
-  const normalized = label.toUpperCase();
+  const trimmed = label.trim();
+  const normalized = trimmed.toUpperCase();
 
   if (
     ["BLOCK", "DENY", "DENIED", "MALICIOUS", "SUSPICIOUS", "FAILED"].includes(
@@ -103,6 +104,17 @@ function classifyMinerLabel(label: string | null): CheckStatus {
     return "PASS";
   }
 
+  const prose = trimmed.toLowerCase();
+
+  if (
+    /\b(suspicious|malicious|blacklisted|unsafe|scam)\b/.test(prose) ||
+    /\bhigh[\s_-]+risk\b/.test(prose)
+  ) {
+    return "BLOCK";
+  }
+
+  // Positive free-form prose cannot create authority. Exact positive labels
+  // above are still accepted; arbitrary prose remains HOLD.
   return "HOLD";
 }
 

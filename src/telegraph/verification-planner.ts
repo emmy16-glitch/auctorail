@@ -34,6 +34,9 @@ export function createPaymentVerificationPlan(
     `Exact EVM subject: ${subject}.`,
     `Exact chainId: ${chainId}.`,
     "Return verifiable fraud/risk intelligence that is explicitly bound to this exact subject and chain.",
+    "Prefer live on-chain measurements over generic LLM-only speculation when a capable Miner is available.",
+    "Explicitly repeat the exact subject address and exact chainId in structured output or in a schema-declared signal field so the evidence can be machine-bound without relying on request metadata.",
+    "Provide an explicit verdict/label and numeric confidence when your capability supports them.",
     "For contract destinations, assess contract-control risk including whether it is a contract and whether privileged upgrade, admin, owner, or pause controls are present when your capability supports those checks.",
     "Do not assess a different address or chain."
   ].join(" ");

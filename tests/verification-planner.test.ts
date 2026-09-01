@@ -47,6 +47,15 @@ describe("Telegraph verification planner", () => {
     expect(plan.query).toContain(String(proposed.payload.chainId));
   });
 
+  it("asks routed Telegraph for measurable machine-bindable evidence", () => {
+    const plan = createPaymentVerificationPlan(action());
+
+    expect(plan.query).toContain("live on-chain measurements");
+    expect(plan.query).toContain("generic LLM-only speculation");
+    expect(plan.query).toContain("schema-declared signal field");
+    expect(plan.query).toContain("numeric confidence");
+  });
+
   it("requires explicit evidence bindings and a Telegraph signal hash", () => {
     const plan = createPaymentVerificationPlan(action());
 

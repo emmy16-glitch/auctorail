@@ -43,7 +43,7 @@ import {
   type TelegraphVerificationPlan
 } from "../src/telegraph/verification-planner.js";
 import {
-  canonicalizeBoundMinerResult,
+  adaptBoundMinerResultForPolicy,
   proofExitCode,
   resolveServingMiner,
   validateExplicitEvidenceBinding,
@@ -649,8 +649,9 @@ async function completeSuccessfulProof(input: {
     return;
   }
 
-  const canonicalResult = canonicalizeBoundMinerResult(
+  const canonicalResult = adaptBoundMinerResultForPolicy(
     body.result,
+    servingMiner.record,
     binding
   );
 

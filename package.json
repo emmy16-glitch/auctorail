@@ -17,7 +17,8 @@
     "vendor:compile": "node scripts/compile-vendor.mjs",
     "vendor:deploy": "tsx scripts/deploy-vendor.ts",
     "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
-    "execute:approved": "tsx scripts/execute-approved-payment.ts"
+    "execute:approved": "tsx scripts/execute-approved-payment.ts",
+    "proof:reprocess": "tsx scripts/reprocess-quarantine.ts"
   },
   "keywords": [],
   "author": "",
