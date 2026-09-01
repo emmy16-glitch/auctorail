@@ -1,6 +1,9 @@
 import type { ActionContract } from "../core/action-contract.js";
 import type { MandateContract } from "../core/mandate-contract.js";
 import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
+import type {
+  SupplementalEvidenceRef
+} from "../evidence/vendor-runtime.js";
 import {
   executeProtectedAction,
   type ExecutorResult
@@ -31,10 +34,22 @@ export interface PaymentExecutionArtifact {
   operationId?: string;
 }
 
+export type PaymentPolicyEvaluator = (
+  mandate: MandateContract,
+  action: ActionContract,
+  evidence: TelegraphEvidenceRecord,
+  options: {
+    agentId: string;
+    now?: Date;
+  }
+) => DecisionRecord;
+
 export interface RunPaymentGatewayInput {
   mandate: MandateContract;
   action: ActionContract;
   evidence: TelegraphEvidenceRecord;
+  supplementalEvidence?: SupplementalEvidenceRef[];
+  evaluatePolicy?: PaymentPolicyEvaluator;
   agentId: string;
   secret: string;
   store: PermitConsumptionStore;
@@ -93,7 +108,11 @@ export async function runPaymentGateway(
 ): Promise<PaymentGatewayResult> {
   const now = input.now ?? new Date();
 
-  const decision = evaluatePaymentsStrictV1(
+  const evaluator =
+    input.evaluatePolicy ??
+    evaluatePaymentsStrictV1;
+
+  const decision = evaluator(
     input.mandate,
     input.action,
     input.evidence,
@@ -115,6 +134,9 @@ export async function runPaymentGateway(
         code: `policy_${decision.decision.toLowerCase()}`,
         chainId: input.action.payload.chainId
       },
+      ...(input.supplementalEvidence
+        ? { supplementalEvidence: input.supplementalEvidence }
+        : {}),
       ...(input.operationId ? { operationId: input.operationId } : {}),
       now
     });
@@ -166,6 +188,9 @@ export async function runPaymentGateway(
       input.action.payload.chainId,
       now
     ),
+    ...(input.supplementalEvidence
+      ? { supplementalEvidence: input.supplementalEvidence }
+      : {}),
     ...(input.operationId ? { operationId: input.operationId } : {}),
     now
   });

@@ -50,6 +50,8 @@ export function createDecisionHash(
       decision: decision.decision,
       reason: decision.reason,
       checks: decision.checks,
+      evidenceRefs:
+        decision.evidenceRefs ?? null,
       decidedAt: decision.decidedAt
     }
   };

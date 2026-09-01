@@ -2,9 +2,11 @@ import { getAddress } from "ethers";
 import { z } from "zod";
 
 import {
+  PAYMENT_POLICY_IDS,
   canonicalize,
   hashCanonicalPayload,
-  type ActionContract
+  type ActionContract,
+  type PaymentPolicyId
 } from "./action-contract.js";
 
 const IdentifierSchema = z
@@ -59,7 +61,7 @@ const MandateContractInputSchema = z.object({
     .array(z.string().trim().min(1).max(128))
     .min(1),
 
-  policyId: z.literal("payments.strict.v1"),
+  policyId: z.enum(PAYMENT_POLICY_IDS),
   issuedAt: TimestampSchema,
   expiresAt: TimestampSchema,
   version: z.number().int().positive()
@@ -78,7 +80,7 @@ export interface MandateContract {
   allowedDestinations: string[];
   maxPerActionRaw: string;
   requiredIntents: string[];
-  policyId: "payments.strict.v1";
+  policyId: PaymentPolicyId;
   issuedAt: string;
   expiresAt: string;
   version: number;
@@ -196,7 +198,7 @@ export function createMandateContract(
     requiredIntents: uniqueSortedStrings(
       validated.requiredIntents.map((value) => value.trim().toUpperCase())
     ),
-    policyId: "payments.strict.v1" as const,
+    policyId: validated.policyId,
     issuedAt,
     expiresAt,
     version: validated.version
@@ -396,7 +398,7 @@ export function evaluateMandate(
       "mandate_required_intent",
       mandate.requiredIntents.includes("FRAUD_DETECTION"),
       "Mandate requires the standing FRAUD_DETECTION proof intent.",
-      "Mandate does not authorize the proof intent required by payments.strict.v1.",
+      `Mandate does not authorize the proof intent required by ${mandate.policyId}.`,
       "mandate_required_intent_violation"
     )
   );

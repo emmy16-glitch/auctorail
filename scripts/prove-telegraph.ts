@@ -13,7 +13,8 @@ import {
   canonicalize,
   createActionContract,
   hashCanonicalPayload,
-  type ActionContract
+  type ActionContract,
+  type PaymentPolicyId
 } from "../src/core/action-contract.js";
 import {
   createMandateContract,
@@ -24,11 +25,20 @@ import {
   normalizeTelegraphEvidence,
   type TelegraphEvidenceRecord
 } from "../src/evidence/telegraph.js";
+import {
+  acquireVendorRuntimeAttestation,
+  saveVendorRuntimeAttestation,
+  supplementalRefFromVendorAttestation,
+  type VendorRuntimeAttestation
+} from "../src/evidence/vendor-runtime.js";
 import { FileOperationJournal } from "../src/executor/operation-journal.js";
 import {
   evaluatePaymentsStrictV1,
   type DecisionRecord
 } from "../src/policy/payments-strict-v1.js";
+import {
+  evaluatePaymentsAttestedVendorV1
+} from "../src/policy/payments-attested-vendor-v1.js";
 import { createProofReceipt } from "../src/receipt/proof-receipt.js";
 import {
   TELEGRAPH_X402_POLICY,
@@ -86,6 +96,8 @@ const DIRECT_REFUT =
   process.argv.includes("--direct-refut");
 const CAPABILITY_ROUTE =
   process.argv.includes("--capability-route");
+const ATTESTED_VENDOR_POLICY =
+  process.argv.includes("--attested-vendor-policy");
 
 if (DIRECT_REFUT && CAPABILITY_ROUTE) {
   throw new Error(
@@ -99,12 +111,20 @@ if (!PRIVATE_KEY) {
 
 if (!TARGET || !/^0x[0-9a-fA-F]{40}$/.test(TARGET)) {
   throw new Error(
-    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--capability-route|--direct-refut]"
+    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--capability-route|--direct-refut] [--attested-vendor-policy]"
   );
 }
 
+const POLICY_ID: PaymentPolicyId =
+  ATTESTED_VENDOR_POLICY
+    ? "payments.attested-vendor.v1"
+    : "payments.strict.v1";
+
 const mandate = createMandateContract({
-  mandateId: "treasury-demo-v1",
+  mandateId:
+    ATTESTED_VENDOR_POLICY
+      ? "treasury-demo-attested-v1"
+      : "treasury-demo-v1",
   principalId: "company-demo",
   agentId: DEMO_AGENT_ID,
   allowedActionTypes: ["payment"],
@@ -113,7 +133,7 @@ const mandate = createMandateContract({
   allowedDestinations: [CANONICAL_VENDOR],
   maxPerActionRaw: "10000000",
   requiredIntents: ["FRAUD_DETECTION"],
-  policyId: "payments.strict.v1",
+  policyId: POLICY_ID,
   issuedAt: "2026-09-01T00:00:00.000Z",
   expiresAt: "2026-09-08T01:00:00.000Z",
   version: 1
@@ -126,7 +146,7 @@ const action = createActionContract({
   amountRaw: "1000000",
   destination: TARGET,
   reason: "Invoice INV-1042",
-  policyId: "payments.strict.v1"
+  policyId: POLICY_ID
 });
 
 const verificationPlan = createPaymentVerificationPlan(action);
@@ -836,12 +856,53 @@ async function completeSuccessfulProof(input: {
     mode: 0o600
   });
 
-  const decision = evaluatePaymentsStrictV1(
-    input.mandate,
-    input.action,
-    evidence,
-    { agentId: input.agentId, now: new Date() }
-  );
+  let attestation:
+    VendorRuntimeAttestation |
+    null =
+    null;
+
+  if (
+    input.action.policyId ===
+    "payments.attested-vendor.v1"
+  ) {
+    try {
+      attestation =
+        await acquireVendorRuntimeAttestation();
+
+      const attestationPath =
+        saveVendorRuntimeAttestation(
+          attestation
+        );
+
+      console.log(
+        "Vendor attestation:",
+        attestationPath
+      );
+      console.log(
+        "Vendor runtime hash:",
+        attestation.runtimeKeccak256
+      );
+      console.log(
+        "Vendor attestation hash:",
+        attestation.attestationHash
+      );
+    } catch (error) {
+      console.log(
+        "Vendor attestation unavailable:",
+        errorMessage(error)
+      );
+    }
+  }
+
+  const decision =
+    evaluateCurrentPolicy(
+      input.mandate,
+      input.action,
+      evidence,
+      attestation,
+      input.agentId,
+      new Date()
+    );
 
   journal.update(input.operationId, {
     state: "CONFIRMED",
@@ -879,7 +940,8 @@ async function completeSuccessfulProof(input: {
       evidence,
       decision,
       `policy_${decision.decision.toLowerCase()}`,
-      input.operationId
+      input.operationId,
+      attestation
     );
 
     process.exitCode = proofExitCode(decision.decision);
@@ -1013,12 +1075,15 @@ async function finishWithoutEvidence(
   detail: string,
   operationId?: string
 ): Promise<void> {
-  const decision = evaluatePaymentsStrictV1(
-    mandate,
-    proposedAction,
-    null,
-    { agentId, now: new Date() }
-  );
+  const decision =
+    evaluateCurrentPolicy(
+      mandate,
+      proposedAction,
+      null,
+      null,
+      agentId,
+      new Date()
+    );
 
   console.log("PROOFGATE:", decision.decision);
   console.log("Reason:", decision.reason === "telegraph_evidence" ? reason : decision.reason);
@@ -1044,7 +1109,8 @@ function saveReceipt(
   evidence: TelegraphEvidenceRecord | null,
   decision: DecisionRecord,
   executionCode: string,
-  operationId?: string
+  operationId?: string,
+  attestation?: VendorRuntimeAttestation | null
 ): string {
   const receipt = createProofReceipt({
     mandate,
@@ -1057,7 +1123,16 @@ function saveReceipt(
       code: executionCode,
       chainId: proposedAction.payload.chainId
     },
-    operationId
+    operationId,
+    ...(attestation
+      ? {
+          supplementalEvidence: [
+            supplementalRefFromVendorAttestation(
+              attestation
+            )
+          ]
+        }
+      : {})
   });
 
   const directory = path.join("data", "receipts");
@@ -1081,6 +1156,41 @@ function printDecision(decision: DecisionRecord): void {
   }
 
   console.log("");
+}
+
+function evaluateCurrentPolicy(
+  mandate: MandateContract,
+  action: ActionContract,
+  evidence: TelegraphEvidenceRecord | null,
+  attestation: VendorRuntimeAttestation | null,
+  agentId: string,
+  now: Date
+): DecisionRecord {
+  if (
+    action.policyId ===
+    "payments.attested-vendor.v1"
+  ) {
+    return evaluatePaymentsAttestedVendorV1(
+      mandate,
+      action,
+      evidence,
+      attestation,
+      {
+        agentId,
+        now
+      }
+    );
+  }
+
+  return evaluatePaymentsStrictV1(
+    mandate,
+    action,
+    evidence,
+    {
+      agentId,
+      now
+    }
+  );
 }
 
 function loadMinerRegistry(): MinerRecord[] {

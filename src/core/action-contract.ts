@@ -7,6 +7,17 @@ export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const BASE_SEPOLIA_USDC =
   "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
+export const PAYMENT_POLICY_IDS = [
+  "payments.strict.v1",
+  "payments.attested-vendor.v1"
+] as const;
+
+export type PaymentPolicyId =
+  typeof PAYMENT_POLICY_IDS[number];
+
+const PaymentPolicyIdSchema =
+  z.enum(PAYMENT_POLICY_IDS);
+
 const PaymentActionInputSchema = z.object({
   type: z.literal("payment"),
 
@@ -42,7 +53,7 @@ const PaymentActionInputSchema = z.object({
 
   reason: z.string().trim().min(1).max(256),
 
-  policyId: z.literal("payments.strict.v1")
+  policyId: PaymentPolicyIdSchema
 });
 
 export type PaymentActionInput =
@@ -60,14 +71,14 @@ export interface ActionContract {
     amountRaw: string;
     destination: string;
     reason: string;
-    policyId: "payments.strict.v1";
+    policyId: PaymentPolicyId;
   };
 
   canonicalPayload: string;
 
   actionHash: string;
 
-  policyId: "payments.strict.v1";
+  policyId: PaymentPolicyId;
 
   createdAt: string;
 }
@@ -134,7 +145,7 @@ export function createActionContract(
     reason: validated.reason.trim(),
 
     policyId:
-      "payments.strict.v1" as const
+      validated.policyId
   };
 
   const canonicalPayload =
@@ -155,7 +166,7 @@ export function createActionContract(
     actionHash,
 
     policyId:
-      "payments.strict.v1",
+      validated.policyId,
 
     createdAt:
       new Date().toISOString()

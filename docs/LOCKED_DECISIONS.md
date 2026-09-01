@@ -267,6 +267,44 @@ failClosed = true
 A future Policy Console may change standing autonomy rules.
 It does NOT approve individual transactions.
 
+## Attested Vendor Composite Policy
+
+The original `payments.strict.v1` policy remains unchanged, including its
+minimum Telegraph confidence of 0.80.
+
+A second explicit policy may be used only for the exact deployed
+ProofGateVendor:
+
+`payments.attested-vendor.v1`
+
+This policy does not reinterpret a prior HOLD and does not reuse evidence
+acquired under a different policy-bound Action Contract. It creates a new
+Mandate Contract and Action Contract whose hashes commit to the new policy ID.
+
+The composite policy requires BOTH:
+
+1. Real Telegraph FRAUD_DETECTION evidence from the contract-control capability
+   profile, with exact subject/chain binding, APPLICABLE status, a positive
+   registered verdict, real signalHash, freshness, and confidence >= 0.70.
+2. A fresh deterministic Base Sepolia runtime attestation proving that the exact
+   payment destination has the pinned 165-byte ProofGateVendor runtime,
+   vendorId, version, compiler-derived deployed bytecode, and runtime keccak256:
+
+   `0x12c20655de1ed03a8e646cb98f8ce51e033ec28dc38b7c9383b8f96d02d07a93`
+
+The runtime attestation is acquired at a specific block and its hash is committed
+into the Decision Record, decisionHash, permit, and Proof Receipt.
+
+A negative Telegraph result still BLOCKs even when runtime attestation passes.
+
+The security rule remains:
+
+Probabilistic intelligence may reduce authority. It can never create authority.
+
+For this composite policy, deterministic exact-runtime proof is a mandatory
+independent authorization condition; the 0.70 Telegraph confidence is
+corroborative, not sufficient by itself.
+
 ## Action Immutability
 
 After an Action Contract is created, protected fields cannot be silently edited.

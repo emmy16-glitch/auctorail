@@ -6,7 +6,8 @@ import path from "node:path";
 import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC,
-  createActionContract
+  createActionContract,
+  type PaymentPolicyId
 } from "../src/core/action-contract.js";
 import {
   createMandateContract
@@ -14,6 +15,11 @@ import {
 import {
   normalizeTelegraphEvidence
 } from "../src/evidence/telegraph.js";
+import {
+  acquireVendorRuntimeAttestation,
+  saveVendorRuntimeAttestation,
+  supplementalRefFromVendorAttestation
+} from "../src/evidence/vendor-runtime.js";
 import {
   executeBaseSepoliaUsdcTransfer
 } from "../src/executor/base-sepolia-usdc.js";
@@ -30,6 +36,9 @@ import {
   evaluatePaymentsStrictV1
 } from "../src/policy/payments-strict-v1.js";
 import {
+  evaluatePaymentsAttestedVendorV1
+} from "../src/policy/payments-attested-vendor-v1.js";
+import {
   loadOrCreateProofGateSecret
 } from "../src/permit/local-secret.js";
 import {
@@ -44,12 +53,18 @@ const CANONICAL_VENDOR =
 
 const args = process.argv.slice(2);
 const EXECUTE = args.includes("--execute");
+const ATTESTED_VENDOR_POLICY =
+  args.includes("--attested-vendor-policy");
+const POLICY_ID: PaymentPolicyId =
+  ATTESTED_VENDOR_POLICY
+    ? "payments.attested-vendor.v1"
+    : "payments.strict.v1";
 const EVIDENCE_PATH =
   args.find((item) => !item.startsWith("--"));
 
 if (!EVIDENCE_PATH) {
   throw new Error(
-    "Usage: npm run execute:approved -- <evidence.json> [--execute]"
+    "Usage: npm run execute:approved -- <evidence.json> [--execute] [--attested-vendor-policy]"
   );
 }
 
@@ -60,7 +75,10 @@ if (!fs.existsSync(EVIDENCE_PATH)) {
 }
 
 const mandate = createMandateContract({
-  mandateId: "treasury-demo-v1",
+  mandateId:
+    ATTESTED_VENDOR_POLICY
+      ? "treasury-demo-attested-v1"
+      : "treasury-demo-v1",
   principalId: "company-demo",
   agentId: DEMO_AGENT_ID,
   allowedActionTypes: ["payment"],
@@ -77,7 +95,7 @@ const mandate = createMandateContract({
   requiredIntents: [
     "FRAUD_DETECTION"
   ],
-  policyId: "payments.strict.v1",
+  policyId: POLICY_ID,
   issuedAt:
     "2026-09-01T00:00:00.000Z",
   expiresAt:
@@ -92,7 +110,7 @@ const action = createActionContract({
   amountRaw: "1000000",
   destination: CANONICAL_VENDOR,
   reason: "Invoice INV-1042",
-  policyId: "payments.strict.v1"
+  policyId: POLICY_ID
 });
 
 const saved = JSON.parse(
@@ -111,16 +129,56 @@ assertLiveExecutionEvidenceEnvelope(
 const evidence =
   normalizeTelegraphEvidence(saved);
 
-const preview =
-  evaluatePaymentsStrictV1(
-    mandate,
-    action,
-    evidence,
-    {
-      agentId: DEMO_AGENT_ID,
-      now: new Date()
-    }
+const attestation =
+  ATTESTED_VENDOR_POLICY
+    ? await acquireVendorRuntimeAttestation()
+    : null;
+
+if (attestation) {
+  const attestationPath =
+    saveVendorRuntimeAttestation(
+      attestation
+    );
+
+  console.log(
+    "Vendor attestation:",
+    attestationPath
   );
+  console.log(
+    "Vendor runtime hash:",
+    attestation.runtimeKeccak256
+  );
+  console.log(
+    "Vendor attestation hash:",
+    attestation.attestationHash
+  );
+}
+
+const preview =
+  ATTESTED_VENDOR_POLICY
+    ? evaluatePaymentsAttestedVendorV1(
+        mandate,
+        action,
+        evidence,
+        attestation,
+        {
+          agentId:
+            DEMO_AGENT_ID,
+          now:
+            new Date()
+        }
+      )
+    : evaluatePaymentsStrictV1(
+        mandate,
+        action,
+        evidence,
+        {
+          agentId:
+            DEMO_AGENT_ID,
+          now:
+            new Date()
+        }
+      );
 
 console.log("");
 console.log("PROOFGATE APPROVED PAYMENT");
@@ -174,7 +232,16 @@ if (preview.decision !== "ALLOW") {
           `policy_${preview.decision.toLowerCase()}`,
         chainId:
           action.payload.chainId
-      }
+      },
+      ...(attestation
+        ? {
+            supplementalEvidence: [
+              supplementalRefFromVendorAttestation(
+                attestation
+              )
+            ]
+          }
+        : {})
     });
 
   saveReceipt(receipt);
@@ -229,6 +296,28 @@ const result =
     secret,
     store,
     permitTtlSeconds: 30,
+    ...(attestation
+      ? {
+          supplementalEvidence: [
+            supplementalRefFromVendorAttestation(
+              attestation
+            )
+          ],
+          evaluatePolicy: (
+            gatewayMandate,
+            gatewayAction,
+            gatewayEvidence,
+            gatewayOptions
+          ) =>
+            evaluatePaymentsAttestedVendorV1(
+              gatewayMandate,
+              gatewayAction,
+              gatewayEvidence,
+              attestation,
+              gatewayOptions
+            )
+        }
+      : {}),
     execute: async (
       protectedAction
     ) =>

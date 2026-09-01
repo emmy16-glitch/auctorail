@@ -2,6 +2,7 @@ import { getAddress } from "ethers";
 
 import {
   type ActionContract,
+  type PaymentPolicyId,
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC
 } from "../core/action-contract.js";
@@ -36,8 +37,11 @@ export interface DecisionRecord {
   actionId: string;
   decision: ProofGateDecision;
   reason: string;
-  policyId: "payments.strict.v1";
+  policyId: PaymentPolicyId;
   checks: PolicyCheck[];
+  evidenceRefs?: {
+    vendorRuntimeAttestationHash?: string;
+  };
   decidedAt: string;
 }
 
@@ -80,7 +84,7 @@ function addressesEqual(a: string, b: string): boolean {
   }
 }
 
-function classifyMinerLabel(label: string | null): CheckStatus {
+export function classifyMinerLabel(label: string | null): CheckStatus {
   if (!label) {
     return "HOLD";
   }

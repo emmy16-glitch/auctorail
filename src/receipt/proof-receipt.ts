@@ -12,6 +12,9 @@ import type {
   PolicyCheck
 } from "../policy/payments-strict-v1.js";
 import type { Permit } from "../permit/permit.js";
+import type {
+  SupplementalEvidenceRef
+} from "../evidence/vendor-runtime.js";
 
 export type ReceiptExecutionStatus =
   | "EXECUTED"
@@ -71,8 +74,10 @@ export interface ProofReceipt {
     reason: string;
     policyId: string;
     checks: PolicyCheck[];
+    evidenceRefs?: DecisionRecord["evidenceRefs"];
     decidedAt: string;
   };
+  supplementalEvidence?: SupplementalEvidenceRef[];
   permit: {
     permitId: string;
     mandateHash: string;
@@ -95,6 +100,7 @@ export interface CreateProofReceiptInput {
   decision: DecisionRecord;
   permit: Permit | null;
   execution: ReceiptExecution;
+  supplementalEvidence?: SupplementalEvidenceRef[];
   operationId?: string;
   now?: Date;
 }
@@ -133,6 +139,27 @@ export function createProofReceipt(
 
   if (!decisionMatchesMandate(input.mandate, input.decision)) {
     throw new Error("decision_mandate_mismatch");
+  }
+
+  const expectedRuntimeAttestationHash =
+    input.decision.evidenceRefs
+      ?.vendorRuntimeAttestationHash;
+
+  if (expectedRuntimeAttestationHash) {
+    const matchingSupplemental =
+      input.supplementalEvidence?.find(
+        (item) =>
+          item.type ===
+            "vendor_runtime_attestation" &&
+          item.hash ===
+            expectedRuntimeAttestationHash
+      );
+
+    if (!matchingSupplemental) {
+      throw new Error(
+        "decision_supplemental_evidence_mismatch"
+      );
+    }
   }
 
   if (input.permit) {
@@ -207,8 +234,14 @@ export function createProofReceipt(
       reason: input.decision.reason,
       policyId: input.decision.policyId,
       checks: input.decision.checks,
+      ...(input.decision.evidenceRefs
+        ? { evidenceRefs: input.decision.evidenceRefs }
+        : {}),
       decidedAt: input.decision.decidedAt
     },
+    ...(input.supplementalEvidence
+      ? { supplementalEvidence: input.supplementalEvidence }
+      : {}),
     permit: input.permit
       ? {
           permitId: input.permit.payload.permitId,
@@ -307,6 +340,25 @@ export function verifyProofReceipt(receipt: ProofReceipt): boolean {
     parsedMandate.expiresAt !== receipt.mandate.expiresAt
   ) {
     return false;
+  }
+
+  const expectedRuntimeAttestationHash =
+    receipt.decision.evidenceRefs
+      ?.vendorRuntimeAttestationHash;
+
+  if (expectedRuntimeAttestationHash) {
+    const matchingSupplemental =
+      receipt.supplementalEvidence?.find(
+        (item) =>
+          item.type ===
+            "vendor_runtime_attestation" &&
+          item.hash ===
+            expectedRuntimeAttestationHash
+      );
+
+    if (!matchingSupplemental) {
+      return false;
+    }
   }
 
   if (receipt.permit) {

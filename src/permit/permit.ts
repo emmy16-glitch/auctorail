@@ -7,7 +7,8 @@ import {
 
 import {
   canonicalize,
-  type ActionContract
+  type ActionContract,
+  type PaymentPolicyId
 } from "../core/action-contract.js";
 import {
   evaluateMandate,
@@ -24,7 +25,7 @@ export interface PermitPayload {
   actionHash: string;
   decisionHash: string;
   nonce: string;
-  policyId: "payments.strict.v1";
+  policyId: PaymentPolicyId;
   issuedAt: string;
   expiresAt: string;
 }
