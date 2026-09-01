@@ -39,6 +39,10 @@ import {
   type X402PaymentLane,
   type X402SettlementResult
 } from "../src/telegraph/x402-policy.js";
+import {
+  createPaymentVerificationPlan,
+  type TelegraphVerificationPlan
+} from "../src/telegraph/verification-planner.js";
 
 interface MinerRecord {
   id: string | number;
@@ -47,11 +51,23 @@ interface MinerRecord {
   activation_status: string;
 }
 
+type RouteMode = "AUTO_ROUTE" | "DIRECT_REFUT_DIAGNOSTIC";
+
+interface TelegraphRequestPlan {
+  routeMode: RouteMode;
+  url: string;
+  requestBody: Record<string, unknown>;
+  requestEndpoint: string;
+  requestedMiner: MinerRecord | null;
+  verificationPlan: TelegraphVerificationPlan;
+}
+
 const PRIVATE_KEY = process.env.TELEGRAPH_EVM_PRIVATE_KEY as
   | `0x${string}`
   | undefined;
 
 const TARGET = process.argv[2];
+const DIRECT_REFUT = process.argv.includes("--direct-refut");
 
 if (!PRIVATE_KEY) {
   throw new Error("TELEGRAPH_EVM_PRIVATE_KEY is missing");
@@ -59,7 +75,7 @@ if (!PRIVATE_KEY) {
 
 if (!TARGET || !/^0x[0-9a-fA-F]{40}$/.test(TARGET)) {
   throw new Error(
-    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS>"
+    "Usage: npx tsx scripts/prove-telegraph.ts <VENDOR_ADDRESS> [--direct-refut]"
   );
 }
 
@@ -73,39 +89,20 @@ const action = createActionContract({
   policyId: "payments.strict.v1"
 });
 
-const miners = JSON.parse(
-  fs.readFileSync("data/miners.json", "utf8")
-) as MinerRecord[];
-
-const miner = miners.find(
-  (candidate) =>
-    candidate.slug === "refut-onchain-risk" &&
-    candidate.activation_status === "active"
-);
-
-if (!miner) {
-  await finishWithoutEvidence(
-    action,
-    "telegraph_miner_unavailable",
-    "Refut On-Chain Risk is not active in the current live registry."
-  );
-  process.exit(2);
-}
-
+const verificationPlan = createPaymentVerificationPlan(action);
+const miners = loadMinerRegistry();
 const account = privateKeyToAccount(PRIVATE_KEY);
 const signer = toClientEvmSigner(account);
 const engine =
   process.env.TELEGRAPH_ENGINE_URL ||
   "https://devnode.telegraphprotocol.com/engine";
-const url = `${engine}/v1/ask/${miner.id}`;
-const requestBody = {
-  method: "POST",
-  endpoint: "/assess",
-  payload: {
-    address: action.payload.destination,
-    chainId: action.payload.chainId
-  }
-};
+
+const requestPlan = buildRequestPlan({
+  engine,
+  verificationPlan,
+  miners,
+  directRefut: DIRECT_REFUT
+});
 
 const journal = new FileOperationJournal();
 const operation = journal.create({
@@ -113,9 +110,13 @@ const operation = journal.create({
   actionHash: action.actionHash,
   target: action.payload.destination,
   metadata: {
-    minerId: String(miner.id),
-    minerName: miner.name,
-    intent: "FRAUD_DETECTION"
+    routeMode: requestPlan.routeMode,
+    requiredIntent: verificationPlan.requiredIntent,
+    requestEndpoint: requestPlan.requestEndpoint,
+    requestedMinerId: requestPlan.requestedMiner
+      ? String(requestPlan.requestedMiner.id)
+      : null,
+    requestedMinerName: requestPlan.requestedMiner?.name ?? null
   }
 });
 
@@ -125,19 +126,25 @@ console.log("====================");
 console.log("Operation:", operation.operationId);
 console.log("Action hash:", action.actionHash);
 console.log("Action: 1 USDC →", action.payload.destination);
-console.log("Telegraph Miner:", miner.name);
+console.log("Required Intent:", verificationPlan.requiredIntent);
+console.log(
+  "Telegraph route:",
+  requestPlan.routeMode === "AUTO_ROUTE"
+    ? "AUTO / ranked Engine routing"
+    : `DIRECT DIAGNOSTIC / ${requestPlan.requestedMiner?.name ?? "Refut"}`
+);
 console.log("x402 payer:", account.address);
 console.log("");
 
 let preflight: Response;
 
 try {
-  preflight = await fetchWithReadRetry(url, {
+  preflight = await fetchWithReadRetry(requestPlan.url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestPlan.requestBody)
   });
 } catch (error) {
   journal.update(operation.operationId, {
@@ -157,14 +164,13 @@ try {
   process.exit(2);
 }
 
-// Telegraph may choose to make a route free. A genuine successful Miner
-// response is still evidence even when no payment challenge is required.
 if (preflight.ok) {
   await completeSuccessfulProof({
     response: preflight,
     action,
     operationId: operation.operationId,
-    miner,
+    requestPlan,
+    miners,
     paymentLane: null,
     settlement: null
   });
@@ -281,15 +287,14 @@ journal.update(operation.operationId, {
 let response: Response;
 
 try {
-  // IMPORTANT: no automatic retry after this boundary. Once an x402 payment
-  // attempt starts, a transport failure can be ambiguous with respect to
-  // settlement and must be reconciled rather than blindly repeated.
-  response = await paidFetch(url, {
+  // No automatic retry after this boundary. A paid transport failure is
+  // ambiguous until settlement is reconciled.
+  response = await paidFetch(requestPlan.url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestPlan.requestBody)
   });
 } catch (error) {
   journal.update(operation.operationId, {
@@ -317,14 +322,18 @@ const paymentResponse =
 const settlement = classifyPaymentResponseHeader(paymentResponse);
 
 if (!response.ok) {
-  if (!settlement.success && settlement.code !== "payment_response_missing" && settlement.code !== "payment_response_malformed") {
+  if (
+    !settlement.success &&
+    settlement.code !== "payment_response_missing" &&
+    settlement.code !== "payment_response_malformed"
+  ) {
     journal.update(operation.operationId, {
       state: "HOLD",
       metadata: {
         reason: settlement.code,
         httpStatus: response.status,
         settlement,
-        automaticRetry: settlement.retryable
+        automaticRetry: false
       }
     });
 
@@ -386,16 +395,64 @@ await completeSuccessfulProof({
   response,
   action,
   operationId: operation.operationId,
-  miner,
+  requestPlan,
+  miners,
   paymentLane: lane,
   settlement
 });
+
+function buildRequestPlan(input: {
+  engine: string;
+  verificationPlan: TelegraphVerificationPlan;
+  miners: MinerRecord[];
+  directRefut: boolean;
+}): TelegraphRequestPlan {
+  if (!input.directRefut) {
+    return {
+      routeMode: "AUTO_ROUTE",
+      url: `${input.engine}/v1/ask`,
+      requestBody: {
+        query: input.verificationPlan.query
+      },
+      requestEndpoint: "/v1/ask",
+      requestedMiner: null,
+      verificationPlan: input.verificationPlan
+    };
+  }
+
+  const refut = input.miners.find(
+    (candidate) =>
+      candidate.slug === "refut-onchain-risk" &&
+      candidate.activation_status === "active"
+  );
+
+  if (!refut) {
+    throw new Error("direct_refut_miner_unavailable");
+  }
+
+  return {
+    routeMode: "DIRECT_REFUT_DIAGNOSTIC",
+    url: `${input.engine}/v1/ask/${refut.id}`,
+    requestBody: {
+      method: "POST",
+      endpoint: "/assess",
+      payload: {
+        address: input.verificationPlan.subject,
+        chainId: input.verificationPlan.chainId
+      }
+    },
+    requestEndpoint: "/assess",
+    requestedMiner: refut,
+    verificationPlan: input.verificationPlan
+  };
+}
 
 async function completeSuccessfulProof(input: {
   response: Response;
   action: ActionContract;
   operationId: string;
-  miner: MinerRecord;
+  requestPlan: TelegraphRequestPlan;
+  miners: MinerRecord[];
   paymentLane: X402PaymentLane | null;
   settlement: X402SettlementResult | null;
 }): Promise<void> {
@@ -410,36 +467,75 @@ async function completeSuccessfulProof(input: {
 
     body = parsed;
   } catch (error) {
-    journal.update(input.operationId, {
-      state: "HOLD",
-      metadata: {
-        reason: "miner_response_invalid",
-        error: errorMessage(error)
-      }
-    });
-
-    await finishWithoutEvidence(
-      input.action,
+    await holdInvalidEvidence(
+      input,
       "miner_response_invalid",
-      errorMessage(error),
-      input.operationId
+      errorMessage(error)
     );
     return;
   }
 
   if (!isObject(body.result)) {
-    journal.update(input.operationId, {
-      state: "HOLD",
-      metadata: {
-        reason: "miner_result_missing"
-      }
-    });
-
-    await finishWithoutEvidence(
-      input.action,
+    await holdInvalidEvidence(
+      input,
       "miner_result_missing",
-      "Telegraph returned HTTP 200 without a usable Miner result.",
-      input.operationId
+      "Telegraph returned HTTP 200 without a usable Miner result."
+    );
+    return;
+  }
+
+  // The final authorization path requires the Miner result itself to assert
+  // subject and chain. We never infer these security bindings from our own
+  // request, because that would turn request metadata into fake evidence.
+  if (
+    typeof body.result.subject !== "string" ||
+    body.result.subject.toLowerCase() !== input.action.payload.destination.toLowerCase()
+  ) {
+    await holdInvalidEvidence(
+      input,
+      "evidence_subject_not_asserted",
+      "The routed Miner result did not explicitly bind its result to the exact payment destination."
+    );
+    return;
+  }
+
+  if (
+    typeof body.result.chainId !== "number" ||
+    body.result.chainId !== input.action.payload.chainId
+  ) {
+    await holdInvalidEvidence(
+      input,
+      "evidence_chain_not_asserted",
+      "The routed Miner result did not explicitly bind its result to the Action Contract chain."
+    );
+    return;
+  }
+
+  const servingMiner = resolveServingMiner(
+    body,
+    input.requestPlan.requestedMiner,
+    input.miners
+  );
+
+  if (!servingMiner) {
+    await holdInvalidEvidence(
+      input,
+      "serving_miner_identity_missing",
+      "Telegraph returned evidence without enough Miner identity to record provenance."
+    );
+    return;
+  }
+
+  const returnedIntent =
+    typeof body.intent === "string"
+      ? body.intent
+      : input.requestPlan.verificationPlan.requiredIntent;
+
+  if (returnedIntent !== input.requestPlan.verificationPlan.requiredIntent) {
+    await holdInvalidEvidence(
+      input,
+      "routed_intent_mismatch",
+      `Telegraph returned intent ${returnedIntent}, but ProofGate required ${input.requestPlan.verificationPlan.requiredIntent}.`
     );
     return;
   }
@@ -448,22 +544,18 @@ async function completeSuccessfulProof(input: {
   const savedEvidence = {
     schemaVersion: "proofgate.telegraph-evidence.v1",
     source: "telegraph" as const,
-    intent:
-      typeof body.intent === "string"
-        ? body.intent
-        : "FRAUD_DETECTION",
-    miner: {
-      id: String(body.miner_id ?? input.miner.id),
-      name:
-        typeof body.miner_name === "string"
-          ? body.miner_name
-          : input.miner.name,
-      slug: input.miner.slug
-    },
+    intent: returnedIntent,
+    miner: servingMiner,
     request: {
-      endpoint: "/assess",
+      endpoint: input.requestPlan.requestEndpoint,
       target: input.action.payload.destination,
-      chainId: input.action.payload.chainId
+      chainId: input.action.payload.chainId,
+      routeMode: input.requestPlan.routeMode,
+      actionHash: input.action.actionHash,
+      query:
+        input.requestPlan.routeMode === "AUTO_ROUTE"
+          ? input.requestPlan.verificationPlan.query
+          : null
     },
     result: body.result,
     telegraph: {
@@ -509,19 +601,10 @@ async function completeSuccessfulProof(input: {
   try {
     evidence = normalizeTelegraphEvidence(savedEvidence);
   } catch (error) {
-    journal.update(input.operationId, {
-      state: "HOLD",
-      metadata: {
-        reason: "evidence_normalization_failed",
-        error: errorMessage(error)
-      }
-    });
-
-    await finishWithoutEvidence(
-      input.action,
+    await holdInvalidEvidence(
+      input,
       "evidence_normalization_failed",
-      errorMessage(error),
-      input.operationId
+      errorMessage(error)
     );
     return;
   }
@@ -548,6 +631,11 @@ async function completeSuccessfulProof(input: {
   journal.update(input.operationId, {
     state: "CONFIRMED",
     metadata: {
+      routeMode: input.requestPlan.routeMode,
+      requiredIntent: input.requestPlan.verificationPlan.requiredIntent,
+      servingMinerId: servingMiner.id,
+      servingMinerName: servingMiner.name,
+      servingMinerSlug: servingMiner.slug,
       evidencePath,
       signalHash: evidence.signalHash,
       rawResponseHash: evidence.rawResponseHash,
@@ -558,6 +646,8 @@ async function completeSuccessfulProof(input: {
   });
 
   console.log("REAL TELEGRAPH EVIDENCE SAVED");
+  console.log("Route mode:", input.requestPlan.routeMode);
+  console.log("Serving Miner:", `${servingMiner.name} (${servingMiner.id})`);
   console.log("Evidence:", evidencePath);
   console.log("Signal hash:", evidence.signalHash ?? "(missing)");
   console.log("Miner verdict:", evidence.label ?? "(missing)");
@@ -575,6 +665,64 @@ async function completeSuccessfulProof(input: {
       input.operationId
     );
   }
+}
+
+async function holdInvalidEvidence(
+  input: {
+    action: ActionContract;
+    operationId: string;
+  },
+  reason: string,
+  detail: string
+): Promise<void> {
+  journal.update(input.operationId, {
+    state: "HOLD",
+    metadata: {
+      reason,
+      detail
+    }
+  });
+
+  await finishWithoutEvidence(
+    input.action,
+    reason,
+    detail,
+    input.operationId
+  );
+}
+
+function resolveServingMiner(
+  body: Record<string, unknown>,
+  requestedMiner: MinerRecord | null,
+  miners: MinerRecord[]
+): { id: string; name: string; slug: string } | null {
+  const id =
+    body.miner_id !== undefined && body.miner_id !== null
+      ? String(body.miner_id)
+      : requestedMiner
+        ? String(requestedMiner.id)
+        : null;
+
+  const byId = id
+    ? miners.find((candidate) => String(candidate.id) === id)
+    : null;
+
+  const name =
+    typeof body.miner_name === "string"
+      ? body.miner_name
+      : byId?.name ?? requestedMiner?.name ?? null;
+
+  const slug = byId?.slug ?? requestedMiner?.slug ?? null;
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    slug: slug ?? `telegraph-miner-${id}`
+  };
 }
 
 async function finishWithoutEvidence(
@@ -650,6 +798,16 @@ function printDecision(decision: DecisionRecord): void {
   }
 
   console.log("");
+}
+
+function loadMinerRegistry(): MinerRecord[] {
+  try {
+    return JSON.parse(
+      fs.readFileSync("data/miners.json", "utf8")
+    ) as MinerRecord[];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchWithReadRetry(
