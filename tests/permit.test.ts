@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -24,15 +23,15 @@ import { mintPermit, verifyPermit } from "../src/permit/permit.js";
 const AGENT = "procurement-agent";
 const SECRET = "proofgate-unit-test-secret-" + "a".repeat(64);
 
-function latestEvidence(): TelegraphEvidenceRecord {
-  const directory = path.join(process.cwd(), "data", "evidence");
-  const file = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort().at(-1);
-
-  if (!file) {
-    throw new Error("Real Telegraph evidence missing");
-  }
-
-  return loadTelegraphEvidence(path.join(directory, file));
+function realHoldEvidence(): TelegraphEvidenceRecord {
+  return loadTelegraphEvidence(
+    path.join(
+      process.cwd(),
+      "data",
+      "evidence",
+      "telegraph-2026-09-01T17-00-18-634Z.json"
+    )
+  );
 }
 
 function createAction(destination: string, amountRaw = "5000000") {
@@ -96,7 +95,7 @@ function unitAllowDecision(
 
 describe("ProofGate exact-action and exact-mandate permits", () => {
   it("does not mint a permit for the real HOLD decision", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);
     const now = new Date(new Date(evidence.receivedAt).getTime() + 1000);
@@ -112,7 +111,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("mints and verifies a permit bound to mandate and exact action", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);
@@ -133,7 +132,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("blocks amount mutation with the stable action hash code", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const approved = createAction(evidence.subject, "5000000");
     const mandate = createMandate(evidence.subject);
@@ -149,7 +148,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("rejects an expired permit", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);
@@ -167,7 +166,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("detects evidence or decision mutation", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);
@@ -183,7 +182,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("rejects a mandate object whose authority fields were mutated after hashing", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);
@@ -210,7 +209,7 @@ describe("ProofGate exact-action and exact-mandate permits", () => {
   });
 
   it("rejects a different mandate even when the permit signature is valid", () => {
-    const evidence = latestEvidence();
+    const evidence = realHoldEvidence();
     const now = new Date("2026-09-01T18:30:00.000Z");
     const action = createAction(evidence.subject);
     const mandate = createMandate(evidence.subject);

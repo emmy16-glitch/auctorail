@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -13,20 +12,18 @@ import { evaluatePaymentsStrictV1 } from "../src/policy/payments-strict-v1.js";
 
 const AGENT = "procurement-agent";
 
-function latestEvidenceFile(): string {
-  const directory = path.join(process.cwd(), "data", "evidence");
-  const files = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
-
-  if (files.length === 0) {
-    throw new Error("No real Telegraph evidence files found.");
-  }
-
-  return path.join(directory, files[files.length - 1]);
+function realHoldEvidenceFile(): string {
+  return path.join(
+    process.cwd(),
+    "data",
+    "evidence",
+    "telegraph-2026-09-01T17-00-18-634Z.json"
+  );
 }
 
 describe("payments.strict.v1 with REAL Telegraph evidence", () => {
   it("HOLDs even when Miner says ALLOW if evidence is insufficient", () => {
-    const evidence = loadTelegraphEvidence(latestEvidenceFile());
+    const evidence = loadTelegraphEvidence(realHoldEvidenceFile());
     const action = createActionContract({
       type: "payment",
       chainId: BASE_SEPOLIA_CHAIN_ID,
