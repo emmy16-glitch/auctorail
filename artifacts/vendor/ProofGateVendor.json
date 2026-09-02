@@ -1,6 +1,6 @@
 {
   "contractName": "ProofGateVendor",
-  "compiler": "0.8.36+commit.8a079791.Emscripten.clang",
+  "compiler": "0.8.36+commit.8a079791",
   "abi": [
     {
       "inputs": [

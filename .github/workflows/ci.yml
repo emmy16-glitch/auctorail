@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Compile and verify vendor artifact
+        run: npm run vendor:compile && git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
+
       - name: Typecheck and test
         run: npm run ci
 

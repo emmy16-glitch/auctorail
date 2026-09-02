@@ -29,7 +29,7 @@ export const ATTESTED_VENDOR_PROFILE = {
   runtimeKeccak256:
     "0x12c20655de1ed03a8e646cb98f8ce51e033ec28dc38b7c9383b8f96d02d07a93",
   compiler:
-    "0.8.36+commit.8a079791.Emscripten.clang",
+    "0.8.36+commit.8a079791",
   maxAgeSeconds:
     60
 } as const;
