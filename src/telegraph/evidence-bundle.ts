@@ -11,6 +11,9 @@ import type {
   AdaptiveEvidencePlan,
   ActionRiskTier
 } from "./adaptive-evidence-plan.js";
+import {
+  TELEGRAPH_X402_POLICY
+} from "./x402-policy.js";
 
 export interface AdaptiveEvidencePayment {
   amountRaw: string;
@@ -67,6 +70,12 @@ export interface EvidenceBundleItemInput {
   paymentAsset?: string | null;
 }
 
+const ADAPTIVE_INTENTS = new Set<AdaptiveEvidenceIntent>([
+  "FRAUD_DETECTION",
+  "ONCHAIN_TX_LOOKUP",
+  "WALLET_BALANCE_CHECK"
+]);
+
 function requireUnsignedInteger(
   value: string,
   field: string
@@ -86,6 +95,82 @@ function addressesEqual(
     /^0x[0-9a-fA-F]{40}$/.test(a) &&
     /^0x[0-9a-fA-F]{40}$/.test(b) &&
     a.toLowerCase() === b.toLowerCase()
+  );
+}
+
+function isSha256Hex(value: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function validTimestamp(value: string): boolean {
+  return Number.isFinite(new Date(value).getTime());
+}
+
+function validEvidenceItem(item: AdaptiveEvidenceItem): boolean {
+  if (!ADAPTIVE_INTENTS.has(item.intent)) return false;
+  if (item.routeMode !== "TELEGRAPH_INTENT_ROUTE") return false;
+  if (
+    !item.miner.id.trim() ||
+    !item.miner.name.trim() ||
+    !item.miner.slug.trim()
+  ) {
+    return false;
+  }
+
+  if (!isSha256Hex(item.rawResponseHash)) return false;
+  if (item.signalHash !== null && !isSha256Hex(item.signalHash)) return false;
+  if (!validTimestamp(item.receivedAt)) return false;
+
+  if (
+    item.confidence !== null &&
+    (!Number.isFinite(item.confidence) ||
+      item.confidence < 0 ||
+      item.confidence > 1)
+  ) {
+    return false;
+  }
+
+  if (
+    !["APPLICABLE", "NOT_APPLICABLE", "UNKNOWN"].includes(
+      item.applicability
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    item.durationMs !== null &&
+    (!Number.isFinite(item.durationMs) || item.durationMs < 0)
+  ) {
+    return false;
+  }
+
+  if (
+    item.costUsd !== null &&
+    (!Number.isFinite(item.costUsd) || item.costUsd < 0)
+  ) {
+    return false;
+  }
+
+  let paymentAmount: bigint;
+  try {
+    paymentAmount = requireUnsignedInteger(
+      item.payment.amountRaw,
+      "evidence_payment_amount"
+    );
+  } catch {
+    return false;
+  }
+
+  if (paymentAmount === 0n) {
+    return item.payment.network === null && item.payment.asset === null;
+  }
+
+  return (
+    paymentAmount <= TELEGRAPH_X402_POLICY.maxAmountRaw &&
+    item.payment.network === TELEGRAPH_X402_POLICY.network &&
+    typeof item.payment.asset === "string" &&
+    addressesEqual(item.payment.asset, TELEGRAPH_X402_POLICY.asset)
   );
 }
 
@@ -293,6 +378,14 @@ export function verifyEvidenceBundle(
       ...body
     } = bundle;
 
+    if (!isSha256Hex(bundleHash) || !isSha256Hex(bundle.actionHash) || !isSha256Hex(bundle.planHash)) {
+      return false;
+    }
+
+    if (!validTimestamp(bundle.createdAt)) {
+      return false;
+    }
+
     if (
       bundleHash !==
       hashCanonicalPayload(
@@ -336,13 +429,12 @@ export function verifyEvidenceBundle(
 
     return bundle.items.every(
       (item) =>
+        validEvidenceItem(item) &&
         addressesEqual(
           item.subject,
           bundle.subject
         ) &&
-        item.chainId === bundle.chainId &&
-        item.routeMode ===
-          "TELEGRAPH_INTENT_ROUTE"
+        item.chainId === bundle.chainId
     );
   } catch {
     return false;
