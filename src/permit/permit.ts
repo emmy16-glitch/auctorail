@@ -7,6 +7,7 @@ import {
 
 import {
   canonicalize,
+  hashCanonicalPayload,
   type ActionContract,
   type PaymentPolicyId
 } from "../core/action-contract.js";
@@ -328,9 +329,17 @@ export function verifyPermit(
     };
   }
 
-  // Exact semantic action binding takes precedence so post-authorization
-  // mutations retain stable attack-specific error codes.
-  if (permit.payload.actionHash !== action.actionHash) {
+  // Recompute the hash from the current semantic payload. The object may
+  // have been deserialized or mutated while retaining a stale actionHash.
+  // Both the supplied action hash and the permit must bind to the payload
+  // currently presented to the executor.
+  const recomputedActionHash = hashCanonicalPayload(
+    canonicalize(action.payload)
+  );
+  if (
+    action.actionHash !== recomputedActionHash ||
+    permit.payload.actionHash !== recomputedActionHash
+  ) {
     return {
       valid: false,
       code: "action_hash_mismatch"

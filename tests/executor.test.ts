@@ -12,7 +12,10 @@ import { createMandateContract, type MandateContract } from "../src/core/mandate
 import { loadTelegraphEvidence } from "../src/evidence/telegraph.js";
 import type { DecisionRecord } from "../src/policy/payments-strict-v1.js";
 import { mintPermit } from "../src/permit/permit.js";
-import { FilePermitConsumptionStore } from "../src/executor/permit-store.js";
+import {
+  FilePermitConsumptionStore,
+  type PermitConsumptionStore
+} from "../src/executor/permit-store.js";
 import { executeProtectedAction } from "../src/executor/controlled-executor.js";
 
 const AGENT = "procurement-agent";
@@ -168,6 +171,42 @@ describe("ProofGate Controlled Executor", () => {
     expect(executions).toBe(0);
   });
 
+  it("blocks a mutated payload with a stale action hash", async () => {
+    const ev = evidence();
+    const now = new Date("2026-09-01T19:00:00.000Z");
+    const approved = action(ev.subject, "5000000");
+    const delegated = mandate(ev.subject);
+    const decision = allowDecision(delegated, approved.id, now);
+    const permit = mintPermit(delegated, approved, ev, decision, SECRET, { now });
+    const tampered = {
+      ...approved,
+      payload: {
+        ...approved.payload,
+        amountRaw: "15000000"
+      }
+    };
+    let executions = 0;
+
+    const result = await executeProtectedAction({
+      mandate: delegated,
+      permit,
+      action: tampered,
+      evidence: ev,
+      decision,
+      secret: SECRET,
+      store: store(),
+      execute: async () => {
+        executions++;
+        return {};
+      },
+      now: new Date(now.getTime() + 1000)
+    });
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.code).toBe("action_hash_mismatch");
+    expect(executions).toBe(0);
+  });
+
   it("allows only one winner during concurrent replay attempts", async () => {
     const ev = evidence();
     const now = new Date("2026-09-01T19:00:00.000Z");
@@ -200,6 +239,99 @@ describe("ProofGate Controlled Executor", () => {
     expect(results.filter((result) => result.status === "EXECUTED")).toHaveLength(1);
     expect(results.filter((result) => result.code === "permit_already_consumed")).toHaveLength(1);
     expect(executions).toBe(1);
+  });
+
+  it.each([
+    ["EACCES", Object.assign(new Error("permission denied"), { code: "EACCES" })],
+    ["ENOSPC", Object.assign(new Error("no space left"), { code: "ENOSPC" })],
+    ["EROFS", Object.assign(new Error("read-only filesystem"), { code: "EROFS" })],
+    ["unknown", new Error("unexpected storage failure")]
+  ])("fails closed when permit consumption throws (%s)", async (_name, storageError) => {
+    const ev = evidence();
+    const now = new Date("2026-09-01T19:00:00.000Z");
+    const approved = action(ev.subject);
+    const delegated = mandate(ev.subject);
+    const decision = allowDecision(delegated, approved.id, now);
+    const permit = mintPermit(delegated, approved, ev, decision, SECRET, { now });
+    const failingStore: PermitConsumptionStore = {
+      consume: () => {
+        throw storageError;
+      },
+      isConsumed: () => false
+    };
+    let executions = 0;
+
+    const result = await executeProtectedAction({
+      mandate: delegated,
+      permit,
+      action: approved,
+      evidence: ev,
+      decision,
+      secret: SECRET,
+      store: failingStore,
+      execute: async () => {
+        executions++;
+        return {};
+      },
+      now: new Date(now.getTime() + 1000)
+    });
+
+    expect(result).toEqual({
+      status: "FAILED",
+      code: "permit_store_unavailable",
+      error: "Permit consumption store is unavailable."
+    });
+    expect(executions).toBe(0);
+  });
+
+  it("fails closed when disk space is exhausted mid-acquisition", async () => {
+    const ev = evidence();
+    const now = new Date("2026-09-01T19:00:00.000Z");
+    const approved = action(ev.subject);
+    const delegated = mandate(ev.subject);
+    const decision = allowDecision(delegated, approved.id, now);
+    const permit = mintPermit(delegated, approved, ev, decision, SECRET, { now });
+    const acquisitionMarker = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "proofgate-disk-failure-")),
+      "partial-claim"
+    );
+    const diskFullError = Object.assign(
+      new Error("simulated disk full during claim finalization"),
+      { code: "ENOSPC" }
+    );
+    const failingStore: PermitConsumptionStore = {
+      consume: () => {
+        // Simulate work having started before the filesystem fails. The
+        // marker is not a valid claim record and must not authorize execution.
+        fs.writeFileSync(acquisitionMarker, "partial", { mode: 0o600 });
+        throw diskFullError;
+      },
+      isConsumed: () => false
+    };
+    let executions = 0;
+
+    const result = await executeProtectedAction({
+      mandate: delegated,
+      permit,
+      action: approved,
+      evidence: ev,
+      decision,
+      secret: SECRET,
+      store: failingStore,
+      execute: async () => {
+        executions++;
+        return {};
+      },
+      now: new Date(now.getTime() + 1000)
+    });
+
+    expect(result).toEqual({
+      status: "FAILED",
+      code: "permit_store_unavailable",
+      error: "Permit consumption store is unavailable."
+    });
+    expect(executions).toBe(0);
+    expect(fs.readFileSync(acquisitionMarker, "utf8")).toBe("partial");
   });
 
   it("does not execute an expired permit", async () => {

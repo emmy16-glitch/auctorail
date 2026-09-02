@@ -13,6 +13,7 @@ export type ExecutorCode =
   | "executed"
   | "execution_failed"
   | "execution_ambiguous"
+  | "permit_store_unavailable"
   | "permit_already_consumed"
   | PermitVerificationCode;
 
@@ -68,11 +69,20 @@ export async function executeProtectedAction<T>(
     };
   }
 
-  const consumption = input.store.consume(
-    input.permit.payload.permitId,
-    input.permit.payload.nonce,
-    now.toISOString()
-  );
+  let consumption;
+  try {
+    consumption = input.store.consume(
+      input.permit.payload.permitId,
+      input.permit.payload.nonce,
+      now.toISOString()
+    );
+  } catch {
+    return {
+      status: "FAILED",
+      code: "permit_store_unavailable",
+      error: "Permit consumption store is unavailable."
+    };
+  }
 
   if (!consumption.consumed) {
     return {

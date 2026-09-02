@@ -1,0 +1,246 @@
+=== FULL TEST EXECUTION LOG ===
+=== AUDIT RUN METADATA ===
+UTC_TIMESTAMP=2026-09-02T05:33:42Z
+COMMIT=381a2dddd86b59f2afc41c555be5e9174d3ca904
+BRANCH=main
+WORKTREE:
+ [31mM[m src/executor/controlled-executor.ts
+ [31mM[m src/permit/permit.ts
+ [31mM[m tests/executor.test.ts
+[31m??[m audit-artifacts/
+v22.13.0
+10.9.2
+PACKAGE:
+{
+  "name": "proof-gate",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "ci": "npm run typecheck && npm test",
+    "proof:live": "tsx scripts/prove-telegraph.ts",
+    "policy": "tsx scripts/show-policy-decision.ts",
+    "wallet:check": "node scripts/check-wallet.mjs",
+    "vendor:compile": "node scripts/compile-vendor.mjs",
+    "vendor:deploy": "tsx scripts/deploy-vendor.ts",
+    "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
+    "execute:approved": "tsx scripts/execute-approved-payment.ts",
+    "attack:lab": "tsx scripts/attack-lab.ts",
+    "proof:reprocess": "tsx scripts/reprocess-quarantine.ts"
+  }
+}
+--- typecheck.status ---
+TYPECHECK_EXIT=0
+--- full-test.status ---
+TEST_EXIT=0
+--- attack-lab.status ---
+ATTACK_LAB_EXIT=0
+--- coverage.status ---
+COVERAGE_EXIT=0
+--- npm-audit.status ---
+AUDIT_EXIT=1
+--- npm-audit-json.status ---
+AUDIT_JSON_EXIT=1
+--- TYPECHECK ---
+
+> proof-gate@1.0.0 typecheck
+> tsc --noEmit
+
+--- FULL TEST ---
+
+> proof-gate@1.0.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/home/ubuntu/proof-gate[39m
+
+ [32m✓[39m tests/action-contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/live-evidence-guard.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/executor.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m tests/payments-attested-vendor-v1.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m tests/attack-lab.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m tests/payment-gateway.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m tests/end-to-end-security.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m tests/permit-invariants.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m tests/permit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m tests/mandate-contract.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m tests/mandate-policy.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/probabilistic-negative-policy.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m tests/proof-receipt.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m tests/policy-real-evidence.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m tests/executor-ambiguity.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m tests/routed-evidence.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/verification-planner.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/engine-ask.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m tests/base-sepolia-usdc.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/local-secret.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/operation-journal.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/vendor-runtime-attestation.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m tests/wallet-risk-evidence.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/declared-text-evidence.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/evidence-store.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/evidence-binding-strict.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/x402-policy.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/capability-route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m28 passed[39m[22m[90m (28)[39m
+[2m      Tests [22m [1m[32m120 passed[39m[22m[90m (120)[39m
+[2m   Start at [22m 05:33:50
+[2m   Duration [22m 2.27s[2m (transform 548ms, setup 0ms, import 6.51s, tests 696ms, environment 2ms)[22m
+
+--- ATTACK LAB ---
+
+> proof-gate@1.0.0 attack:lab
+> tsx scripts/attack-lab.ts
+
+
+PROOFGATE ATTACK LAB
+====================
+Mode: OFFLINE_DETERMINISTIC
+Policy: payments.attested-vendor.v1
+Baseline: ALLOW
+
+PASS | baseline
+  attack:   Valid exact permit/action executes once.
+  expected: EXECUTED:1
+  observed: EXECUTED:1
+PASS | permit_replay
+  attack:   Replay a consumed permit.
+  expected: permit_already_consumed:1
+  observed: permit_already_consumed:1
+PASS | amount_mutation
+  attack:   Change 1 USDC to 2 USDC after authorization.
+  expected: action_hash_mismatch
+  observed: action_hash_mismatch
+PASS | evidence_subject_swap
+  attack:   Replace exact vendor evidence with evidence for another address.
+  expected: evidence_binding_mismatch
+  observed: evidence_binding_mismatch
+PASS | permit_forgery
+  attack:   Forge the HMAC permit signature.
+  expected: invalid_permit_signature
+  observed: invalid_permit_signature
+PASS | expired_permit
+  attack:   Use a permit after its 30-second TTL.
+  expected: permit_expired
+  observed: permit_expired
+PASS | decision_tamper
+  attack:   Alter the authorization decision after permit mint.
+  expected: decision_hash_mismatch
+  observed: decision_hash_mismatch
+PASS | mandate_substitution
+  attack:   Rebind a permit to another mandate version.
+  expected: mandate_hash_mismatch
+  observed: mandate_hash_mismatch
+PASS | negative_miner
+  attack:   Give deterministic runtime proof but a negative Telegraph verdict.
+  expected: BLOCK:miner_result
+  observed: BLOCK:miner_result
+PASS | runtime_attestation_tamper
+  attack:   Alter pinned runtime evidence while Telegraph still says ALLOW.
+  expected: BLOCK:vendor_runtime_attestation
+  observed: BLOCK:vendor_runtime_attestation
+PASS | receipt_tamper
+  attack:   Alter transaction hash inside a completed Proof Receipt.
+  expected: false
+  observed: false
+
+RESULT: 10/10 attacks contained
+Telegraph requests: 0
+x402 payments: 0
+Blockchain writes: 0
+--- COVERAGE ---
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/home/ubuntu/proof-gate[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+ [32m✓[39m tests/mandate-contract.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m tests/payment-gateway.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m tests/executor.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 84[2mms[22m[39m
+ [32m✓[39m tests/payments-attested-vendor-v1.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32m✓[39m tests/attack-lab.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m tests/permit-invariants.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/live-evidence-guard.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m tests/mandate-policy.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m tests/permit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m tests/end-to-end-security.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/proof-receipt.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m tests/probabilistic-negative-policy.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m tests/policy-real-evidence.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m tests/executor-ambiguity.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m tests/vendor-runtime-attestation.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/verification-planner.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m tests/base-sepolia-usdc.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m tests/action-contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/engine-ask.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/wallet-risk-evidence.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/operation-journal.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/routed-evidence.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/local-secret.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/evidence-store.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/x402-policy.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/declared-text-evidence.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/capability-route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/evidence-binding-strict.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m28 passed[39m[22m[90m (28)[39m
+[2m      Tests [22m [1m[32m120 passed[39m[22m[90m (120)[39m
+[2m   Start at [22m 05:34:07
+[2m   Duration [22m 2.37s[2m (transform 595ms, setup 0ms, import 5.94s, tests 767ms, environment 2ms)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   75.45 |     70.9 |   88.95 |   75.65 |
+ core              |   91.08 |    84.84 |    92.3 |   92.92 |
+  ...n-contract.ts |    92.3 |      100 |     100 |    92.3 | 35,50
+  ...e-contract.ts |   90.66 |    81.48 |   88.88 |   93.15 | ...45,284,291,321
+ evidence          |   55.08 |       61 |   73.68 |   55.08 |
+  ...ence-store.ts |   68.18 |       75 |   66.66 |   68.18 | 16,31,35,42,59-61
+  telegraph.ts     |   90.47 |    70.83 |     100 |   90.47 | 142,190
+  ...or-runtime.ts |   41.33 |    53.33 |      60 |   41.33 | ...42,658,695-728
+ executor          |   44.65 |    41.74 |   65.38 |   44.93 |
+  ...polia-usdc.ts |   14.58 |    16.94 |      25 |   14.73 | ...04,208,231-465
+  ...d-executor.ts |   94.44 |    58.33 |     100 |   94.44 | 116
+  ...on-journal.ts |   87.09 |    82.75 |     100 |   87.09 | 89,95,144,157
+  permit-store.ts  |   92.85 |    66.66 |     100 |   92.85 | 117
+ gateway           |   72.72 |    72.16 |    87.5 |   72.72 |
+  ...ence-guard.ts |   67.39 |    76.27 |      80 |   67.39 | ...87,217,234-237
+  ...nt-gateway.ts |      85 |    65.78 |     100 |      85 | 87,145,199
+ permit            |   83.65 |    81.41 |     100 |   83.49 |
+  decision-hash.ts |     100 |      100 |     100 |     100 |
+  local-secret.ts  |   77.77 |       50 |     100 |   77.77 | 9,49-53
+  permit.ts        |   84.52 |    85.56 |     100 |   84.33 | ...97,309,350,371
+ policy            |   88.52 |    71.32 |     100 |   88.33 |
+  ...-vendor-v1.ts |   93.61 |    67.41 |     100 |   93.61 | 88,232,395
+  ...-strict-v1.ts |   85.33 |    77.77 |     100 |   84.93 | ...28,246,308,320
+ receipt           |   69.23 |     80.8 |     100 |   69.23 |
+  proof-receipt.ts |   69.23 |     80.8 |     100 |   69.23 | ...42,360,370,383
+ security          |   94.44 |       75 |    92.3 |   94.44 |
+  attack-lab.ts    |   94.44 |       75 |    92.3 |   94.44 | 358,442-444,793
+ telegraph         |   85.83 |    75.39 |      96 |   86.72 |
+  ...lity-route.ts |     100 |      100 |     100 |     100 |
+  engine-ask.ts    |     100 |      100 |     100 |     100 |
+  ...d-evidence.ts |   87.13 |    73.51 |   94.44 |   88.53 | ...66,570-573,577
+  ...on-planner.ts |   85.71 |       50 |     100 |   85.71 | 25
+  x402-policy.ts   |   79.62 |    79.31 |     100 |   79.62 | ...98,212,222,271
+-------------------|---------|----------|---------|---------|-------------------
+--- NPM AUDIT ---
+# npm audit report
+
+tmp  <=0.2.5
+Severity: high
+tmp allows arbitrary temporary file / directory write via symbolic link `dir` parameter - https://github.com/advisories/GHSA-52f5-9888-hmc6
+tmp has Path Traversal via unsanitized prefix/postfix that enables directory escape - https://github.com/advisories/GHSA-ph9p-34f9-6g65
+fix available via `npm audit fix --force`
+Will install solc@0.5.0, which is a breaking change
+node_modules/tmp
+  solc  >=0.5.1
+  Depends on vulnerable versions of tmp
+  node_modules/solc
+
+2 vulnerabilities (1 low, 1 high)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
