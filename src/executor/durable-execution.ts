@@ -248,6 +248,9 @@ export async function executeDurableProtectedAction(
   }
 ): Promise<DurableExecutionResult> {
   const now = input.now ?? new Date();
+  if (process.env.NODE_ENV === "production" && !input.mandateStatusAuthority) {
+    return { status: "FAILED", code: "mandate_status_authority_required" };
+  }
   if (input.mandateStatusAuthority) {
     let currentStatus: MandateStatus;
     try {
@@ -272,6 +275,19 @@ export async function executeDurableProtectedAction(
   );
   if (!verification.valid) {
     return { status: "BLOCKED", code: verification.code };
+  }
+  if (input.mandate.maxCumulativeRaw !== undefined) {
+    if (!input.spendAuthority || !input.spendAuthorityId) {
+      return { status: "BLOCKED", code: "cumulative_spend_authority_required" };
+    }
+    try {
+      const authority = await input.spendAuthority.getAuthority(input.spendAuthorityId);
+      if (!authority || authority.mandateHash !== input.mandate.mandateHash || authority.policyId !== input.mandate.policyId || authority.policyVersion !== input.mandate.policyVersion || authority.chainId !== input.action.payload.chainId || authority.token.toLowerCase() !== input.action.payload.token.toLowerCase() || authority.maxCumulativeRaw !== input.mandate.maxCumulativeRaw) {
+        return { status: "BLOCKED", code: "spend_authority_binding_mismatch" };
+      }
+    } catch {
+      return { status: "FAILED", code: "spend_authority_unavailable" };
+    }
   }
 
   let record: DurableExecutionRecord;

@@ -57,9 +57,11 @@ const MandateContractInputSchema = z.object({
     .array(EvmAddressSchema)
     .min(1),
 
-  maxPerActionRaw: PositiveIntegerStringSchema,
+    maxPerActionRaw: PositiveIntegerStringSchema,
+  maxCumulativeRaw: PositiveIntegerStringSchema.optional(),
 
-  requiredIntents: z
+  requiredIntents:
+ z
     .array(z.string().trim().min(1).max(128))
     .min(1),
 
@@ -83,6 +85,7 @@ export interface MandateContract {
   allowedAssets: string[];
   allowedDestinations: string[];
   maxPerActionRaw: string;
+  maxCumulativeRaw?: string;
   requiredIntents: string[];
   policyId: PaymentPolicyId;
   policyVersion: number;
@@ -203,8 +206,12 @@ export function createMandateContract(
     allowedDestinations: uniqueSortedStrings(
       validated.allowedDestinations.map(normalizeAddress)
     ),
-    maxPerActionRaw: BigInt(validated.maxPerActionRaw).toString(),
-    requiredIntents: uniqueSortedStrings(
+        maxPerActionRaw: BigInt(validated.maxPerActionRaw).toString(),
+    ...(validated.maxCumulativeRaw !== undefined
+      ? { maxCumulativeRaw: BigInt(validated.maxCumulativeRaw).toString() }
+      : {}),
+    requiredIntents:
+ uniqueSortedStrings(
       validated.requiredIntents.map((value) => value.trim().toUpperCase())
     ),
     policyId: validated.policyId,
@@ -245,8 +252,12 @@ export function verifyMandateContract(
     allowedChainIds: mandate.allowedChainIds,
     allowedAssets: mandate.allowedAssets,
     allowedDestinations: mandate.allowedDestinations,
-    maxPerActionRaw: mandate.maxPerActionRaw,
-    requiredIntents: mandate.requiredIntents,
+        maxPerActionRaw: mandate.maxPerActionRaw,
+    ...(mandate.maxCumulativeRaw !== undefined
+      ? { maxCumulativeRaw: mandate.maxCumulativeRaw }
+      : {}),
+    requiredIntents:
+ mandate.requiredIntents,
     policyId: mandate.policyId,
     policyVersion: mandate.policyVersion,
     status: mandate.status,

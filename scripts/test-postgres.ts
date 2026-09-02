@@ -98,7 +98,7 @@ try {
   }
 
   const authorityId = `integration-authority-${randomUUID()}`;
-  await spendStore.createAuthority({ authorityId, mandateHash: "mandate-hash", policyId: "payments.strict.v1", chainId: 84532, token: "0x0000000000000000000000000000000000000004", maxCumulativeRaw: "10", now });
+  await spendStore.createAuthority({ authorityId, mandateHash: "mandate-hash", policyId: "payments.strict.v1", policyVersion: 1, chainId: 84532, token: "0x0000000000000000000000000000000000000004", maxCumulativeRaw: "10", now });
   const spendResults = await Promise.all([
     spendStore.reserve({ authorityId, executionId: randomUUID(), amountRaw: "7", now }),
     spendStore.reserve({ authorityId, executionId: randomUUID(), amountRaw: "7", now })

@@ -6,6 +6,7 @@ export interface SpendAuthority {
   authorityId: string;
   mandateHash: string;
   policyId: string;
+  policyVersion: number;
   chainId: number;
   token: string;
   maxCumulativeRaw: string;
@@ -46,12 +47,21 @@ export class PostgresSpendAuthorityStore {
     const authority: SpendAuthority = { ...input, reservedRaw: "0", createdAt: now, updatedAt: now };
     await this.database.query(
       `INSERT INTO spend_authorities
-        (authority_id, mandate_hash, policy_id, chain_id, token,
+                (authority_id, mandate_hash, policy_id, policy_version, chain_id, token,
          max_cumulative_raw, reserved_raw, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6::numeric, 0, $7::timestamptz, $7::timestamptz)`,
-      [authority.authorityId, authority.mandateHash, authority.policyId, authority.chainId, authority.token, authority.maxCumulativeRaw, now]
+      VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, 0, $8::timestamptz, $8::timestamptz)`,
+      [authority.authorityId, authority.mandateHash, authority.policyId, authority.policyVersion, authority.chainId, authority.token, authority.maxCumulativeRaw, now]
+
     );
     return authority;
+  }
+
+  async getAuthority(authorityId: string): Promise<SpendAuthority | null> {
+    const result = await this.database.query<SpendAuthority>(
+      `SELECT authority_id AS "authorityId", mandate_hash AS "mandateHash", policy_id AS "policyId", policy_version AS "policyVersion", chain_id AS "chainId", token, max_cumulative_raw::text AS "maxCumulativeRaw", reserved_raw::text AS "reservedRaw", created_at AS "createdAt", updated_at AS "updatedAt" FROM spend_authorities WHERE authority_id = $1`,
+      [authorityId]
+    );
+    return result.rows[0] ?? null;
   }
 
   async reserve(input: { authorityId: string; executionId: string; amountRaw: string; now?: Date }): Promise<{ reserved: boolean; code: "spend_reserved" | "spend_already_reserved" | "spend_exhausted"; reservation?: SpendReservation }> {
