@@ -59,6 +59,17 @@ function isObject(
     !Array.isArray(value);
 }
 
+function advisory<T>(result: T) {
+  return {
+    mode: "EVALUATE_ONLY" as const,
+    authoritative: false as const,
+    executableAuthority: null,
+    warning:
+      "This gateway does not mint a ProofGate Permit. Treat this response as evaluation/debug output only.",
+    result
+  };
+}
+
 async function readJson(
   request: IncomingMessage
 ): Promise<unknown> {
@@ -97,6 +108,8 @@ async function handler(
     sendJson(response, 200, {
       service: "proofgate",
       mode: "EVALUATE_ONLY",
+      authoritative: false,
+      executableAuthority: null,
       policy: "payments.adaptive.v1",
       status: "ok"
     });
@@ -128,11 +141,13 @@ async function handler(
     sendJson(
       response,
       200,
-      planPaymentAuthorization({
-        amountRaw,
-        destination,
-        reason
-      })
+      advisory(
+        planPaymentAuthorization({
+          amountRaw,
+          destination,
+          reason
+        })
+      )
     );
     return;
   }
@@ -178,7 +193,7 @@ async function handler(
       result.decision.decision === "ALLOW"
         ? 200
         : 403,
-      result
+      advisory(result)
     );
     return;
   }
@@ -208,6 +223,6 @@ server.listen(port, host, () => {
     `ProofGate authorization gateway listening on http://${host}:${port}`
   );
   console.log(
-    "Mode: EVALUATE_ONLY (does not hold a wallet key, buy evidence, mint permits, or execute funds)"
+    "Mode: EVALUATE_ONLY (non-authoritative; does not hold a wallet key, buy evidence, mint permits, or execute funds)"
   );
 });
