@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BASE_SEPOLIA_USDC
+} from "../src/core/action-contract.js";
+import {
   evaluatePaymentsAdaptiveV1
 } from "../src/policy/payments-adaptive-v1.js";
 import {
@@ -18,6 +21,15 @@ import {
   adaptiveEvidence,
   adaptiveMandate
 } from "./helpers/adaptive-fixtures.js";
+
+function paid(evidence: ReturnType<typeof adaptiveEvidence>, amountRaw = "10000") {
+  return {
+    evidence,
+    paymentAmountRaw: amountRaw,
+    paymentNetwork: "eip155:84532",
+    paymentAsset: BASE_SEPOLIA_USDC
+  };
+}
 
 function decide(
   context: ReturnType<typeof adaptiveContext>
@@ -57,13 +69,12 @@ describe("payments.adaptive.v1", () => {
       action,
       plan,
       [
-        {
-          evidence: adaptiveEvidence(
+        paid(
+          adaptiveEvidence(
             action,
             "FRAUD_DETECTION"
-          ),
-          paymentAmountRaw: "10000"
-        }
+          )
+        )
       ],
       { now: ADAPTIVE_TEST_NOW }
     );
@@ -99,6 +110,23 @@ describe("payments.adaptive.v1", () => {
     expect(decision.decision).toBe("BLOCK");
     expect(decision.reason).toBe(
       "adaptive_explicit_negative"
+    );
+  });
+
+  it("HOLDs uncertain status labels from secondary Intents", () => {
+    const context = adaptiveContext(
+      "7000000",
+      {
+        ONCHAIN_TX_LOOKUP: {
+          label: "UNAVAILABLE"
+        }
+      }
+    );
+
+    const decision = decide(context);
+    expect(decision.decision).toBe("HOLD");
+    expect(decision.reason).toBe(
+      "adaptive_secondary_result_uncertain"
     );
   });
 
@@ -139,13 +167,13 @@ describe("payments.adaptive.v1", () => {
       action,
       plan,
       [
-        {
-          evidence: adaptiveEvidence(
+        paid(
+          adaptiveEvidence(
             action,
             "FRAUD_DETECTION"
           ),
-          paymentAmountRaw: "15001"
-        }
+          "15001"
+        )
       ],
       { now: ADAPTIVE_TEST_NOW }
     );
@@ -163,7 +191,7 @@ describe("payments.adaptive.v1", () => {
 
     expect(decision.decision).toBe("BLOCK");
     expect(decision.reason).toBe(
-      "adaptive_evidence_budget_exceeded"
+      "adaptive_bundle_integrity_failed"
     );
   });
 
@@ -206,13 +234,12 @@ describe("payments.adaptive.v1", () => {
       action,
       downgraded,
       [
-        {
-          evidence: adaptiveEvidence(
+        paid(
+          adaptiveEvidence(
             action,
             "FRAUD_DETECTION"
-          ),
-          paymentAmountRaw: "10000"
-        }
+          )
+        )
       ],
       { now: ADAPTIVE_TEST_NOW }
     );
