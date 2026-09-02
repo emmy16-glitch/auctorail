@@ -58,20 +58,31 @@ try {
   const migration3 = await fs.readFile(path.join(process.cwd(), "migrations/003_spend_authority.sql"), "utf8");
   await pool.query(`${migration1}\n${migration2}\n${migration3}`);
 
-  const permitId = `integration-permit-${randomUUID()}`;
-  const nonce = "integration-nonce";
+  const claimRaceResults: Array<{ concurrency: number; successfulClaims: number; replayClaims: number }> = [];
+  for (const concurrency of [2, 5, 10, 25, 50, 100]) {
+    const permitId = `integration-permit-${randomUUID()}`;
+    const nonce = `integration-nonce-${concurrency}`;
+    const executionIds = Array.from({ length: concurrency }, () => randomUUID());
+    const claims = await Promise.all(executionIds.map((executionId) => permitStore.consume(permitId, nonce, now.toISOString(), executionId)));
+    const successfulClaims = claims.filter((claim) => claim.consumed).length;
+    const replayClaims = claims.filter((claim) => !claim.consumed).length;
+    if (successfulClaims !== 1 || replayClaims !== concurrency - 1) throw new Error(`claim_race_failed:${concurrency}:${successfulClaims}/${replayClaims}`);
+    claimRaceResults.push({ concurrency, successfulClaims, replayClaims });
+    if (concurrency === 100) {
+      const winningExecutionId = executionIds[claims.findIndex((claim) => claim.consumed)];
+      const ownership = await permitStore.getConsumption(permitId, nonce);
+      if (!ownership || ownership.executionId !== winningExecutionId) throw new Error("claim_owner_not_persisted");
+      const recovered = await permitStore.consume(permitId, nonce, now.toISOString(), winningExecutionId);
+      if (recovered.code !== "permit_already_consumed_by_this_execution") throw new Error(`same_execution_recovery_failed:${recovered.code}`);
+      const foreign = await permitStore.consume(permitId, nonce, now.toISOString(), randomUUID());
+      if (foreign.code !== "permit_already_consumed_by_other_execution") throw new Error(`foreign_claim_not_blocked:${foreign.code}`);
+    }
+  }
+  const successfulClaims = claimRaceResults.at(-1)!.successfulClaims;
+  const replayClaims = claimRaceResults.at(-1)!.replayClaims;
+  const permitId = `integration-execution-permit-${randomUUID()}`;
+  const nonce = "integration-execution-nonce";
   const executionId = randomUUID();
-  const claims = await Promise.all(Array.from({ length: 100 }, () => permitStore.consume(permitId, nonce, now.toISOString(), executionId)));
-  const successfulClaims = claims.filter((claim) => claim.consumed).length;
-  const replayClaims = claims.filter((claim) => !claim.consumed).length;
-  if (successfulClaims !== 1 || replayClaims !== 99) throw new Error(`claim_race_failed:${successfulClaims}/${replayClaims}`);
-  const ownership = await permitStore.getConsumption(permitId, nonce);
-  if (!ownership || ownership.executionId !== executionId) throw new Error("claim_owner_not_persisted");
-  const recovered = await permitStore.consume(permitId, nonce, now.toISOString(), executionId);
-  if (recovered.code !== "permit_already_consumed_by_this_execution") throw new Error(`same_execution_recovery_failed:${recovered.code}`);
-  const foreign = await permitStore.consume(permitId, nonce, now.toISOString(), randomUUID());
-  if (foreign.code !== "permit_already_consumed_by_other_execution") throw new Error(`foreign_claim_not_blocked:${foreign.code}`);
-
   await executionStore.create({
     executionId,
     permitId,
@@ -115,7 +126,7 @@ try {
   console.log(JSON.stringify({
     postgresIntegration: "PASS",
     schema,
-    concurrentClaims: 100,
+    concurrentClaims: claimRaceResults,
     successfulClaims,
     replayClaims,
     sameExecutionRecovery: "PASS",
