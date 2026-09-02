@@ -43,6 +43,8 @@ export interface ExecuteProtectedInput<T> {
   decision: DecisionRecord;
   secret: string;
   store: PermitConsumptionStore;
+  /** Optional durable execution identity created before permit claim. */
+  executionId?: string;
   execute: (action: ActionContract) => Promise<T>;
   now?: Date;
 }
@@ -74,7 +76,8 @@ export async function executeProtectedAction<T>(
     consumption = await input.store.consume(
       input.permit.payload.permitId,
       input.permit.payload.nonce,
-      now.toISOString()
+      now.toISOString(),
+      input.executionId
     );
   } catch {
     return {
