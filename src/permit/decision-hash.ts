@@ -5,13 +5,16 @@ import {
   type ActionContract
 } from "../core/action-contract.js";
 import type { MandateContract } from "../core/mandate-contract.js";
-import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
+import {
+  evidenceCommitmentForHash,
+  type AuthorizationEvidence
+} from "../telegraph/evidence-bundle.js";
 import type { DecisionRecord } from "../policy/payments-strict-v1.js";
 
 export function createDecisionHash(
   mandate: MandateContract,
   action: ActionContract,
-  evidence: TelegraphEvidenceRecord,
+  evidence: AuthorizationEvidence,
   decision: DecisionRecord
 ): string {
   const commitment = {
@@ -26,23 +29,8 @@ export function createDecisionHash(
       id: action.id,
       actionHash: action.actionHash
     },
-    evidence: {
-      source: evidence.source,
-      intent: evidence.intent,
-      miner: {
-        id: evidence.miner.id,
-        name: evidence.miner.name,
-        slug: evidence.miner.slug
-      },
-      subject: evidence.subject,
-      chainId: evidence.chainId,
-      label: evidence.label,
-      confidence: evidence.confidence,
-      applicability: evidence.applicability,
-      signalHash: evidence.signalHash,
-      rawResponseHash: evidence.rawResponseHash,
-      receivedAt: evidence.receivedAt
-    },
+    evidence:
+      evidenceCommitmentForHash(evidence),
     policy: {
       id: decision.policyId,
       version: decision.policyVersion,
