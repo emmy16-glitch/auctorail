@@ -9,23 +9,23 @@ import {
 const SavedTelegraphEvidenceSchema = z.object({
   source: z.literal("telegraph"),
 
-  intent: z.string(),
+  intent: z.string().trim().min(1),
 
   miner: z.object({
-    id: z.string(),
-    name: z.string(),
-    slug: z.string()
+    id: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    slug: z.string().trim().min(1)
   }),
 
   request: z.object({
-    endpoint: z.string(),
-    target: z.string(),
-    chainId: z.number()
+    endpoint: z.string().trim().min(1),
+    target: z.string().trim().min(1),
+    chainId: z.number().int().positive()
   }),
 
   result: z
     .object({
-      chainId: z.number(),
+      chainId: z.number().int().positive(),
       confidence: z
         .number()
         .min(0)
@@ -36,7 +36,7 @@ const SavedTelegraphEvidenceSchema = z.object({
       applicability: z
         .enum(["APPLICABLE", "NOT_APPLICABLE", "UNKNOWN"])
         .optional(),
-      subject: z.string(),
+      subject: z.string().trim().min(1),
       verdict: z.string().optional(),
 
       signals: z
@@ -54,16 +54,21 @@ const SavedTelegraphEvidenceSchema = z.object({
     .object({
       signalHash: z
         .string()
+        .regex(/^0x[0-9a-fA-F]{64}$/)
         .nullable()
         .optional(),
 
       costUsd: z
         .number()
+        .finite()
+        .nonnegative()
         .nullable()
         .optional(),
 
       durationMs: z
         .number()
+        .finite()
+        .nonnegative()
         .nullable()
         .optional(),
 
