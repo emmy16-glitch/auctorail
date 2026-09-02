@@ -16,7 +16,9 @@ class FakeExecutionDatabase {
         executionId: id,
         permitId: values[1],
         permitNonce: values[2],
-        state: values[11]
+        policyId: values[6],
+        state: values[12],
+        schemaVersion: values[13]
       });
       return { rows: [] };
     }
@@ -39,6 +41,7 @@ const input = {
   mandateHash: "mandate-hash",
   actionHash: "action-hash",
   decisionHash: "decision-hash",
+  policyId: "payments.strict.v1",
   chainId: 84532,
   sender: "0xsender",
   destination: "0xdestination",
