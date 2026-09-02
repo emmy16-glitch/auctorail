@@ -13,21 +13,23 @@ Its execution callback is local test instrumentation only.
 
 ## What the lab proves
 
-The lab exercises security invariants that matter after an agent appears to have enough information to proceed.
+The current harness contains **one valid baseline control plus ten adversarial scenarios**.
 
-Current scenarios include:
+The baseline proves that a correctly bound permit/action can execute exactly once. The ten adversarial scenarios then verify that the authorization boundary rejects or contains the relevant mutations and replay attempts.
 
-1. A valid exact permit executes once.
-2. A consumed permit cannot be replayed.
-3. Changing the authorized amount invalidates the action binding.
-4. Swapping the evidence subject breaks evidence binding.
-5. Forging a permit signature fails authentication.
-6. An expired permit cannot execute.
-7. Tampering with the decision breaks the decision commitment.
-8. Rebinding to another Mandate breaks mandate binding.
-9. A negative Telegraph verdict still `BLOCK`s even when supplemental runtime proof is valid.
-10. Tampering with the vendor runtime attestation `BLOCK`s.
-11. Tampering with a completed Proof Receipt breaks receipt verification.
+Current cases are:
+
+1. **Baseline control:** a valid exact permit executes once.
+2. **Attack:** a consumed permit cannot be replayed.
+3. **Attack:** changing the authorized amount invalidates the action binding.
+4. **Attack:** swapping the evidence subject breaks evidence binding.
+5. **Attack:** forging a permit signature fails authentication.
+6. **Attack:** an expired permit cannot execute.
+7. **Attack:** tampering with the decision breaks the decision commitment.
+8. **Attack:** rebinding to another Mandate breaks mandate binding.
+9. **Attack:** a negative Telegraph verdict still `BLOCK`s even when supplemental runtime proof is valid.
+10. **Attack:** tampering with the vendor runtime attestation `BLOCK`s.
+11. **Attack:** tampering with a completed Proof Receipt breaks receipt verification.
 
 Run:
 
@@ -35,14 +37,16 @@ Run:
 npm run attack:lab
 ```
 
-Expected summary for the current 11-scenario harness:
+Expected summary for the current harness:
 
 ```text
-RESULT: 11/11 attacks contained
+RESULT: 10/10 attacks contained
 Telegraph requests: 0
 x402 payments: 0
 Blockchain writes: 0
 ```
+
+The valid baseline is deliberately not counted as an attack, which is why the report is `10/10` even though eleven total cases are printed.
 
 ## What the lab does not prove
 
