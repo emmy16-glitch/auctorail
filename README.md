@@ -4,7 +4,7 @@
 
 ProofGate is a pre-execution authorization control plane for autonomous AI agents. An agent may decide what it wants to do, but it cannot authorize its own irreversible action.
 
-ProofGate binds delegated authority, independently obtained Telegraph evidence, deterministic policy, a short-lived permit, durable replay protection, exact transaction intent, and a tamper-evident receipt around one proposed action.
+ProofGate binds delegated authority, independently obtained Telegraph evidence, deterministic policy, a short-lived permit, replay protection, controlled execution, and a tamper-evident receipt around one proposed action.
 
 `MANDATE → PROPOSE → PROVE → POLICY → PERMIT → EXECUTE → RECEIPT`
 
@@ -14,38 +14,56 @@ Built for the **Telegraph Protocol Application Track**.
 
 Autonomous agents can reason, plan and choose actions, but a high-confidence model output is not an authorization boundary. For consequential actions such as payments, the system needs an enforceable answer to a different question:
 
-> Is this exact action currently permitted under the authority that was delegated to this agent, using sufficient independent evidence?
-
-ProofGate answers that question before execution.
+> Is this exact action currently permitted under the authority delegated to this agent, using sufficient independent evidence?
 
 Telegraph provides external intelligence. ProofGate decides whether that evidence satisfies policy for one exact action. A Miner verdict such as `ALLOW`, `SAFE` or `VALID` is evidence only; it never directly becomes permission.
 
-## Flagship demonstration
+## Canonical live hackathon execution
 
-The hackathon demo protects an autonomous treasury payment of **1 Base Sepolia USDC** to the deployed `ProofGateVendor` contract.
+On **2026-09-02**, ProofGate completed its flagship flow end-to-end on Base Sepolia.
 
-Canonical vendor:
+- Action: autonomous ERC-20 payment
+- Amount: **1 Base Sepolia USDC**
+- Sender: `0xC07a448DF2E1F3AF0d6f0E8cCe45d5D753fc8eF4`
+- Canonical vendor: `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
+- Telegraph Miner: `Refut On-Chain Risk` (`95822412`)
+- Telegraph verdict: `ALLOW`
+- Telegraph confidence: `0.7`
+- Telegraph signal hash: `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c`
+- Policy: `payments.attested-vendor.v1`
+- Policy result: `ALLOW`
+- Transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
+- Base Sepolia block: `46301208`
+- Receipt hash: `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
 
-`0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
+Basescan:
+
+https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
+
+Public proof artifacts:
+
+- `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
+- `data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
+- `data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
+- `docs/LIVE_EXECUTION.md`
+
+The transaction is not a UI simulation. ProofGate obtained fresh Telegraph evidence for the exact destination and chain, independently attested the deployed vendor runtime, evaluated deterministic policy, minted a permit bound to the exact action, executed the approved transfer, and produced a verifiable receipt.
+
+## Flagship action
+
+The canonical demo action is:
+
+- network: Base Sepolia (`84532`)
+- asset: Base Sepolia USDC
+- amount: `1 USDC` (`1000000` minor units)
+- destination: `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
+- destination contract: `ProofGateVendor`
 
 The vendor is intentionally minimal: no owner, admin, pause, proxy, upgrade authority, privileged withdrawal path or mutable configuration.
 
-The contract deployment is tracked in:
+Its deployment is tracked in:
 
 `data/deployments/base-sepolia-vendor.json`
-
-The intended final flow is:
-
-1. a principal delegates a bounded Mandate to an agent;
-2. the agent proposes the exact 1 USDC payment;
-3. ProofGate freezes and hashes the Action Contract;
-4. ProofGate obtains live Telegraph evidence for that exact destination and chain;
-5. deterministic policy returns `ALLOW`, `HOLD` or `BLOCK`;
-6. only `ALLOW` may mint a short-lived action-bound permit;
-7. the executor independently re-verifies the permit, mandate, evidence, decision and transaction intent;
-8. shared durable state prevents replay and enforces cumulative authority;
-9. the transaction is submitted only through the controlled execution path; and
-10. ProofGate produces a verifiable receipt of the decision and outcome.
 
 ## Core security properties
 
@@ -91,15 +109,15 @@ The agent can act autonomously only inside that pre-delegated envelope. A valid 
 
 ## Policies
 
-The repository currently includes two payment policy profiles:
-
 ### `payments.strict.v1`
 
-A general strict payment policy that requires exact subject/chain binding, `FRAUD_DETECTION` evidence, applicability, signal hash, freshness and a minimum confidence threshold in addition to mandate and payment constraints.
+A strict payment policy requiring exact subject/chain binding, `FRAUD_DETECTION` evidence, applicability, signal hash, freshness and its configured confidence threshold in addition to mandate and payment constraints.
 
 ### `payments.attested-vendor.v1`
 
-A composite policy for the canonical ProofGate vendor. It combines Telegraph evidence with an exact live runtime attestation of the deployed vendor contract. The runtime proof is supplemental evidence; it does not replace Telegraph and it does not weaken negative Miner results.
+The composite policy used by the canonical live execution. It combines fresh Telegraph evidence with an exact live runtime attestation of the deployed vendor contract.
+
+The runtime proof is supplemental evidence; it does not replace Telegraph and it does not weaken a negative Miner result.
 
 Both policies fail closed.
 
@@ -114,27 +132,31 @@ A permit commits to security-sensitive context including:
 - decision hash
 - nonce
 - policy ID/version
-- signing key ID/algorithm/version
+- signing key ID/algorithm/version where applicable
 - issue time
 - expiry time
 
-For local development and deterministic tests, ProofGate provides an HMAC-based development signer. It is explicitly rejected in `NODE_ENV=production`.
+For local development and deterministic demos, ProofGate provides an HMAC-based development signer. It is explicitly rejected in `NODE_ENV=production`.
 
 Production-oriented signing uses Ed25519 and supports verification-key lifecycle states including `ACTIVE`, `VERIFY_ONLY` and `REVOKED`.
 
+### Live-demo scope
+
+The canonical transaction recorded in `docs/LIVE_EXECUTION.md` used the local/demo HMAC signer and filesystem-backed permit-consumption compatibility path.
+
+The repository separately implements the stronger production-oriented Ed25519 and PostgreSQL durable path. Those controls are implemented and tested, but this specific transaction should not be described as having exercised them.
+
 ## Durable execution
 
-The simple executor demonstrates the core authorization boundary. The production-oriented path adds durable state for multi-worker and failure-aware execution.
-
-That path includes:
+The production-oriented path adds durable state for multi-worker and failure-aware execution:
 
 - PostgreSQL-backed single-use permit claims
 - durable execution records
 - transaction-intent hashing and verification before submission
 - mandate status authority checks
 - optional cumulative spend authority
-- an execution kill switch
-- explicit failure vs post-submission ambiguity semantics
+- execution kill switch
+- explicit failure versus post-submission ambiguity semantics
 
 An unknown database claim result is never treated as success. An unknown blockchain result after possible broadcast is never blindly retried as though nothing happened.
 
@@ -176,7 +198,7 @@ It exercises authorization-boundary attacks such as replay, amount mutation, evi
 
 See `docs/ATTACK_LAB.md`.
 
-## Live Telegraph proof
+## Obtain fresh Telegraph proof
 
 Refresh the live Telegraph registry:
 
@@ -184,53 +206,36 @@ Refresh the live Telegraph registry:
 bash scripts/discover-telegraph.sh
 ```
 
-Then request proof for the exact canonical vendor:
+For the canonical composite-policy route:
 
 ```bash
-npm run proof:live -- 0xB38d0405DF1b15961aEf29C7c45f2ED285822c14
+npm run proof:live -- \
+  0xB38d0405DF1b15961aEf29C7c45f2ED285822c14 \
+  --capability-route \
+  --attested-vendor-policy
 ```
 
-The live proof path:
+The live proof path freezes the Action Contract before requesting evidence, journals the paid attempt, validates the x402 payment lane and price cap, preserves Telegraph's dynamic `payTo`, refuses blind retry after ambiguous payment, validates exact subject/chain/Miner/intent binding, and saves evidence only after a genuine successful response.
 
-1. freezes the Action Contract before requesting evidence;
-2. journals the operation before a paid attempt;
-3. obtains the actual Telegraph x402 challenge;
-4. accepts only the permitted Base Sepolia USDC payment lane and configured proof-price cap;
-5. does not hardcode Telegraph's dynamic `payTo` address;
-6. does not begin the paid attempt until the x402 lane passes policy;
-7. does not blindly retry an ambiguous paid request;
-8. stores evidence only after a genuine successful Miner response;
-9. evaluates the returned evidence against the already-frozen action; and
-10. emits an auditable `HOLD` when sufficient proof cannot be established.
+Historical evidence for a different destination is never substituted for the canonical vendor. If fresh evidence is unavailable or insufficient, ProofGate must `HOLD` or `BLOCK` rather than weaken policy.
 
-A facilitator-side error such as `insufficient_credits` is an external proof failure and is handled fail-closed; it is not treated as permission to retry indefinitely.
+## Approved payment check and execution
 
-## Important live-evidence status
-
-The repository contains a historical real Telegraph/x402 evidence artifact captured during integration work. That artifact is retained for provenance and regression/reference purposes.
-
-It is **not authorization for the current flagship vendor payment** because ProofGate requires exact target, chain, policy and freshness binding. Evidence obtained for another address must never be substituted for the canonical vendor merely because it is newer or returned an `ALLOW` label.
-
-The final flagship execution therefore requires fresh Telegraph evidence for:
-
-`0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
-
-ProofGate must `HOLD` or `BLOCK` rather than weaken policy when that proof is unavailable or insufficient.
-
-## Inspect an existing decision
+Check a saved evidence artifact without sending a transaction:
 
 ```bash
-npm run policy -- \
-  0xB38d0405DF1b15961aEf29C7c45f2ED285822c14
+npm run execute:approved -- \
+  data/evidence/telegraph-2026-09-02T17-36-12-826Z.json \
+  --attested-vendor-policy
 ```
 
-Evidence lookup is exact-target and exact-chain.
+A live execution additionally requires `--execute` and intentionally causes a Base Sepolia USDC transfer. Do not rerun the canonical transaction merely to reproduce the existing proof artifact.
 
 ## Security assessment artifacts
 
 `audit-artifacts/` contains an authorized defensive assessment performed against an earlier assessed revision, including adversarial fuzzing, coverage, stress output and dependency-audit material.
 
-Those artifacts are evidence for the revision they name; they must not be presented as an independent audit of every later commit. Final hackathon validation should be regenerated against the exact submission SHA after the implementation is frozen.
+Those artifacts are evidence for the revision they name; they must not be presented as an independent audit of every later commit. Final hackathon validation should be regenerated against the exact submission SHA after implementation is frozen.
 
 ## Runtime state and secrets
 
@@ -262,7 +267,7 @@ src/security/       Attack Lab, audit logging and execution kill switch
 migrations/         PostgreSQL durability/replay/spend schemas
 scripts/            Live proof, execution, deployment and defensive tooling
 tests/              Deterministic regression/security tests
-docs/               Architecture, resilience and security documentation
+docs/               Architecture, resilience, live proof and demo documentation
 ```
 
 ## Principle
