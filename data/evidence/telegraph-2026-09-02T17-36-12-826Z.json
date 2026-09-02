@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "proofgate.telegraph-evidence.v1",
+  "source": "telegraph",
+  "intent": "FRAUD_DETECTION",
+  "miner": {
+    "id": "95822412",
+    "name": "Refut On-Chain Risk",
+    "slug": "refut-onchain-risk"
+  },
+  "request": {
+    "endpoint": "/assess",
+    "target": "0xb38d0405df1b15961aef29c7c45f2ed285822c14",
+    "chainId": 84532,
+    "routeMode": "CAPABILITY_ROUTE",
+    "actionHash": "0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4",
+    "mandateHash": "0x052a7e9a3ab0398f9636c795550c89b41eff82aad95cb86fd4c477ad084f5687",
+    "selectionPolicy": "proofgate.contract-control.v1",
+    "query": null
+  },
+  "result": {
+    "chainId": 84532,
+    "confidence": 0.7,
+    "reasoning": "No adverse on-chain control signal (upgradeability, privileged admin, owner, pause capability) was found within the checks performed. This reports the checks run, not an assurance the subject is not fraudulent.",
+    "signals": [
+      {
+        "key": "isContract",
+        "present": true
+      },
+      {
+        "key": "upgradeable",
+        "present": false
+      },
+      {
+        "key": "hasAdmin",
+        "present": false
+      },
+      {
+        "key": "hasOwner",
+        "present": false
+      },
+      {
+        "key": "pausable",
+        "present": false
+      }
+    ],
+    "subject": "0xb38d0405df1b15961aef29c7c45f2ed285822c14",
+    "verdict": "ALLOW"
+  },
+  "telegraph": {
+    "signalHash": "0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c",
+    "costUsd": 0.01,
+    "durationMs": 1259,
+    "timestamp": "2026-09-02T17:36:12.078394741Z",
+    "binding": {
+      "subjectField": "subject",
+      "chainField": "chainId"
+    }
+  },
+  "payment": {
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "amountRaw": "10000",
+    "payTo": "0x5a2324aA18613FAD4e44bDF0d6c73Ec1f6D87ff8",
+    "settlement": {
+      "success": true,
+      "code": "payment_settled",
+      "retryable": false,
+      "transaction": "0xc135d16a7abf5fdfc9f9dcaec001e5369865c5004224cd6bb9a822fb900daef0",
+      "errorReason": null
+    }
+  },
+  "capturedAt": {
+    "startedAt": "2026-09-02T17:36:05.218Z",
+    "finishedAt": "2026-09-02T17:36:12.826Z"
+  },
+  "rawResponse": {
+    "cost_usd": 0.01,
+    "duration_ms": 1259,
+    "miner_id": "95822412",
+    "miner_name": "Refut On-Chain Risk",
+    "result": {
+      "chainId": 84532,
+      "confidence": 0.7,
+      "reasoning": "No adverse on-chain control signal (upgradeability, privileged admin, owner, pause capability) was found within the checks performed. This reports the checks run, not an assurance the subject is not fraudulent.",
+      "signals": [
+        {
+          "key": "isContract",
+          "present": true
+        },
+        {
+          "key": "upgradeable",
+          "present": false
+        },
+        {
+          "key": "hasAdmin",
+          "present": false
+        },
+        {
+          "key": "hasOwner",
+          "present": false
+        },
+        {
+          "key": "pausable",
+          "present": false
+        }
+      ],
+      "subject": "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+      "verdict": "ALLOW"
+    },
+    "signal_hash": "0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c",
+    "timestamp": "2026-09-02T17:36:12.078394741Z"
+  }
+}
