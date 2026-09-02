@@ -1,162 +1,313 @@
 # ProofGate v1.1 — Adaptive Evidence Authorization
 
+## Status
+
+**Architecture: implemented.**  
+**Deterministic tests: passing.**  
+**Adaptive adversarial fuzzing: 1,800 / 1,800 contained on the validated implementation snapshot.**  
+**Live multi-Intent Telegraph artifact: not yet claimed; it must be captured by an actual `proof:adaptive` run before submission claims are upgraded.**
+
+The frozen `v1.0.0-hackathon` tag remains the proven real execution baseline. v1.1 is developed separately on `v1.1-adaptive-evidence`.
+
 ## Competitive thesis
 
-ProofGate should not be another application that calls one Telegraph Miner and displays a result.
+ProofGate is not another application that asks one Miner whether something is safe and displays the answer.
 
-The v1.1 goal is to become a **risk-adaptive authorization firewall for autonomous agents**:
+It is a **risk-adaptive authorization firewall for autonomous agents**:
 
 > The higher the consequence of an action, the more independent Telegraph intelligence ProofGate requires before it can mint permission to execute.
 
-This directly exercises Telegraph's strongest application primitives: Intent-based routing, confidence thresholds, multi-Intent intelligence, x402 demand, and real on-chain actions.
+That makes Telegraph intelligence, routing and x402 economics part of the actual authorization boundary rather than decorative API output.
 
-## Product story
-
-An agent proposes an action. ProofGate freezes the exact action and computes its risk tier. The risk tier determines an evidence budget and required Intents. ProofGate asks Telegraph for those Intents without selecting a specific Miner. Telegraph routes each request according to its ranking/routing system. ProofGate then binds the returned signals to the exact action, checks freshness/confidence/applicability, detects conflicts, and deterministically produces ALLOW, HOLD, or BLOCK. Only ALLOW can mint a one-use permit.
+## Locked v1.1 flow
 
 ```text
+Principal Mandate
+        |
+        v
 Agent proposes action
         |
         v
-Exact Action Contract + hash
+Exact Action Contract + actionHash
         |
         v
-Risk / consequence tier
+Deterministic consequence/risk tier
         |
         v
 Adaptive Evidence Plan
         |
-        +--> Intent A --Telegraph routing--> Miner-selected signal
-        +--> Intent B --Telegraph routing--> Miner-selected signal
-        +--> Intent C --Telegraph routing--> Miner-selected signal
+        +--> Intent A --Telegraph routing--> actual Miner A
+        +--> Intent B --Telegraph routing--> actual Miner B
+        +--> Intent C --Telegraph routing--> actual Miner C
         |
         v
-Evidence Bundle / conflict detection
+Canonical Evidence Bundle + bundleHash
         |
         v
-Mandate + deterministic policy
+Budget + freshness + confidence + conflict policy
         |
     ALLOW / HOLD / BLOCK
         |
         v
-one-use permit -> controlled executor -> receipt
+one-use permit -> controlled executor -> Proof Receipt
 ```
 
-## What makes it different
+The agent is never allowed to choose its own risk tier, remove an Intent, lower the confidence floor or expand the evidence-payment budget. The adaptive policy recomputes the expected plan from the frozen Action Contract and blocks a mismatch.
 
-### 1. Risk-adaptive evidence spend
-ProofGate does not spend the same amount of verification effort on every action.
+## Locked risk tiers
 
-Initial demo tiers:
+| Tier | Protected payment | Required Telegraph Intents | Fraud confidence | Max x402 evidence spend | Max evidence latency |
+| --- | ---: | --- | ---: | ---: | ---: |
+| LOW | `<= 1 USDC` | `FRAUD_DETECTION` | `>= 0.70` | `0.015 USDC` | `15 s` |
+| MEDIUM | `>1` and `<=5 USDC` | `FRAUD_DETECTION`, `ONCHAIN_TX_LOOKUP` | `>= 0.75` | `0.030 USDC` | `25 s` |
+| HIGH | `>5` and `<=10 USDC` | `FRAUD_DETECTION`, `ONCHAIN_TX_LOOKUP`, `WALLET_BALANCE_CHECK` | `>= 0.80` | `0.050 USDC` | `40 s` |
 
-| Tier | Example | Required evidence | Evidence budget |
-| --- | --- | --- | --- |
-| LOW | <= 1 USDC | `FRAUD_DETECTION` | minimal |
-| MEDIUM | >1 and <=5 USDC | `FRAUD_DETECTION` + `ONCHAIN_TX_LOOKUP` | higher |
-| HIGH | >5 and <=10 USDC | `FRAUD_DETECTION` + `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | highest |
+The current autonomous payment ceiling remains `10 USDC` on Base Sepolia.
 
-The registry must be checked live. If a required Intent is unavailable, ProofGate fails closed with HOLD rather than silently reducing verification.
+## Implemented components
 
-### 2. True Intent routing
-v1.0 intentionally pinned the Refut on-chain-risk profile for the flagship policy. v1.1 should add a route that declares required Intent, confidence floor, subject, chain and deadline, then accepts the Miner Telegraph actually routes to. The application must not choose a provider simply because it likes that provider.
+### 1. Deterministic adaptive planner — complete
 
-### 3. Multi-Intent evidence bundle
-Each returned signal becomes a separately bound Evidence Item containing at minimum:
+`src/telegraph/adaptive-evidence-plan.ts`
+
+It derives:
+
+- risk tier
+- required Intents
+- confidence floor
+- signal/applicability requirements
+- total evidence-payment budget
+- evidence latency budget
+- fail-closed conflict/missing-evidence semantics
+
+### 2. Provider-neutral Intent routing — complete
+
+`src/telegraph/verification-planner.ts` and `src/telegraph/intent-route.ts`
+
+v1.1 asks for an **Intent**, not a preferred Miner. ProofGate records and verifies the Miner Telegraph actually routes to.
+
+Before live acquisition, required Intent coverage can be checked against the current Telegraph registry. If an Intent has no active Miner, the workflow fails closed rather than silently reducing verification.
+
+### 3. Canonical Evidence Bundle — complete
+
+`src/telegraph/evidence-bundle.ts`
+
+Each item binds:
 
 - Intent
-- routed Miner identity
+- actual serving Miner ID/name/slug
 - exact subject
-- chain
-- verdict/label when present
-- confidence when present
+- exact chain
+- verdict/label when supplied
+- confidence when supplied
 - applicability
 - signal hash
+- raw-response hash
 - received time
-- x402 cost
+- duration/cost metadata
+- exact x402 amount/network/asset when paid
 
-The bundle itself receives a canonical hash and becomes part of the authorization commitment.
+The bundle commits:
 
-### 4. Conflict is first-class
-A high-confidence negative signal must not be averaged away by positive signals.
+- action ID/hash
+- payment amount
+- risk tier
+- adaptive-plan hash
+- max evidence budget
+- actual aggregate evidence spend
+- canonical `bundleHash`
 
-Initial deterministic rule:
+A different but internally valid bundle cannot be substituted after permit mint because the decision commitment binds the bundle.
 
-- any required signal that is explicitly BLOCK -> BLOCK
-- required signal missing/stale/not-applicable/under confidence -> HOLD
-- all required evidence constraints satisfied -> continue to policy
+### 4. Budgeted multi-Intent orchestrator — complete
 
-We can later add weighted/quorum rules, but fail-closed behavior comes first.
+`src/telegraph/adaptive-orchestrator.ts`
 
-### 5. Verification economics are visible
-The receipt should show how much machine-verification cost was spent to authorize the action. This makes the x402/Telegraph economics part of the product rather than hidden plumbing.
+The orchestrator:
 
-Example:
+- requests only the Intents derived by the plan
+- tracks remaining aggregate evidence budget
+- tracks the risk-tier deadline
+- rejects routed Intent mismatch
+- returns an incomplete bundle + `HOLD` state on acquisition failure
+- does not silently fall back to weaker evidence
 
-```text
-Action value:       8 USDC
-Risk tier:          HIGH
-Telegraph requests: 3
-Evidence cost:      0.03 USDC
-Decision:           ALLOW
-Execution:          8 USDC (demo can remain check-only)
+### 5. Live Telegraph Intent client — complete
+
+`src/telegraph/live-intent-client.ts`
+
+For each paid request it:
+
+1. preflights Telegraph;
+2. parses the live x402 challenge;
+3. validates the approved Base Sepolia USDC lane;
+4. checks the price against the remaining aggregate budget **before payment**;
+5. makes exactly one paid attempt;
+6. refuses blind retry after paid transport ambiguity;
+7. requires provable settlement;
+8. resolves the Miner actually routed by Telegraph;
+9. verifies that Miner is active and supports the requested Intent;
+10. requires explicit exact subject/chain evidence binding;
+11. normalizes and saves the real response.
+
+### 6. Adaptive conflict policy — complete
+
+`src/policy/payments-adaptive-v1.ts`
+
+The policy is deterministic.
+
+- explicit required negative evidence → `BLOCK`
+- required evidence missing → `HOLD`
+- stale evidence → `HOLD`
+- required signal hash missing → `HOLD`
+- fraud confidence below risk-tier floor → `HOLD`
+- wrong subject/chain → `BLOCK`
+- required Intent outside the principal Mandate → `BLOCK`
+- evidence budget exceeded → `BLOCK`
+- bundle integrity failure → `BLOCK`
+- adaptive-plan downgrade/mismatch → `BLOCK`
+- all required checks pass → `ALLOW`
+
+A negative signal cannot be averaged away by favorable signals.
+
+### 7. Bundle-aware permit and executor — complete
+
+The existing permit/controlled-executor boundary now accepts either the original single Telegraph evidence record or a v1.1 Evidence Bundle.
+
+The decision hash commits the bundle. Existing exact-action hash recomputation, TTL, signature verification, atomic consumption and replay behavior remain in place.
+
+### 8. Proof Receipt v3 — complete
+
+Adaptive receipts use `proofgate.receipt.v3` and embed the canonical Evidence Bundle. Receipt verification checks both receipt integrity and bundle integrity/action binding.
+
+The original `proofgate.receipt.v2` format remains supported for the v1.0 single-evidence flow.
+
+### 9. External developer SDK — complete
+
+`src/sdk/proofgate.ts`
+
+Public integration helpers include:
+
+- `planPaymentAuthorization`
+- `createAdaptivePaymentMandate`
+- `evaluatePaymentAuthorization`
+- `mintPaymentPermit`
+
+See `docs/DEVELOPER_INTEGRATION.md`.
+
+### 10. Evaluate-only HTTP gateway — complete
+
+```bash
+npm run gateway:serve
 ```
 
-### 6. Counterfactual explanation
-For HOLD/BLOCK, ProofGate should emit deterministic reason codes and a small counterfactual summary such as:
+The local gateway exposes planning/evaluation without accepting wallet secrets or executing funds. It is intentionally a narrow integration surface for another agent application.
 
-- `HOLD: ONCHAIN_TX_LOOKUP evidence missing`
-- `BLOCK: FRAUD_DETECTION returned negative verdict`
-- `HOLD: confidence 0.61 < required 0.80`
+### 11. Live adaptive check command — complete
 
-This is not LLM reasoning. It is generated from policy checks.
-
-## Demo sequence that should stand out
-
-1. Agent proposes a low-risk 1 USDC payment.
-2. ProofGate requires one Intent and shows Telegraph's routed Miner and evidence cost.
-3. Same agent proposes a 7 USDC payment.
-4. ProofGate automatically escalates to three Intents because consequence increased.
-5. Show an intentionally conflicting/synthetic offline test bundle -> BLOCK. Clearly label it as a defensive fixture, not live Telegraph evidence.
-6. Show a real live multi-Intent check-only run using Telegraph.
-7. Execute only a safe low-value canonical transaction if desired; avoid spending just for theater.
-8. Show the Proof Receipt containing action hash, evidence bundle hash, individual signal hashes, total evidence cost, permit, and transaction.
-9. Run replay/mutation attack and show the exact same permit cannot authorize changed amount/destination.
-
-## Adoption angle
-
-After the core path works, expose a tiny SDK/HTTP boundary so another agent can call:
-
-```text
-POST /authorize
-{ action, agentId, mandateId }
+```bash
+npm run proof:adaptive -- 1
+npm run proof:adaptive -- 7
 ```
 
-and receive:
+The `7` USDC path derives three required Intents. The command may purchase real Telegraph evidence but is deliberately **check-only** for the protected payment.
+
+A successful real multi-Intent run must be preserved before we claim a live multi-Intent result publicly.
+
+## Verification economics
+
+ProofGate makes verification cost visible rather than treating x402 as hidden plumbing.
+
+A HIGH-risk bundle can answer:
 
 ```text
-{ decision, reason, evidenceBundleHash, permit? }
+Protected action value: 7 USDC
+Risk tier:              HIGH
+Required Intents:       3
+Maximum evidence spend: 0.05 USDC
+Actual evidence spend:  <recorded in bundle>
+Decision:               ALLOW / HOLD / BLOCK
 ```
 
-The goal is to let at least a few other builders use ProofGate as the authorization gate in front of their own agents. That gives the project real user/activity evidence instead of only a polished demo.
+This demonstrates a real machine-security question:
 
-## Non-negotiables
+> How much independent intelligence should an autonomous system buy before allowing an irreversible action?
 
-- Keep `v1.0.0-hackathon` immutable as the proven baseline.
-- Build v1.1 only on `v1.1-adaptive-evidence` until it passes all existing security tests.
-- Never weaken v1.0 fail-closed rules just to produce an ALLOW.
-- Never fabricate Miner responses and present them as live.
-- Offline fixtures may be used only for defensive BLOCK/HOLD demonstrations and must be labeled synthetic.
-- Live Telegraph routing results must be preserved as evidence artifacts.
-- Existing action hash, mandate, permit replay, ambiguity, receipt, and spend controls stay intact.
+## Counterfactual explanations
 
-## Implementation order
+The SDK exposes a deterministic counterfactual for non-ALLOW results, derived from policy checks rather than LLM reasoning.
 
-1. `AdaptiveEvidencePlan` and deterministic risk tiers.
-2. Generic Intent request/response normalization independent of a pinned Miner.
-3. `EvidenceBundle` canonicalization + bundle hash.
-4. Multi-Intent orchestration with total x402 budget and no blind paid retry.
-5. Adaptive multi-signal policy and conflict rules.
-6. Receipt extension for bundle/cost/routing metadata.
-7. Offline tests + fuzz families for bundle substitution, missing Intent, cross-Miner signal swap and cost-budget bypass.
-8. Live check-only multi-Intent run.
-9. Optional public SDK/API and external user integrations.
+Examples:
+
+```text
+HOLD: Required ONCHAIN_TX_LOOKUP evidence is missing.
+HOLD: Confidence 0.61 is below required floor 0.80.
+BLOCK: Routed evidence returned explicit negative label MALICIOUS.
+BLOCK: Adaptive evidence plan differs from the deterministic plan required for this action.
+```
+
+## Security validation
+
+The v1.1 CI gate includes the old authorization fuzz suite **and** a dedicated adaptive-evidence suite.
+
+Current validated adaptive fuzz structure:
+
+- 18 mutation families
+- 100 generated cases per family
+- 1,800 adversarial cases
+- 100 valid controls
+- zero live Telegraph requests
+- zero x402 payments
+- zero blockchain writes
+
+Families cover:
+
+- risk-tier downgrade
+- each required Intent missing
+- fraud negative signal
+- secondary negative signal
+- confidence-floor bypass
+- stale evidence
+- missing signal hash
+- evidence-budget overrun
+- bundle signal-hash tampering
+- bundle raw-response-hash tampering
+- evidence subject substitution
+- substitution of a different valid bundle after permit mint
+- permit signature forgery
+- permit expiry
+- action semantic mutation
+- un-delegated Intent
+
+The exact final submission SHA must still pass CI after all documentation/freeze commits; do not inherit a result across later code changes without rechecking.
+
+## Standout demo
+
+1. Start with the real v1.0 transaction already captured on Base Sepolia.
+2. Show a `1 USDC` proposal deriving LOW risk and one Intent.
+3. Change only the amount to `7 USDC`.
+4. Show ProofGate automatically derive HIGH risk and three Intents.
+5. Show the x402 verification budget increase from `0.015` to `0.050 USDC`.
+6. Show a synthetic defensive disagreement fixture where one required signal becomes `SUSPICIOUS` → deterministic `BLOCK`.
+7. Show adaptive fuzz containment.
+8. Show the SDK/gateway another developer can put in front of their agent.
+9. If live Telegraph multi-Intent acquisition has been captured successfully, show its real routed Miners and signal hashes. Otherwise do not fabricate the step.
+
+## Non-negotiable locks
+
+- `v1.0.0-hackathon` is immutable and remains the real execution baseline.
+- v1.0's real transaction must not be described as multi-Intent.
+- `payments.adaptive.v1` derives its own risk requirements from the action.
+- Agent/model output cannot lower the tier or evidence requirements.
+- Adaptive routing is Intent-first and provider-neutral.
+- Telegraph Miner output remains evidence, not authority.
+- Explicit required negative evidence cannot be averaged away.
+- Aggregate x402 evidence spend is bounded before paid requests.
+- Paid transport ambiguity is never blindly retried.
+- Synthetic fixtures are tests/demos only and must never be presented as live Telegraph evidence.
+- A live adaptive command does not broadcast the protected vendor payment.
+- Existing exact action, Mandate, permit replay, ambiguity, durable execution and receipt controls remain intact.
+
+## Remaining proof milestone
+
+The only deliberately unclaimed milestone is a **captured real multi-Intent Telegraph Evidence Bundle** from `npm run proof:adaptive -- 7` (or another derived tier). Once that run succeeds, save only the non-secret public artifacts, rerun all checks, and update the live-adaptive proof documentation with the exact routed Miners, signal hashes, x402 spend and bundle hash.
