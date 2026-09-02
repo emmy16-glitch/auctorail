@@ -1,7 +1,7 @@
 {
   "name": "proof-gate",
-  "version": "1.0.0",
-  "description": "Agent confidence is not permission to act.",
+  "version": "1.1.0",
+  "description": "Risk-adaptive authorization firewall for autonomous agents using Telegraph intelligence.",
   "type": "module",
   "main": "index.js",
   "directories": {
@@ -13,6 +13,7 @@
     "ci": "npm run typecheck && npm test",
     "audit:prod": "npm audit --omit=dev",
     "proof:live": "tsx scripts/prove-telegraph.ts",
+    "proof:adaptive": "tsx scripts/prove-adaptive.ts",
     "policy": "tsx scripts/show-policy-decision.ts",
     "wallet:check": "node scripts/check-wallet.mjs",
     "vendor:compile": "node scripts/compile-vendor.mjs",
@@ -22,10 +23,18 @@
     "execute:approved": "tsx scripts/execute-approved-payment.ts",
     "attack:lab": "tsx scripts/attack-lab.ts",
     "security:fuzz": "tsx scripts/final-fuzz.ts",
+    "security:fuzz:adaptive": "tsx scripts/adaptive-fuzz.ts",
+    "gateway:serve": "tsx scripts/serve-authorization-gateway.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "telegraph",
+    "ai-agents",
+    "authorization",
+    "x402",
+    "security"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
