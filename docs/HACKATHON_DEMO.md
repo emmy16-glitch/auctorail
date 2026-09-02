@@ -1,8 +1,8 @@
 # ProofGate Hackathon Demo Runbook
 
-This runbook is the intended final presentation path for the Telegraph Protocol Application Track.
+This is the final presentation path for the Telegraph Protocol Application Track.
 
-The goal is to demonstrate one idea clearly:
+The core message is:
 
 > An autonomous agent may decide to act, but ProofGate requires delegated authority plus sufficient independent evidence before that exact action can execute.
 
@@ -17,6 +17,36 @@ The goal is to demonstrate one idea clearly:
 
 Do not change the canonical vendor merely to obtain a favorable result.
 
+## Canonical live result already captured
+
+The complete end-to-end flow succeeded on **2026-09-02**.
+
+- Telegraph Miner: `Refut On-Chain Risk` (`95822412`)
+- Telegraph intent: `FRAUD_DETECTION`
+- Telegraph verdict: `ALLOW`
+- confidence: `0.7`
+- signal hash: `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c`
+- policy: `payments.attested-vendor.v1`
+- action hash: `0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4`
+- permit: `a1b4e53c-0e0e-4504-b0b0-a05ec80093bb`
+- execution: `EXECUTED`
+- transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
+- block: `46301208`
+- receipt hash: `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
+
+Basescan:
+
+https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
+
+Primary public artifacts:
+
+- `docs/LIVE_EXECUTION.md`
+- `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
+- `data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
+- `data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
+
+Use these artifacts for the final presentation rather than spending another USDC merely to reproduce the same proof.
+
 ## Before recording or presenting
 
 Confirm:
@@ -28,9 +58,7 @@ npm run audit:prod
 npm run vendor:compile
 ```
 
-The tracked vendor artifact should remain unchanged after recompilation.
-
-If PostgreSQL integration is part of the final environment, also run:
+If PostgreSQL integration is part of the presentation environment, also run:
 
 ```bash
 npm run test:postgres
@@ -40,27 +68,27 @@ with a dedicated test database configured through `PROOFGATE_DATABASE_URL`.
 
 Never expose `.env`, private keys, Telegraph credentials, wallet recovery material, signing keys or database credentials on screen.
 
-## Stage 1 — explain the unsafe baseline
+## Stage 1 — unsafe baseline
 
-Keep this conceptual and short:
+Show the conceptual baseline:
 
 ```text
 Agent decides → wallet executes
 ```
 
-Problem: the same component that reasons about the action effectively controls whether the action happens.
-
 Then introduce ProofGate:
 
 ```text
-Mandate → Proposed Action → Telegraph Proof → Policy → Permit → Controlled Execution → Receipt
+MANDATE → PROPOSE → PROVE → POLICY → PERMIT → EXECUTE → RECEIPT
 ```
 
-## Stage 2 — show delegated authority
+Explain that the component deciding what to do is not allowed to create its own permission.
+
+## Stage 2 — delegated authority
 
 Show that the agent operates under a bounded Mandate rather than unlimited wallet authority.
 
-Explain the relevant constraints for the demo:
+Relevant constraints:
 
 - correct agent
 - payment action only
@@ -68,20 +96,18 @@ Explain the relevant constraints for the demo:
 - Base Sepolia USDC only
 - canonical vendor only
 - bounded amount
-- required `FRAUD_DETECTION` proof
+- required `FRAUD_DETECTION` evidence
 - explicit policy/version
-- time/lifecycle limits
-- optional cumulative authority
+- lifecycle and expiry limits
+- optional cumulative authority in the production-oriented path
 
 Key line:
 
 > The agent is autonomous inside the Mandate, but it cannot expand the Mandate.
 
-## Stage 3 — freeze the exact Action Contract
+## Stage 3 — exact Action Contract
 
-The payment action is normalized and hashed before requesting proof.
-
-Emphasize that changing amount, recipient or policy changes the authorization target.
+The payment action is canonicalized and hashed before proof is requested.
 
 Useful visual:
 
@@ -91,39 +117,56 @@ Useful visual:
 1 USDC → different recipient → actionHash C
 ```
 
-## Stage 4 — obtain fresh Telegraph proof
+Changing a protected semantic field changes the authorization target.
 
-Refresh the public Telegraph registry:
+## Stage 4 — Telegraph proof
 
-```bash
-bash scripts/discover-telegraph.sh
-```
+For a recorded presentation, show the committed canonical evidence artifact and its provenance.
 
-Then request proof for the exact canonical vendor:
+The successful proof was obtained with:
 
 ```bash
-npm run proof:live -- 0xB38d0405DF1b15961aEf29C7c45f2ED285822c14
+npm run proof:live -- \
+  0xB38d0405DF1b15961aEf29C7c45f2ED285822c14 \
+  --capability-route \
+  --attested-vendor-policy
 ```
 
-The proof must be genuinely obtained for this address and Base Sepolia.
+The live path validated:
 
-Do not reuse the historical evidence artifact already committed under `data/evidence/` as though it authorizes this vendor. ProofGate's exact-target and freshness rules are intentionally designed to reject that substitution.
+- exact destination
+- Base Sepolia chain
+- `FRAUD_DETECTION`
+- serving Miner identity
+- Miner result
+- confidence threshold
+- applicability
+- signal hash
+- evidence freshness
+- approved x402 network/asset/amount lane
+- dynamic x402 payment recipient
+- exact vendor runtime attestation
 
-If the proof is missing, stale, below threshold, unavailable or otherwise insufficient, show the `HOLD`. That is correct behavior.
+A failed or insufficient proof must produce `HOLD` or `BLOCK`; policy must not be weakened to force a demo result.
 
-Do not weaken the policy to force a green demo.
+## Stage 5 — deterministic decision
 
-## Stage 5 — show the deterministic decision
-
-Explain the difference:
+Explain:
 
 - `ALLOW`: all required checks pass; a permit may be issued
-- `HOLD`: ProofGate cannot establish enough current proof; no permit
+- `HOLD`: enough current proof cannot be established; no permit
 - `BLOCK`: a known authorization/security rule failed; no permit
 
 The Miner does not issue the permit. ProofGate policy does.
 
-## Stage 6 — demonstrate attacks before the successful action
+The canonical result was:
+
+```text
+PROOFGATE: ALLOW
+Reason: composite_attested_vendor_checks_passed
+```
+
+## Stage 6 — attack demonstrations
 
 Run the offline defensive harness:
 
@@ -131,43 +174,27 @@ Run the offline defensive harness:
 npm run attack:lab
 ```
 
-For the presentation, focus on three easy-to-understand cases.
+Focus on three easy-to-understand cases.
 
-### Attack A — amount mutation
-
-Authorized:
+### Amount mutation
 
 ```text
-1 USDC → canonical vendor
+Authorized: 1 USDC → canonical vendor
+Attempted: 10 USDC → canonical vendor
+Expected: BLOCK before protected execution
 ```
 
-Attempted:
+### Recipient mutation
 
 ```text
-10 USDC → canonical vendor
+Authorized: 1 USDC → canonical vendor
+Attempted: 1 USDC → different address
+Expected: BLOCK before protected execution
 ```
 
-Expected: blocked before protected execution.
+### Replay
 
-### Attack B — recipient mutation
-
-Authorized:
-
-```text
-1 USDC → canonical vendor
-```
-
-Attempted:
-
-```text
-1 USDC → attacker/different address
-```
-
-Expected: blocked before protected execution.
-
-### Attack C — replay
-
-Attempt to use an already claimed/consumed permit again.
+Attempt to reuse an already consumed permit.
 
 Expected:
 
@@ -179,27 +206,30 @@ Key line:
 
 > Even after an agent earns permission once, that permission is not a reusable wallet credential.
 
-## Stage 7 — final protected execution
+## Stage 7 — show the real protected execution
 
-Only perform the live payment when fresh evidence satisfies the selected policy and the final environment is intentionally funded for the testnet action.
+Do not resend the canonical payment just for presentation.
 
-The approved execution command available in the repository is:
+Show the committed receipt and the successful Base Sepolia transaction instead:
 
-```bash
-npm run execute:approved
+```text
+Final decision: ALLOW
+Execution: EXECUTED
+Execution code: executed
+Transaction: 0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 ```
 
-Before running it, verify the script/environment still targets the canonical Base Sepolia action and does not contain stale local state from earlier experiments.
+Then open the Basescan transaction and show the **1 USDC** transfer from the ProofGate burner wallet to the canonical vendor.
 
-The final execution should prove that the submitted transaction matches the already-authorized transaction intent.
+If a separate fresh live execution is intentionally performed, obtain fresh evidence first and treat `AMBIGUOUS` as a reconciliation state rather than automatically broadcasting another payment.
 
-If the provider reports uncertainty after possible broadcast, ProofGate should preserve an ambiguous/reconciliation state rather than blindly issuing another payment.
+## Stage 8 — Proof Receipt
 
-## Stage 8 — show the Proof Receipt
+End with:
 
-End with the receipt rather than the transaction alone.
+`data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
 
-The receipt demonstrates the full chain of accountability:
+Explain that the receipt answers:
 
 ```text
 Who delegated authority?
@@ -208,18 +238,15 @@ What evidence was obtained?
 Which policy checks ran?
 What decision was made?
 Which permit authorized it?
-Was the permit consumed?
 What transaction happened?
 Can the receipt still verify?
 ```
-
-This is what makes ProofGate more than a transaction filter.
 
 ## Suggested 3-minute presentation
 
 ### 0:00–0:25 — problem
 
-"AI agents can be confident and still be wrong. Today, many systems connect the same agent decision directly to a wallet or tool. ProofGate separates deciding from permission to act."
+"AI agents can be confident and still be wrong. ProofGate separates deciding from permission to act."
 
 ### 0:25–0:55 — architecture
 
@@ -231,17 +258,17 @@ MANDATE → PROPOSE → PROVE → POLICY → PERMIT → EXECUTE → RECEIPT
 
 Explain that Telegraph is independent evidence, not authority.
 
-### 0:55–1:30 — live proof/policy
+### 0:55–1:30 — real proof
 
-Show the exact vendor action and fresh Telegraph evidence. Show `ALLOW`, `HOLD` or `BLOCK` honestly according to the actual response.
+Show the committed Telegraph evidence, signal hash, runtime attestation and deterministic `ALLOW`.
 
 ### 1:30–2:05 — attacks
 
 Demonstrate amount mutation, recipient mutation and replay being contained.
 
-### 2:05–2:40 — valid execution
+### 2:05–2:40 — real execution
 
-Run the correctly authorized 1-USDC Base Sepolia payment only when the proof path permits it. Show the real transaction hash.
+Show the successful Basescan transaction and the 1-USDC transfer.
 
 ### 2:40–3:00 — receipt and close
 
@@ -254,15 +281,16 @@ Show the Proof Receipt and finish with:
 Safe claims:
 
 - the vendor deployment is real and tracked
-- the live Telegraph path uses genuine Miner/x402 responses
+- the canonical 1-USDC Base Sepolia execution is real and publicly verifiable
+- the canonical Telegraph proof used a genuine Miner/x402 response
 - the offline Attack Lab uses synthetic fixtures and no external spending
 - ProofGate binds permission to an exact Action Contract
-- replay protection exists in both local and PostgreSQL-backed forms
-- the current architecture supports durable transaction-intent and cumulative-spend controls
+- replay protection exists in local and PostgreSQL-backed forms
+- the codebase implements production-oriented Ed25519 signing, durable transaction-intent controls and cumulative-spend authority
 
 Do not claim:
 
-- that historical Telegraph evidence authorizes the current vendor
+- that the canonical live transaction exercised the PostgreSQL/Ed25519 production-oriented path; it used the local/demo compatibility path
 - that the earlier security assessment covers commits made after its assessed revision
 - that ProofGate has undergone an independent production security audit
 - that an ambiguous blockchain response means the transaction failed
@@ -270,10 +298,8 @@ Do not claim:
 
 ## Final submission freeze
 
-After the final code and documentation are complete:
-
-1. run the full final validation against the exact submission revision;
-2. save only non-secret evidence/artifacts intended for public audit;
+1. run final validation against the exact submission revision;
+2. save only non-secret evidence intended for public audit;
 3. confirm CI is green;
-4. record the final commit SHA in the submission notes;
+4. record the final commit SHA in submission notes;
 5. avoid architectural changes after the final demo recording unless fixing a verified defect.
