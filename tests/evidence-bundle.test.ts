@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BASE_SEPOLIA_USDC,
   canonicalize,
   hashCanonicalPayload
 } from "../src/core/action-contract.js";
@@ -17,6 +18,16 @@ import {
   adaptiveEvidence
 } from "./helpers/adaptive-fixtures.js";
 
+function rehash(bundle: EvidenceBundle): void {
+  const {
+    bundleHash: _oldHash,
+    ...body
+  } = bundle;
+  bundle.bundleHash = hashCanonicalPayload(
+    canonicalize(body)
+  );
+}
+
 describe("adaptive EvidenceBundle", () => {
   it("creates a deterministic tamper-evident bundle", () => {
     const action = adaptiveAction("3000000");
@@ -28,7 +39,9 @@ describe("adaptive EvidenceBundle", () => {
             action,
             requirement.intent
           ),
-        paymentAmountRaw: "10000"
+        paymentAmountRaw: "10000",
+        paymentNetwork: "eip155:84532",
+        paymentAsset: BASE_SEPOLIA_USDC
       })
     );
 
@@ -134,7 +147,9 @@ describe("adaptive EvidenceBundle", () => {
             action,
             "FRAUD_DETECTION"
           ),
-          paymentAmountRaw: "10000"
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
         }
       ]
     );
@@ -148,18 +163,79 @@ describe("adaptive EvidenceBundle", () => {
 
     const spendTamper = structuredClone(bundle);
     spendTamper.totalEvidenceSpendRaw = "1";
-    const {
-      bundleHash: _oldHash,
-      ...body
-    } = spendTamper;
-    spendTamper.bundleHash = hashCanonicalPayload(
-      canonicalize(body)
-    );
+    rehash(spendTamper);
 
     expect(
       verifyEvidenceBundle(
         spendTamper as EvidenceBundle
       )
     ).toBe(false);
+  });
+
+  it("rejects self-consistent paid evidence outside the approved x402 lane", () => {
+    const action = adaptiveAction("1000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const bundle = createEvidenceBundle(
+      action,
+      plan,
+      [
+        {
+          evidence: adaptiveEvidence(
+            action,
+            "FRAUD_DETECTION"
+          ),
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
+        }
+      ]
+    );
+
+    const wrongNetwork = structuredClone(bundle);
+    wrongNetwork.items[0].payment.network = "eip155:1";
+    rehash(wrongNetwork);
+    expect(verifyEvidenceBundle(wrongNetwork)).toBe(false);
+
+    const wrongAsset = structuredClone(bundle);
+    wrongAsset.items[0].payment.asset =
+      "0x1111111111111111111111111111111111111111";
+    rehash(wrongAsset);
+    expect(verifyEvidenceBundle(wrongAsset)).toBe(false);
+
+    const overPerRequestCap = structuredClone(bundle);
+    overPerRequestCap.items[0].payment.amountRaw = "10001";
+    overPerRequestCap.totalEvidenceSpendRaw = "10001";
+    rehash(overPerRequestCap);
+    expect(verifyEvidenceBundle(overPerRequestCap)).toBe(false);
+  });
+
+  it("rejects malformed evidence hashes even when the bundle is rehashed", () => {
+    const action = adaptiveAction("1000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const bundle = createEvidenceBundle(
+      action,
+      plan,
+      [
+        {
+          evidence: adaptiveEvidence(
+            action,
+            "FRAUD_DETECTION"
+          ),
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
+        }
+      ]
+    );
+
+    const malformedSignal = structuredClone(bundle);
+    malformedSignal.items[0].signalHash = "not-a-hash";
+    rehash(malformedSignal);
+    expect(verifyEvidenceBundle(malformedSignal)).toBe(false);
+
+    const malformedRaw = structuredClone(bundle);
+    malformedRaw.items[0].rawResponseHash = "0x1234";
+    rehash(malformedRaw);
+    expect(verifyEvidenceBundle(malformedRaw)).toBe(false);
   });
 });
