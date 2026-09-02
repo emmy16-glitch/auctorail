@@ -5,7 +5,7 @@ import {
 } from "../src/executor/permit-store.js";
 
 class FakeDatabase implements PermitConsumptionDatabase {
-  readonly claims = new Map<string, string>();
+  readonly claims = new Map<string, { consumedAt: string; executionId: string }>();
   failure: unknown;
   queries: string[] = [];
 
@@ -23,12 +23,13 @@ class FakeDatabase implements PermitConsumptionDatabase {
       if (this.claims.has(key)) {
         return { rows: [] };
       }
-      this.claims.set(key, `${consumedAt}:${executionId}`);
+      this.claims.set(key, { consumedAt, executionId });
       return { rows: [{ permit_id: permitId } as Row] };
     }
+    const claim = this.claims.get(key);
     return {
-      rows: this.claims.has(key)
-        ? ([{ permit_id: permitId } as Row])
+      rows: claim
+        ? ([{ permitId, nonce, consumedAt: claim.consumedAt, executionId: claim.executionId } as Row])
         : []
     };
   }
@@ -51,7 +52,15 @@ describe("PostgresPermitConsumptionStore", () => {
   it("rejects sequential replay and duplicate conflicts", async () => {
     const store = new PostgresPermitConsumptionStore(new FakeDatabase());
     await expect(store.consume("permit-2", "nonce-2", "2026-09-01T19:00:00.000Z")).resolves.toEqual({ consumed: true, code: "permit_consumed" });
-    await expect(store.consume("permit-2", "nonce-2", "2026-09-01T19:00:01.000Z")).resolves.toEqual({ consumed: false, code: "permit_already_consumed" });
+    await expect(store.consume("permit-2", "nonce-2", "2026-09-01T19:00:01.000Z")).resolves.toMatchObject({ consumed: false, code: "permit_already_consumed_by_other_execution" });
+  });
+
+  it("identifies claim ownership for same and different execution IDs", async () => {
+    const store = new PostgresPermitConsumptionStore(new FakeDatabase());
+    const executionId = "11111111-1111-4111-8111-111111111111";
+    await store.consume("permit-owner", "nonce-owner", "2026-09-01T19:00:00.000Z", executionId);
+    await expect(store.consume("permit-owner", "nonce-owner", "2026-09-01T19:00:01.000Z", executionId)).resolves.toMatchObject({ consumed: false, code: "permit_already_consumed_by_this_execution" });
+    await expect(store.consume("permit-owner", "nonce-owner", "2026-09-01T19:00:02.000Z", "22222222-2222-4222-8222-222222222222")).resolves.toMatchObject({ consumed: false, code: "permit_already_consumed_by_other_execution" });
   });
 
   for (const count of [2, 5, 10, 25, 50, 100]) {

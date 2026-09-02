@@ -257,7 +257,8 @@ describe("ProofGate Controlled Executor", () => {
       consume: () => {
         throw storageError;
       },
-      isConsumed: () => false
+      isConsumed: () => false,
+      getConsumption: () => null
     };
     let executions = 0;
 
@@ -306,7 +307,8 @@ describe("ProofGate Controlled Executor", () => {
         fs.writeFileSync(acquisitionMarker, "partial", { mode: 0o600 });
         throw diskFullError;
       },
-      isConsumed: () => false
+      isConsumed: () => false,
+      getConsumption: () => null
     };
     let executions = 0;
 

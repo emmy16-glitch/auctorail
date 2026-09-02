@@ -21,6 +21,8 @@ import {
 import {
   FilePermitConsumptionStore
 } from "../src/executor/permit-store.js";
+import { PostgresExecutionStore } from "../src/executor/durable-execution.js";
+import { encodeErc20TransferCalldata } from "../src/executor/transaction-intent.js";
 import {
   runPaymentGateway
 } from "../src/gateway/payment-gateway.js";
@@ -385,3 +387,61 @@ describe(
     );
   }
 );
+
+
+describe("payment gateway durable execution path", () => {
+  it("uses durable coordination and performs one final ERC-20 intent-bound submission", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "proofgate-durable-gateway-"));
+    const permitStore = new FilePermitConsumptionStore(directory);
+    const rows = new Map<string, any>();
+    const database = {
+      async query(text: string, values: readonly unknown[]) {
+        if (text.includes("INSERT INTO executions")) {
+          rows.set(String(values[0]), { executionId: values[0], permitId: values[1], permitNonce: values[2], state: values[13], transactionIntentHash: values[7] });
+          return { rows: [] };
+        }
+        if (text.includes("WHERE permit_id = $1")) {
+          return { rows: [...rows.values()].filter((row) => row.permitId === values[0] && row.permitNonce === values[1]) };
+        }
+        if (text.includes("UPDATE executions")) {
+          const row = rows.get(String(values[0]));
+          if (!row || row.state !== values[4]) return { rows: [] };
+          row.state = values[1];
+          if (values[2]) row.transactionHash = values[2];
+          return { rows: [{ execution_id: values[0] }] };
+        }
+        return { rows: rows.has(String(values[0])) ? [rows.get(String(values[0]))] : [] };
+      }
+    };
+    const executionStore = new PostgresExecutionStore(database);
+    const currentAction = action();
+    const sender = "0x0000000000000000000000000000000000000002";
+    const txHash = "0x" + "e".repeat(64);
+    let executions = 0;
+    const result = await runPaymentGateway({
+      mandate: mandate(),
+      action: currentAction,
+      evidence: evidence(),
+      agentId: AGENT,
+      secret: SECRET,
+      store: permitStore,
+      durableExecutionStore: executionStore,
+      sender,
+      transactionIntent: () => ({
+        chainId: currentAction.payload.chainId,
+        sender,
+        token: currentAction.payload.token,
+        recipient: currentAction.payload.destination,
+        amountRaw: currentAction.payload.amountRaw,
+        calldata: encodeErc20TransferCalldata(currentAction.payload.destination, currentAction.payload.amountRaw),
+        value: "0"
+      }),
+      now: NOW,
+      execute: async () => { executions += 1; return { transactionHash: txHash, confirmedAt: NOW.toISOString() }; }
+    });
+    expect(result.execution?.status).toBe("EXECUTED");
+    expect(executions).toBe(1);
+    expect(rows.size).toBe(1);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+});
