@@ -180,6 +180,7 @@ export class PostgresExecutionStore {
               action_hash AS "actionHash",
               decision_hash AS "decisionHash",
               policy_id AS "policyId",
+              transaction_intent_hash AS "transactionIntentHash",
               chain_id AS "chainId",
               sender, destination, token, amount_raw AS "amountRaw",
               state, transaction_hash AS "transactionHash",
@@ -231,7 +232,7 @@ export async function executeDurableProtectedAction(
     killSwitch?: ExecutionKillSwitch;
     sender: string;
     now?: Date;
-    submit: () => Promise<DurableSubmissionResult>;
+    submit: (verifiedIntent: TransactionIntent) => Promise<DurableSubmissionResult>;
   }
 ): Promise<DurableExecutionResult> {
   const now = input.now ?? new Date();
@@ -307,10 +308,10 @@ export async function executeDurableProtectedAction(
       now.toISOString(),
       record.executionId
     );
-    if (!claim.consumed) {
+    if (!claim.consumed && claim.code !== "permit_already_consumed_by_this_execution") {
       return {
         status: "BLOCKED",
-        code: "permit_already_consumed",
+        code: claim.code,
         executionId: record.executionId
       };
     }
@@ -363,7 +364,7 @@ export async function executeDurableProtectedAction(
 
   let submission: DurableSubmissionResult;
   try {
-    submission = await input.submit();
+    submission = await input.submit(finalIntent);
   } catch {
     // Once SUBMITTING is durable, provider contact is possible. Do not label
     // an unknown provider outcome as FAILED or invoke the provider again.

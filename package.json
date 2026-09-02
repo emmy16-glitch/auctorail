@@ -19,7 +19,8 @@
     "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
     "execute:approved": "tsx scripts/execute-approved-payment.ts",
     "attack:lab": "tsx scripts/attack-lab.ts",
-    "proof:reprocess": "tsx scripts/reprocess-quarantine.ts"
+    "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
+    "test:postgres": "tsx scripts/test-postgres.ts"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +37,8 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

@@ -13,7 +13,10 @@ export interface ConsumeResult {
   consumed: boolean;
   code:
     | "permit_consumed"
-    | "permit_already_consumed";
+    | "permit_already_consumed"
+    | "permit_already_consumed_by_this_execution"
+    | "permit_already_consumed_by_other_execution";
+  consumption?: PermitConsumption;
 }
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -31,6 +34,11 @@ export interface PermitConsumptionStore {
     permitId: string,
     nonce: string
   ): MaybePromise<boolean>;
+
+  getConsumption(
+    permitId: string,
+    nonce: string
+  ): MaybePromise<PermitConsumption | null>;
 }
 
 export interface PermitConsumptionQueryResult<Row = Record<string, unknown>> {
@@ -95,7 +103,8 @@ implements PermitConsumptionStore {
       PermitConsumption = {
         permitId,
         nonce,
-        consumedAt
+        consumedAt,
+        ...(_executionId ? { executionId: _executionId } : {})
       };
 
     try {
@@ -125,10 +134,12 @@ implements PermitConsumptionStore {
           .code;
 
       if (code === "EEXIST") {
+        const existing = this.getConsumption(permitId, nonce);
+        const owned = existing?.executionId && _executionId && existing.executionId === _executionId;
         return {
           consumed: false,
-          code:
-            "permit_already_consumed"
+          code: owned ? "permit_already_consumed_by_this_execution" : "permit_already_consumed_by_other_execution",
+          ...(existing ? { consumption: existing } : {})
         };
       }
 
@@ -140,12 +151,18 @@ implements PermitConsumptionStore {
     permitId: string,
     nonce: string
   ): boolean {
-    return fs.existsSync(
-      this.filePath(
-        permitId,
-        nonce
-      )
-    );
+    return this.getConsumption(permitId, nonce) !== null;
+  }
+
+  getConsumption(
+    permitId: string,
+    nonce: string
+  ): PermitConsumption | null {
+    try {
+      return JSON.parse(fs.readFileSync(this.filePath(permitId, nonce), "utf8")) as PermitConsumption;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -178,29 +195,34 @@ export class PostgresPermitConsumptionStore
         [permitId, nonce, consumedAt, executionId]
       );
 
-    return result.rows.length > 0
-      ? {
-          consumed: true,
-          code: "permit_consumed"
-        }
-      : {
-          consumed: false,
-          code: "permit_already_consumed"
-        };
+    if (result.rows.length > 0) {
+      return { consumed: true, code: "permit_consumed" };
+    }
+    const existing = await this.getConsumption(permitId, nonce);
+    const owned = existing?.executionId === executionId;
+    return {
+      consumed: false,
+      code: owned ? "permit_already_consumed_by_this_execution" : "permit_already_consumed_by_other_execution",
+      ...(existing ? { consumption: existing } : {})
+    };
   }
 
   async isConsumed(
     permitId: string,
     nonce: string
   ): Promise<boolean> {
-    const result =
-      await this.database.query<{ permit_id: string }>(
-        `SELECT permit_id
-         FROM permit_consumptions
-         WHERE permit_id = $1 AND nonce = $2
-         LIMIT 1`,
-        [permitId, nonce]
-      );
-    return result.rows.length > 0;
+    return (await this.getConsumption(permitId, nonce)) !== null;
+  }
+
+  async getConsumption(
+    permitId: string,
+    nonce: string
+  ): Promise<PermitConsumption | null> {
+    const result = await this.database.query<PermitConsumption>(
+      `SELECT permit_id AS "permitId", nonce, consumed_at AS "consumedAt", execution_id AS "executionId"
+       FROM permit_consumptions WHERE permit_id = $1 AND nonce = $2 LIMIT 1`,
+      [permitId, nonce]
+    );
+    return result.rows[0] ?? null;
   }
 }

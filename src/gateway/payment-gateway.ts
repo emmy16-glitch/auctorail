@@ -61,7 +61,7 @@ export interface RunPaymentGatewayInput {
   sender?: string;
   transactionIntent?: () => Promise<TransactionIntent> | TransactionIntent;
   killSwitch?: ExecutionKillSwitch;
-  execute: (action: ActionContract) => Promise<PaymentExecutionArtifact>;
+  execute: (action: ActionContract, verifiedIntent?: TransactionIntent) => Promise<PaymentExecutionArtifact>;
   operationId?: string;
   now?: Date;
   permitTtlSeconds?: number;
@@ -187,8 +187,8 @@ export async function runPaymentGateway(
         transactionIntent: input.transactionIntent,
         killSwitch: input.killSwitch,
         now,
-        submit: async () => {
-          const artifact = await input.execute(input.action);
+        submit: async (verifiedIntent) => {
+          const artifact = await input.execute(input.action, verifiedIntent);
           return {
             state: "CONFIRMED" as const,
             transactionHash: artifact.transactionHash
