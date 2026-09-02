@@ -1,7 +1,9 @@
 import type { ActionContract } from "../core/action-contract.js";
 import type { MandateContract } from "../core/mandate-contract.js";
-import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
 import type { DecisionRecord } from "../policy/payments-strict-v1.js";
+import type {
+  AuthorizationEvidence
+} from "../telegraph/evidence-bundle.js";
 import {
   type Permit,
   type PermitVerificationCode,
@@ -39,7 +41,7 @@ export interface ExecuteProtectedInput<T> {
   mandate: MandateContract;
   permit: Permit;
   action: ActionContract;
-  evidence: TelegraphEvidenceRecord;
+  evidence: AuthorizationEvidence;
   decision: DecisionRecord;
   secret: string;
   store: PermitConsumptionStore;
