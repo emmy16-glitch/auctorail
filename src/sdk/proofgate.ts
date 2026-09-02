@@ -19,6 +19,11 @@ import {
   createAdaptiveEvidencePlan,
   type AdaptiveEvidencePlan
 } from "../telegraph/adaptive-evidence-plan.js";
+import {
+  collectAdaptiveEvidence,
+  type AdaptiveCollectionResult,
+  type IntentAcquirer
+} from "../telegraph/adaptive-orchestrator.js";
 import type {
   EvidenceBundle
 } from "../telegraph/evidence-bundle.js";
@@ -45,6 +50,14 @@ export interface AdaptiveAuthorizationResult {
   decision: DecisionRecord;
   counterfactual: string | null;
   evidenceBundleHash: string | null;
+}
+
+export interface TrustedAdaptiveAuthorizationRun {
+  action: ActionContract;
+  plan: AdaptiveEvidencePlan;
+  collection: AdaptiveCollectionResult;
+  authorization: AdaptiveAuthorizationResult;
+  permit: Permit | null;
 }
 
 export function planPaymentAuthorization(
@@ -160,4 +173,79 @@ export function mintPaymentPermit(input: {
         : {})
     }
   );
+}
+
+/**
+ * Recommended trusted-host integration.
+ *
+ * The autonomous agent supplies only its proposed payment. The host supplies
+ * the principal-created Mandate, trusted Telegraph Intent acquirer and permit
+ * signer. Risk planning, evidence collection, policy evaluation and permit
+ * minting happen inside one boundary, so the agent is never asked to provide
+ * its own risk tier, Evidence Bundle or ALLOW decision.
+ */
+export async function authorizePaymentWithEvidence(input: {
+  proposal: AdaptivePaymentProposal;
+  mandate: MandateContract;
+  agentId: string;
+  acquire: IntentAcquirer;
+  signer: PermitSigner | string;
+  policyNow?: Date;
+  permitNow?: Date;
+  ttlSeconds?: number;
+  clock?: () => Date;
+}): Promise<TrustedAdaptiveAuthorizationRun> {
+  const { action, plan } =
+    planPaymentAuthorization(input.proposal);
+
+  const collection =
+    await collectAdaptiveEvidence(
+      action,
+      plan,
+      input.acquire,
+      input.clock
+        ? { now: input.clock }
+        : undefined
+    );
+
+  const authorization =
+    evaluatePaymentAuthorization({
+      mandate: input.mandate,
+      action,
+      plan,
+      bundle: collection.bundle,
+      agentId: input.agentId,
+      ...(input.policyNow
+        ? { now: input.policyNow }
+        : {})
+    });
+
+  let permit: Permit | null = null;
+
+  if (
+    collection.status === "COMPLETE" &&
+    authorization.decision.decision === "ALLOW"
+  ) {
+    permit = mintPaymentPermit({
+      mandate: input.mandate,
+      action,
+      bundle: collection.bundle,
+      decision: authorization.decision,
+      signer: input.signer,
+      ...(input.permitNow
+        ? { now: input.permitNow }
+        : {}),
+      ...(input.ttlSeconds !== undefined
+        ? { ttlSeconds: input.ttlSeconds }
+        : {})
+    });
+  }
+
+  return {
+    action,
+    plan,
+    collection,
+    authorization,
+    permit
+  };
 }
