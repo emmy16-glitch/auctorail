@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BASE_SEPOLIA_USDC
+} from "../src/core/action-contract.js";
+import {
+  authorizePaymentWithEvidence,
   createAdaptivePaymentMandate,
   evaluatePaymentAuthorization,
   mintPaymentPermit,
@@ -13,12 +17,40 @@ import {
   adaptiveEvidence
 } from "./helpers/adaptive-fixtures.js";
 
+const NOW = new Date(
+  "2026-09-02T18:00:00.000Z"
+);
+const VENDOR =
+  "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
+const SECRET =
+  "sdk-test-secret-" + "x".repeat(64);
+
+function mandateFor(destination: string) {
+  return createAdaptivePaymentMandate({
+    mandateId: "sdk-mandate",
+    principalId: "sdk-principal",
+    agentId: "sdk-agent",
+    allowedDestinations: [destination],
+    maxPerActionRaw: "10000000",
+    requiredIntents: [
+      "FRAUD_DETECTION",
+      "ONCHAIN_TX_LOOKUP",
+      "WALLET_BALANCE_CHECK"
+    ],
+    status: "ACTIVE",
+    issuedAt:
+      "2026-09-02T17:00:00.000Z",
+    expiresAt:
+      "2026-09-02T20:00:00.000Z",
+    version: 1
+  });
+}
+
 describe("ProofGate developer SDK", () => {
   it("plans risk automatically from a developer payment proposal", () => {
     const planned = planPaymentAuthorization({
       amountRaw: "7000000",
-      destination:
-        "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+      destination: VENDOR,
       reason: "External agent purchase"
     });
 
@@ -38,35 +70,14 @@ describe("ProofGate developer SDK", () => {
   });
 
   it("lets a host evaluate and mint authority without giving ProofGate direct execution power", () => {
-    const now = new Date(
-      "2026-09-02T18:00:00.000Z"
-    );
     const planned = planPaymentAuthorization({
       amountRaw: "1000000",
-      destination:
-        "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+      destination: VENDOR,
       reason: "SDK authorization"
     });
-    const mandate = createAdaptivePaymentMandate({
-      mandateId: "sdk-mandate",
-      principalId: "sdk-principal",
-      agentId: "sdk-agent",
-      allowedDestinations: [
-        planned.action.payload.destination
-      ],
-      maxPerActionRaw: "10000000",
-      requiredIntents: [
-        "FRAUD_DETECTION",
-        "ONCHAIN_TX_LOOKUP",
-        "WALLET_BALANCE_CHECK"
-      ],
-      status: "ACTIVE",
-      issuedAt:
-        "2026-09-02T17:00:00.000Z",
-      expiresAt:
-        "2026-09-02T20:00:00.000Z",
-      version: 1
-    });
+    const mandate = mandateFor(
+      planned.action.payload.destination
+    );
     const bundle = createEvidenceBundle(
       planned.action,
       planned.plan,
@@ -76,10 +87,12 @@ describe("ProofGate developer SDK", () => {
             planned.action,
             requirement.intent
           ),
-          paymentAmountRaw: "10000"
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
         })
       ),
-      { now }
+      { now: NOW }
     );
 
     const result = evaluatePaymentAuthorization({
@@ -88,7 +101,7 @@ describe("ProofGate developer SDK", () => {
       plan: planned.plan,
       bundle,
       agentId: "sdk-agent",
-      now
+      now: NOW
     });
 
     expect(result.decision.decision).toBe("ALLOW");
@@ -102,10 +115,8 @@ describe("ProofGate developer SDK", () => {
       action: planned.action,
       bundle,
       decision: result.decision,
-      signer:
-        "sdk-test-secret-" +
-        "x".repeat(64),
-      now,
+      signer: SECRET,
+      now: NOW,
       ttlSeconds: 30
     });
 
@@ -115,35 +126,14 @@ describe("ProofGate developer SDK", () => {
   });
 
   it("returns a deterministic counterfactual for incomplete evidence", () => {
-    const now = new Date(
-      "2026-09-02T18:00:00.000Z"
-    );
     const planned = planPaymentAuthorization({
       amountRaw: "3000000",
-      destination:
-        "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+      destination: VENDOR,
       reason: "SDK hold"
     });
-    const mandate = createAdaptivePaymentMandate({
-      mandateId: "sdk-hold",
-      principalId: "sdk-principal",
-      agentId: "sdk-agent",
-      allowedDestinations: [
-        planned.action.payload.destination
-      ],
-      maxPerActionRaw: "10000000",
-      requiredIntents: [
-        "FRAUD_DETECTION",
-        "ONCHAIN_TX_LOOKUP",
-        "WALLET_BALANCE_CHECK"
-      ],
-      status: "ACTIVE",
-      issuedAt:
-        "2026-09-02T17:00:00.000Z",
-      expiresAt:
-        "2026-09-02T20:00:00.000Z",
-      version: 1
-    });
+    const mandate = mandateFor(
+      planned.action.payload.destination
+    );
     const partial = createEvidenceBundle(
       planned.action,
       planned.plan,
@@ -153,10 +143,12 @@ describe("ProofGate developer SDK", () => {
             planned.action,
             "FRAUD_DETECTION"
           ),
-          paymentAmountRaw: "10000"
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
         }
       ],
-      { now }
+      { now: NOW }
     );
 
     const result = evaluatePaymentAuthorization({
@@ -165,12 +157,85 @@ describe("ProofGate developer SDK", () => {
       plan: planned.plan,
       bundle: partial,
       agentId: "sdk-agent",
-      now
+      now: NOW
     });
 
     expect(result.decision.decision).toBe("HOLD");
     expect(result.counterfactual).toContain(
       "Required ONCHAIN_TX_LOOKUP evidence is missing"
     );
+  });
+
+  it("offers a trusted one-call authorization path where the agent supplies only the proposal", async () => {
+    const mandate = mandateFor(VENDOR);
+
+    const result = await authorizePaymentWithEvidence({
+      proposal: {
+        amountRaw: "7000000",
+        destination: VENDOR,
+        reason: "Trusted SDK path"
+      },
+      mandate,
+      agentId: "sdk-agent",
+      acquire: async ({ action, requirement }) => ({
+        evidence: adaptiveEvidence(
+          action,
+          requirement.intent
+        ),
+        paymentAmountRaw: "10000",
+        paymentNetwork: "eip155:84532",
+        paymentAsset: BASE_SEPOLIA_USDC
+      }),
+      signer: SECRET,
+      policyNow: NOW,
+      permitNow: NOW,
+      ttlSeconds: 30,
+      clock: () => NOW
+    });
+
+    expect(result.plan.riskTier).toBe("HIGH");
+    expect(result.collection.status).toBe("COMPLETE");
+    expect(result.authorization.decision.decision).toBe("ALLOW");
+    expect(result.permit).not.toBeNull();
+    expect(result.permit?.payload.actionHash).toBe(
+      result.action.actionHash
+    );
+  });
+
+  it("never mints a permit when the trusted acquisition path is incomplete", async () => {
+    const mandate = mandateFor(VENDOR);
+
+    const result = await authorizePaymentWithEvidence({
+      proposal: {
+        amountRaw: "3000000",
+        destination: VENDOR,
+        reason: "Incomplete trusted path"
+      },
+      mandate,
+      agentId: "sdk-agent",
+      acquire: async ({ action, requirement }) => {
+        if (requirement.intent === "ONCHAIN_TX_LOOKUP") {
+          throw new Error("provider_unavailable");
+        }
+
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent
+          ),
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
+        };
+      },
+      signer: SECRET,
+      policyNow: NOW,
+      permitNow: NOW,
+      clock: () => NOW
+    });
+
+    expect(result.collection.status).toBe("HOLD");
+    expect(result.authorization.decision.decision).not.toBe("ALLOW");
+    expect(result.permit).toBeNull();
   });
 });
