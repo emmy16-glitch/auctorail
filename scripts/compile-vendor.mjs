@@ -27,6 +27,18 @@ function ensureDirectory(directory) {
   fs.mkdirSync(directory, { recursive: true });
 }
 
+function assertNativeCompilerPlatform() {
+  if (process.platform === "linux" && process.arch === "x64") {
+    return;
+  }
+
+  throw new Error(
+    `pinned_native_solc_unsupported_platform:${process.platform}-${process.arch}; ` +
+    `the canonical compiler is linux-amd64. Run "npm run vendor:verify" on this host; ` +
+    `GitHub CI performs the reproducible native recompilation on linux-x64.`
+  );
+}
+
 async function ensureCompiler() {
   ensureDirectory(toolsDir);
   if (fs.existsSync(compilerPath)) {
@@ -91,6 +103,7 @@ const input = {
   }
 };
 
+assertNativeCompilerPlatform();
 await ensureCompiler();
 const output = runCompiler(input);
 for (const error of output.errors ?? []) console.log(error.formattedMessage);
