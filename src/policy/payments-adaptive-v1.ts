@@ -10,14 +10,15 @@ import {
   type MandateContract
 } from "../core/mandate-contract.js";
 import {
+  createAdaptiveEvidencePlan,
+  type AdaptiveEvidencePlan,
+  type AdaptiveEvidenceRequirement
+} from "../telegraph/adaptive-evidence-plan.js";
+import {
   verifyEvidenceBundle,
   hashAdaptiveEvidencePlan,
   type EvidenceBundle
 } from "../telegraph/evidence-bundle.js";
-import {
-  type AdaptiveEvidencePlan,
-  type AdaptiveEvidenceRequirement
-} from "../telegraph/adaptive-evidence-plan.js";
 import {
   classifyMinerLabel,
   type CheckStatus,
@@ -51,10 +52,7 @@ function check(
   };
 }
 
-function addressesEqual(
-  a: string,
-  b: string
-): boolean {
+function addressesEqual(a: string, b: string): boolean {
   return (
     /^0x[0-9a-fA-F]{40}$/.test(a) &&
     /^0x[0-9a-fA-F]{40}$/.test(b) &&
@@ -62,29 +60,20 @@ function addressesEqual(
   );
 }
 
-function fresh(
-  timestamp: string,
-  now: Date
-): boolean {
+function fresh(timestamp: string, now: Date): boolean {
   const at = new Date(timestamp).getTime();
   const age = now.getTime() - at;
 
   return (
     Number.isFinite(at) &&
     age >= 0 &&
-    age <=
-      PAYMENTS_ADAPTIVE_V1.maxEvidenceAgeSeconds *
-        1000
+    age <= PAYMENTS_ADAPTIVE_V1.maxEvidenceAgeSeconds * 1000
   );
 }
 
-function explicitNegative(
-  label: string | null
-): boolean {
+function explicitNegative(label: string | null): boolean {
   if (!label) return false;
-
-  const normalized =
-    label.trim().toUpperCase();
+  const normalized = label.trim().toUpperCase();
 
   return [
     "BLOCK",
@@ -93,6 +82,7 @@ function explicitNegative(
     "REJECT",
     "REJECTED",
     "MALICIOUS",
+    "SUSPICIOUS",
     "FRAUD",
     "FRAUDULENT",
     "RISKY",
@@ -106,16 +96,20 @@ function planMatchesAction(
   plan: AdaptiveEvidencePlan,
   action: ActionContract
 ): boolean {
-  return (
-    plan.actionId === action.id &&
-    plan.actionHash === action.actionHash &&
-    addressesEqual(
-      plan.subject,
-      action.payload.destination
-    ) &&
-    plan.chainId === action.payload.chainId &&
-    plan.amountRaw === action.payload.amountRaw
-  );
+  if (
+    plan.actionId !== action.id ||
+    plan.actionHash !== action.actionHash ||
+    !addressesEqual(plan.subject, action.payload.destination) ||
+    plan.chainId !== action.payload.chainId ||
+    plan.amountRaw !== action.payload.amountRaw
+  ) {
+    return false;
+  }
+
+  // Risk tier, Intent set, confidence floors, latency and x402 budget are
+  // derived from the exact action. The caller/agent cannot downgrade them.
+  const expected = createAdaptiveEvidencePlan(action);
+  return canonicalize(plan) === canonicalize(expected);
 }
 
 function bundleMatchesPlan(
@@ -127,14 +121,10 @@ function bundleMatchesPlan(
     verifyEvidenceBundle(bundle) &&
     bundle.actionId === action.id &&
     bundle.actionHash === action.actionHash &&
-    bundle.planHash ===
-      hashAdaptiveEvidencePlan(plan) &&
+    bundle.planHash === hashAdaptiveEvidencePlan(plan) &&
     bundle.riskTier === plan.riskTier &&
     bundle.amountRaw === action.payload.amountRaw &&
-    addressesEqual(
-      bundle.subject,
-      action.payload.destination
-    ) &&
+    addressesEqual(bundle.subject, action.payload.destination) &&
     bundle.chainId === action.payload.chainId
   );
 }
@@ -146,33 +136,20 @@ function requirementChecks(
   now: Date
 ): PolicyCheck[] {
   const item = bundle.items.find(
-    (candidate) =>
-      candidate.intent === requirement.intent
+    (candidate) => candidate.intent === requirement.intent
   );
-
-  const prefix =
-    requirement.intent.toLowerCase();
-
+  const prefix = requirement.intent.toLowerCase();
   const checks: PolicyCheck[] = [];
+  const delegated = mandate.requiredIntents.includes(requirement.intent);
 
   checks.push(
     check(
       `${prefix}_mandate_intent`,
-      mandate.requiredIntents.includes(
-        requirement.intent
-      )
-        ? "PASS"
-        : "BLOCK",
-      mandate.requiredIntents.includes(
-        requirement.intent
-      )
+      delegated ? "PASS" : "BLOCK",
+      delegated
         ? `Mandate authorizes required Intent ${requirement.intent}.`
         : `Mandate does not authorize required Intent ${requirement.intent}.`,
-      mandate.requiredIntents.includes(
-        requirement.intent
-      )
-        ? undefined
-        : "adaptive_intent_not_delegated"
+      delegated ? undefined : "adaptive_intent_not_delegated"
     )
   );
 
@@ -192,115 +169,83 @@ function requirementChecks(
     check(
       `${prefix}_evidence`,
       "PASS",
-      `Required ${requirement.intent} evidence is present from routed Miner ${item.miner.slug}.`
+      `Required ${requirement.intent} evidence is present from Telegraph-routed Miner ${item.miner.slug}.`
     )
   );
+
+  const subjectPass = addressesEqual(item.subject, bundle.subject);
+  const chainPass = item.chainId === bundle.chainId;
 
   checks.push(
     check(
       `${prefix}_subject`,
-      addressesEqual(
-        item.subject,
-        bundle.subject
-      )
-        ? "PASS"
-        : "BLOCK",
-      addressesEqual(
-        item.subject,
-        bundle.subject
-      )
+      subjectPass ? "PASS" : "BLOCK",
+      subjectPass
         ? "Evidence is bound to the exact action subject."
         : "Evidence subject does not match the exact action subject.",
-      addressesEqual(
-        item.subject,
-        bundle.subject
-      )
-        ? undefined
-        : "adaptive_evidence_subject_mismatch"
+      subjectPass ? undefined : "adaptive_evidence_subject_mismatch"
     ),
     check(
       `${prefix}_chain`,
-      item.chainId === bundle.chainId
-        ? "PASS"
-        : "BLOCK",
-      item.chainId === bundle.chainId
+      chainPass ? "PASS" : "BLOCK",
+      chainPass
         ? "Evidence is bound to the exact action chain."
         : "Evidence chain does not match the exact action chain.",
-      item.chainId === bundle.chainId
-        ? undefined
-        : "adaptive_evidence_chain_mismatch"
+      chainPass ? undefined : "adaptive_evidence_chain_mismatch"
     )
   );
 
+  const signalPass = !requirement.requireSignalHash || Boolean(item.signalHash);
   checks.push(
     check(
       `${prefix}_signal_hash`,
-      requirement.requireSignalHash &&
-      !item.signalHash
-        ? "HOLD"
-        : "PASS",
-      item.signalHash
-        ? "Telegraph signal hash is present."
+      signalPass ? "PASS" : "HOLD",
+      signalPass
+        ? "Required Telegraph signal hash is present."
         : "Required Telegraph signal hash is missing.",
-      item.signalHash
-        ? undefined
-        : "adaptive_signal_hash_missing"
+      signalPass ? undefined : "adaptive_signal_hash_missing"
     )
   );
 
+  const applicable =
+    !requirement.requireApplicable || item.applicability === "APPLICABLE";
   checks.push(
     check(
       `${prefix}_applicability`,
-      requirement.requireApplicable &&
-      item.applicability !== "APPLICABLE"
-        ? "HOLD"
-        : "PASS",
-      item.applicability === "APPLICABLE"
+      applicable ? "PASS" : "HOLD",
+      applicable
         ? "Evidence is applicable to the exact target."
         : `Evidence applicability is ${item.applicability}.`,
-      item.applicability === "APPLICABLE"
-        ? undefined
-        : "adaptive_evidence_not_applicable"
+      applicable ? undefined : "adaptive_evidence_not_applicable"
     )
   );
 
-  if (
-    requirement.minimumConfidence !==
-    undefined
-  ) {
+  if (requirement.minimumConfidence !== undefined) {
     const confidencePass =
       item.confidence !== null &&
-      item.confidence >=
-        requirement.minimumConfidence;
+      item.confidence >= requirement.minimumConfidence;
 
     checks.push(
       check(
         `${prefix}_confidence`,
-        confidencePass
-          ? "PASS"
-          : "HOLD",
+        confidencePass ? "PASS" : "HOLD",
         confidencePass
           ? `Confidence ${item.confidence} meets required floor ${requirement.minimumConfidence}.`
           : `Confidence ${item.confidence ?? "missing"} is below required floor ${requirement.minimumConfidence}.`,
-        confidencePass
-          ? undefined
-          : "adaptive_confidence_below_floor"
+        confidencePass ? undefined : "adaptive_confidence_below_floor"
       )
     );
   }
 
+  const freshPass = fresh(item.receivedAt, now);
   checks.push(
     check(
       `${prefix}_freshness`,
-      fresh(item.receivedAt, now)
-        ? "PASS"
-        : "HOLD",
-      fresh(item.receivedAt, now)
+      freshPass ? "PASS" : "HOLD",
+      freshPass
         ? "Evidence is fresh."
         : "Evidence is stale or has an invalid timestamp.",
-      fresh(item.receivedAt, now)
-        ? undefined
-        : "adaptive_evidence_stale"
+      freshPass ? undefined : "adaptive_evidence_stale"
     )
   );
 
@@ -313,13 +258,8 @@ function requirementChecks(
         "adaptive_explicit_negative"
       )
     );
-  } else if (
-    requirement.intent ===
-    "FRAUD_DETECTION"
-  ) {
-    const status =
-      classifyMinerLabel(item.label);
-
+  } else if (requirement.intent === "FRAUD_DETECTION") {
+    const status = classifyMinerLabel(item.label);
     checks.push(
       check(
         `${prefix}_verdict`,
@@ -327,9 +267,7 @@ function requirementChecks(
         status === "PASS"
           ? `Fraud-detection verdict ${item.label} is acceptable.`
           : `Fraud-detection verdict ${item.label ?? "missing"} does not establish a positive result.`,
-        status === "PASS"
-          ? undefined
-          : "adaptive_fraud_verdict_not_positive"
+        status === "PASS" ? undefined : "adaptive_fraud_verdict_not_positive"
       )
     );
   } else {
@@ -352,78 +290,52 @@ export function evaluatePaymentsAdaptiveV1(
   action: ActionContract,
   plan: AdaptiveEvidencePlan,
   bundle: EvidenceBundle | null,
-  options: {
-    agentId: string;
-    now?: Date;
-  }
+  options: { agentId: string; now?: Date }
 ): DecisionRecord {
-  const now =
-    options.now ?? new Date();
-
+  const now = options.now ?? new Date();
   const checks: PolicyCheck[] = [];
-
-  const mandateEvaluation =
-    evaluateMandate(
-      mandate,
-      action,
-      options.agentId,
-      now
-    );
+  const mandateEvaluation = evaluateMandate(
+    mandate,
+    action,
+    options.agentId,
+    now
+  );
 
   checks.push(
-    ...mandateEvaluation.checks.map(
-      (item) => ({
-        name: item.name,
-        status: item.status,
-        reason: item.reason,
-        ...(item.code
-          ? { code: item.code }
-          : {})
-      })
-    )
+    ...mandateEvaluation.checks.map((item) => ({
+      name: item.name,
+      status: item.status,
+      reason: item.reason,
+      ...(item.code ? { code: item.code } : {})
+    }))
   );
+
+  const adaptivePolicy =
+    action.policyId === PAYMENTS_ADAPTIVE_V1.id &&
+    action.policyVersion === PAYMENTS_ADAPTIVE_V1.version;
+  const allowedChain =
+    action.payload.chainId === PAYMENTS_ADAPTIVE_V1.allowedChainId;
+  const allowedAsset =
+    addressesEqual(action.payload.token, PAYMENTS_ADAPTIVE_V1.allowedToken);
 
   checks.push(
     check(
       "adaptive_policy_id",
-      action.policyId ===
-        PAYMENTS_ADAPTIVE_V1.id &&
-      action.policyVersion ===
-        PAYMENTS_ADAPTIVE_V1.version
-        ? "PASS"
-        : "BLOCK",
-      action.policyId ===
-        PAYMENTS_ADAPTIVE_V1.id
+      adaptivePolicy ? "PASS" : "BLOCK",
+      adaptivePolicy
         ? "Action uses payments.adaptive.v1."
-        : "Action does not use payments.adaptive.v1.",
-      action.policyId ===
-        PAYMENTS_ADAPTIVE_V1.id
-        ? undefined
-        : "adaptive_policy_mismatch"
+        : "Action does not use the locked adaptive policy/version.",
+      adaptivePolicy ? undefined : "adaptive_policy_mismatch"
     ),
     check(
       "adaptive_allowed_chain",
-      action.payload.chainId ===
-        PAYMENTS_ADAPTIVE_V1.allowedChainId
-        ? "PASS"
-        : "BLOCK",
-      action.payload.chainId ===
-        PAYMENTS_ADAPTIVE_V1.allowedChainId
-        ? "Action uses Base Sepolia."
-        : "Action uses a prohibited chain."
+      allowedChain ? "PASS" : "BLOCK",
+      allowedChain ? "Action uses Base Sepolia." : "Action uses a prohibited chain."
     ),
     check(
       "adaptive_allowed_asset",
-      addressesEqual(
-        action.payload.token,
-        PAYMENTS_ADAPTIVE_V1.allowedToken
-      )
-        ? "PASS"
-        : "BLOCK",
-      addressesEqual(
-        action.payload.token,
-        PAYMENTS_ADAPTIVE_V1.allowedToken
-      )
+      allowedAsset ? "PASS" : "BLOCK",
+      allowedAsset
         ? "Action uses approved Base Sepolia USDC."
         : "Action uses an unauthorized asset."
     )
@@ -436,41 +348,31 @@ export function evaluatePaymentsAdaptiveV1(
     amount = 0n;
   }
 
+  const amountPass =
+    amount > 0n && amount <= PAYMENTS_ADAPTIVE_V1.maxAutonomousAmountRaw;
   checks.push(
     check(
       "adaptive_autonomous_amount_limit",
-      amount > 0n &&
-      amount <=
-        PAYMENTS_ADAPTIVE_V1
-          .maxAutonomousAmountRaw
-        ? "PASS"
-        : "BLOCK",
-      amount > 0n &&
-      amount <=
-        PAYMENTS_ADAPTIVE_V1
-          .maxAutonomousAmountRaw
+      amountPass ? "PASS" : "BLOCK",
+      amountPass
         ? "Amount is within the adaptive autonomous payment ceiling."
         : "Amount is invalid or exceeds the adaptive autonomous payment ceiling."
     )
   );
 
   const planValid =
-    planMatchesAction(plan, action) &&
-    plan.schemaVersion ===
-      "proofgate.adaptive-evidence-plan.v1" &&
-    plan.routeMode ===
-      "TELEGRAPH_INTENT_ROUTE";
+    plan.schemaVersion === "proofgate.adaptive-evidence-plan.v1" &&
+    plan.routeMode === "TELEGRAPH_INTENT_ROUTE" &&
+    planMatchesAction(plan, action);
 
   checks.push(
     check(
       "adaptive_evidence_plan",
       planValid ? "PASS" : "BLOCK",
       planValid
-        ? `Adaptive evidence plan is bound to the exact action at risk tier ${plan.riskTier}.`
-        : "Adaptive evidence plan is not cryptographically/semantically bound to the exact action.",
-      planValid
-        ? undefined
-        : "adaptive_plan_action_mismatch"
+        ? `Risk tier ${plan.riskTier}, required Intents, confidence floors and evidence budget were deterministically derived from the exact action.`
+        : "Adaptive evidence plan differs from the deterministic plan required for this exact action.",
+      planValid ? undefined : "adaptive_plan_downgrade_or_mismatch"
     )
   );
 
@@ -484,179 +386,109 @@ export function evaluatePaymentsAdaptiveV1(
       )
     );
   } else {
-    const bundleValid =
-      bundleMatchesPlan(
-        bundle,
-        plan,
-        action
-      );
-
+    const bundleValid = bundleMatchesPlan(bundle, plan, action);
     checks.push(
       check(
         "adaptive_evidence_bundle",
-        bundleValid
-          ? "PASS"
-          : "BLOCK",
+        bundleValid ? "PASS" : "BLOCK",
         bundleValid
           ? `Evidence bundle ${bundle.bundleHash} is intact and bound to the exact action/plan.`
           : "Evidence bundle integrity or action/plan binding failed.",
-        bundleValid
-          ? undefined
-          : "adaptive_bundle_integrity_failed"
+        bundleValid ? undefined : "adaptive_bundle_integrity_failed"
       )
     );
 
     let totalSpend = 0n;
     let budget = 0n;
-
     try {
-      totalSpend =
-        BigInt(bundle.totalEvidenceSpendRaw);
-      budget =
-        BigInt(plan.maxEvidenceSpendRaw);
+      totalSpend = BigInt(bundle.totalEvidenceSpendRaw);
+      budget = BigInt(plan.maxEvidenceSpendRaw);
     } catch {
       totalSpend = 1n;
       budget = 0n;
     }
 
+    const budgetPass = totalSpend <= budget;
     checks.push(
       check(
         "adaptive_evidence_budget",
-        totalSpend <= budget
-          ? "PASS"
-          : "BLOCK",
-        totalSpend <= budget
+        budgetPass ? "PASS" : "BLOCK",
+        budgetPass
           ? `Evidence spend ${totalSpend} is within budget ${budget} raw USDC units.`
           : `Evidence spend ${totalSpend} exceeds budget ${budget} raw USDC units.`,
-        totalSpend <= budget
-          ? undefined
-          : "adaptive_evidence_budget_exceeded"
+        budgetPass ? undefined : "adaptive_evidence_budget_exceeded"
       )
     );
 
-    const expectedIntents =
-      plan.requirements.map(
-        (item) => item.intent
-      );
-    const actualIntents =
-      bundle.items.map(
-        (item) => item.intent
-      );
-
-    const extras =
-      actualIntents.filter(
-        (intent) =>
-          !expectedIntents.includes(intent)
-      );
+    const expectedIntents = plan.requirements.map((item) => item.intent);
+    const actualIntents = bundle.items.map((item) => item.intent);
+    const extras = actualIntents.filter(
+      (intent) => !expectedIntents.includes(intent)
+    );
 
     checks.push(
       check(
         "adaptive_no_unrequested_evidence",
+        extras.length === 0 ? "PASS" : "BLOCK",
         extras.length === 0
-          ? "PASS"
-          : "BLOCK",
-        extras.length === 0
-          ? "Evidence bundle contains only Intents required by the plan."
+          ? "Evidence bundle contains only Intents required by the deterministic plan."
           : `Evidence bundle contains unrequested Intents: ${extras.join(", ")}.`,
-        extras.length === 0
-          ? undefined
-          : "adaptive_unrequested_evidence"
+        extras.length === 0 ? undefined : "adaptive_unrequested_evidence"
       )
     );
 
-    for (
-      const requirement of
-      plan.requirements
-    ) {
-      checks.push(
-        ...requirementChecks(
-          mandate,
-          requirement,
-          bundle,
-          now
-        )
-      );
+    for (const requirement of plan.requirements) {
+      checks.push(...requirementChecks(mandate, requirement, bundle, now));
     }
   }
 
-  const context:
-    Omit<
-      DecisionRecord,
-      "decision" | "reason"
-    > = {
-      mandate: {
-        mandateId:
-          mandate.mandateId,
-        mandateHash:
-          mandate.mandateHash,
-        principalId:
-          mandate.principalId,
-        agentId:
-          mandate.agentId,
-        version:
-          mandate.version
-      },
-      agentId:
-        options.agentId.trim(),
-      actionId:
-        action.id,
-      policyId:
-        PAYMENTS_ADAPTIVE_V1.id,
-      policyVersion:
-        PAYMENTS_ADAPTIVE_V1.version,
-      checks,
-      decidedAt:
-        now.toISOString()
-    };
+  const context: Omit<DecisionRecord, "decision" | "reason"> = {
+    mandate: {
+      mandateId: mandate.mandateId,
+      mandateHash: mandate.mandateHash,
+      principalId: mandate.principalId,
+      agentId: mandate.agentId,
+      version: mandate.version
+    },
+    agentId: options.agentId.trim(),
+    actionId: action.id,
+    policyId: PAYMENTS_ADAPTIVE_V1.id,
+    policyVersion: PAYMENTS_ADAPTIVE_V1.version,
+    checks,
+    decidedAt: now.toISOString()
+  };
 
-  const blocked =
-    checks.find(
-      (item) => item.status === "BLOCK"
-    );
-
+  const blocked = checks.find((item) => item.status === "BLOCK");
   if (blocked) {
     return {
       ...context,
       decision: "BLOCK",
-      reason:
-        blocked.code ?? blocked.name
+      reason: blocked.code ?? blocked.name
     };
   }
 
-  const held =
-    checks.find(
-      (item) => item.status === "HOLD"
-    );
-
+  const held = checks.find((item) => item.status === "HOLD");
   if (held) {
     return {
       ...context,
       decision: "HOLD",
-      reason:
-        held.code ?? held.name
+      reason: held.code ?? held.name
     };
   }
 
-  const policyCommitment =
-    hashCanonicalPayload(
-      canonicalize({
-        policy:
-          PAYMENTS_ADAPTIVE_V1.id,
-        version:
-          PAYMENTS_ADAPTIVE_V1.version,
-        actionHash:
-          action.actionHash,
-        planHash:
-          hashAdaptiveEvidencePlan(plan),
-        bundleHash:
-          bundle?.bundleHash ?? null
-      })
-    );
+  const policyCommitment = hashCanonicalPayload(
+    canonicalize({
+      policy: PAYMENTS_ADAPTIVE_V1.id,
+      version: PAYMENTS_ADAPTIVE_V1.version,
+      actionHash: action.actionHash,
+      planHash: hashAdaptiveEvidencePlan(plan),
+      bundleHash: bundle?.bundleHash ?? null
+    })
+  );
 
   return {
     ...context,
     decision: "ALLOW",
-    reason:
-      `adaptive_evidence_checks_passed:${policyCommitment}`
+    reason: `adaptive_evidence_checks_passed:${policyCommitment}`
   };
 }
