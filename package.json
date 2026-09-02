@@ -11,6 +11,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "ci": "npm run typecheck && npm test",
+    "audit:prod": "npm audit --omit=dev",
     "proof:live": "tsx scripts/prove-telegraph.ts",
     "policy": "tsx scripts/show-policy-decision.ts",
     "wallet:check": "node scripts/check-wallet.mjs",
@@ -31,7 +32,6 @@
     "@x402/fetch": "^2.24.0",
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0",
-    "solc": "^0.8.36",
     "viem": "^2.56.1",
     "zod": "^4.5.4"
   },
@@ -40,6 +40,7 @@
     "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.11",
     "pg": "^8.23.0",
+    "solc": "^0.8.36",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

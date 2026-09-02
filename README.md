@@ -36,7 +36,9 @@ npm ci
 npm run ci
 ```
 
-`npm run ci` runs strict TypeScript checking and the full Vitest security suite.
+`npm run ci` runs strict TypeScript checking and the full Vitest security suite. Run `npm run audit:prod` to audit only the dependencies shipped to production; CI enforces that this audit remains clean.
+
+The Solidity compiler used by `vendor:compile` is development-only tooling and is intentionally kept out of production dependencies. Production installs must use `npm ci --omit=dev` so compiler-only transitive packages cannot enter the runtime image.
 
 ## Live Telegraph proof
 

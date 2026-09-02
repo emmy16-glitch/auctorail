@@ -27,3 +27,6 @@ jobs:
 
       - name: Typecheck and test
         run: npm run ci
+
+      - name: Audit production dependencies
+        run: npm run audit:prod
