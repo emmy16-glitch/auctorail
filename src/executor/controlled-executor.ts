@@ -71,7 +71,7 @@ export async function executeProtectedAction<T>(
 
   let consumption;
   try {
-    consumption = input.store.consume(
+    consumption = await input.store.consume(
       input.permit.payload.permitId,
       input.permit.payload.nonce,
       now.toISOString()
