@@ -1,20 +1,34 @@
 # ProofGate on Termux / Android ARM
 
-ProofGate can run its TypeScript tests, Telegraph proof flow, Base Sepolia execution flow, Attack Lab and artifact-integrity verification inside an Ubuntu `proot-distro` environment on Termux.
+ProofGate v1.1 can run its TypeScript suite, offline security harnesses, Telegraph proof flows, adaptive check flow and architecture-independent vendor verification inside an Ubuntu `proot-distro` environment on Termux.
+
+## Get the v1.1 branch
+
+From `~/proof-gate`:
+
+```bash
+git fetch origin
+git switch v1.1-adaptive-evidence
+git pull origin v1.1-adaptive-evidence
+```
+
+If the branch already exists locally, `git switch v1.1-adaptive-evidence` is enough before pulling.
+
+The frozen `v1.0.0-hackathon` tag remains separate and must not be moved.
 
 ## Why `vendor:compile` does not run on ARM
 
-The canonical Solidity build is intentionally pinned to the official native Solidity compiler:
+The canonical Solidity build is intentionally pinned to the official native compiler:
 
 - compiler: `0.8.36+commit.8a079791`
 - canonical platform: `linux-amd64`
-- compiler SHA-256 is pinned in `scripts/compile-vendor.mjs`
+- compiler SHA-256 pinned in `scripts/compile-vendor.mjs`
 
-Most Android devices running Termux are `arm64`. An amd64 native executable cannot be treated as a native ARM compiler, so ProofGate does not silently substitute another compiler or architecture and then claim the artifact was reproduced identically.
+Most Android/Termux devices are `arm64`. ProofGate does not silently replace the canonical compiler/platform and then claim the artifact was reproduced identically.
 
-On unsupported hosts, `npm run vendor:compile` now fails with an explicit platform message rather than a vague `solc_failed` error.
+On unsupported hosts, `npm run vendor:compile` gives an explicit platform message.
 
-## ARM-safe verification
+## ARM-safe vendor verification
 
 Run:
 
@@ -22,34 +36,100 @@ Run:
 npm run vendor:verify
 ```
 
-This command does **not** compile Solidity. It verifies the committed supply-chain bindings that are architecture-independent:
+This does **not** compile Solidity. It verifies the architecture-independent committed bindings:
 
-- `contracts/ProofGateVendor.sol` SHA-256 matches the tracked build manifest
-- tracked artifact SHA-256 matches the build manifest
-- compiler identity recorded by the artifact matches the pinned manifest
-- creation bytecode length and SHA-256 match
-- runtime bytecode length and SHA-256 match
+- `ProofGateVendor.sol` source hash
+- tracked artifact hash
+- recorded compiler identity
+- creation-bytecode length/hash
+- runtime-bytecode length/hash
+- source/artifact/manifest consistency
 
-Canonical native recompilation remains a separate stronger check and is enforced by GitHub CI on `linux-x64`.
+Canonical native recompilation remains a separate stronger CI check on Linux x64.
 
-## Recommended Termux final-validation sequence
+## v1.1 final local validation
 
 ```bash
 npm ci
 npm run ci
 npm run audit:prod
 npm run attack:lab
+npm run security:fuzz
+npm run security:fuzz:adaptive
 npm run vendor:verify
 git status --short
 git rev-parse HEAD
 ```
 
-Do not use `git add .` when local Telegraph experiments have produced quarantine, evidence or receipt files. Commit only intentionally selected public proof artifacts after checking them for secrets.
+Expected hardened security summaries include:
 
-## What this distinction means
+```text
+Original fuzz:
+1100/1100 adversarial cases contained
+100/100 valid controls
+0 unauthorized executions
 
-A successful `vendor:verify` on ARM proves that the checked-in source, artifact and manifest have not drifted from their recorded hashes.
+Adaptive fuzz:
+1800/1800 adversarial cases contained
+100/100 valid controls
+0 unauthorized authorizations
+```
 
-A successful `vendor:compile` in GitHub CI proves that the same tracked artifact can be reproduced with the exact pinned native `linux-amd64` compiler configuration.
+The current hardened deterministic suite contains `42` test files and `210` tests; always trust the exact output of the revision you actually run if that count changes later.
 
-ProofGate keeps those claims separate rather than presenting integrity verification as recompilation.
+## Local working-tree caution
+
+Live Telegraph experiments can create local evidence/quarantine/receipt artifacts. Do **not** use:
+
+```bash
+git add .
+```
+
+Commit only intentionally selected public artifacts after checking them for secrets.
+
+Never print or paste:
+
+- `.env`
+- wallet private keys
+- seed/recovery phrases
+- production permit-signing material
+- database credentials
+
+## Adaptive live check
+
+The v1.1 check-only command is:
+
+```bash
+npm run proof:adaptive -- 1
+```
+
+or the HIGH-risk standout path:
+
+```bash
+npm run proof:adaptive -- 7
+```
+
+Before it, refresh the registry:
+
+```bash
+bash scripts/discover-telegraph.sh
+```
+
+Important:
+
+- `proof:adaptive -- 7` may make up to three real Telegraph/x402 evidence purchases;
+- it does **not** broadcast the protected 7-USDC vendor payment;
+- if a paid request becomes transport-ambiguous, do not blindly rerun it;
+- preserve and inspect the existing result first.
+
+## Integrity verification vs canonical recompilation
+
+A successful `vendor:verify` on ARM proves that the checked-in source, artifact and build manifest remain bound to their recorded hashes.
+
+A successful `vendor:compile` in GitHub CI proves that the tracked artifact can be reproduced with the exact pinned native `linux-amd64` compiler configuration.
+
+ProofGate intentionally keeps those claims separate.
+
+## Validation record
+
+See `docs/V1_1_VALIDATION.md` for the hardened code snapshot, CI run and exact security results used to lock the v1.1 architecture before release.
