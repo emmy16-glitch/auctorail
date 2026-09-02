@@ -94,6 +94,16 @@ export class PostgresSpendAuthorityStore {
           WHERE authority_id = $1`,
         [input.authorityId, input.amountRaw, now]
       );
+      if (prior?.status === "RELEASED") {
+        const result = await database.query<SpendReservation>(
+          `UPDATE spend_reservations
+              SET amount_raw = $3::numeric, status = 'RESERVED', updated_at = $4::timestamptz
+            WHERE authority_id = $1 AND execution_id = $2::uuid
+            RETURNING authority_id AS "authorityId", execution_id AS "executionId", amount_raw::text AS "amountRaw", status, created_at AS "createdAt", updated_at AS "updatedAt"`,
+          [input.authorityId, input.executionId, input.amountRaw, now]
+        );
+        return { reserved: true, code: "spend_reserved" as const, reservation: result.rows[0] };
+      }
       const reservation: SpendReservation = {
         authorityId: input.authorityId,
         executionId: input.executionId,

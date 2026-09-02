@@ -19,6 +19,13 @@ import {
 import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
 import type { DecisionRecord } from "../policy/payments-strict-v1.js";
 import { createDecisionHash } from "./decision-hash.js";
+import {
+  assertProductionSigner,
+  LocalDevelopmentSigner,
+  type PermitSigner,
+  type PermitVerifier,
+  type PermitSignatureMetadata
+} from "./signer.js";
 
 export interface PermitPayload {
   permitId: string;
@@ -27,6 +34,10 @@ export interface PermitPayload {
   decisionHash: string;
   nonce: string;
   policyId: PaymentPolicyId;
+  policyVersion: number;
+  keyId: string;
+  algorithm: PermitSignatureMetadata["algorithm"];
+  signingVersion: number;
   issuedAt: string;
   expiresAt: string;
 }
@@ -45,6 +56,7 @@ export type PermitVerificationCode =
   | "decision_hash_mismatch"
   | "decision_action_mismatch"
   | "policy_id_mismatch"
+  | "signature_metadata_mismatch"
   | "evidence_binding_mismatch"
   | "permit_time_invalid"
   | "permit_expired"
@@ -61,15 +73,14 @@ function requireStrongSecret(secret: string): void {
   }
 }
 
-function signPermitPayload(payload: PermitPayload, secret: string): string {
-  requireStrongSecret(secret);
+function signerFrom(input: PermitSigner | string): PermitSigner {
+  if (typeof input !== "string") return input;
+  return new LocalDevelopmentSigner(input);
+}
 
-  return (
-    "0x" +
-    createHmac("sha256", secret)
-      .update(canonicalize(payload), "utf8")
-      .digest("hex")
-  );
+function verifierFrom(input: PermitVerifier | string): PermitVerifier {
+  if (typeof input !== "string") return input;
+  return new LocalDevelopmentSigner(input);
 }
 
 function safeSignatureEqual(supplied: string, expected: string): boolean {
@@ -173,13 +184,14 @@ export function mintPermit(
   action: ActionContract,
   evidence: TelegraphEvidenceRecord,
   decision: DecisionRecord,
-  secret: string,
+  signerOrSecret: PermitSigner | string,
   options?: {
     now?: Date;
     ttlSeconds?: number;
   }
 ): Permit {
-  requireStrongSecret(secret);
+  const signer = signerFrom(signerOrSecret);
+  assertProductionSigner(signer.metadata);
 
   if (decision.decision !== "ALLOW") {
     throw new Error("decision_not_allow");
@@ -251,13 +263,17 @@ export function mintPermit(
     decisionHash,
     nonce: randomBytes(16).toString("hex"),
     policyId: decision.policyId,
+    policyVersion: decision.policyVersion,
+    keyId: signer.metadata.keyId,
+    algorithm: signer.metadata.algorithm,
+    signingVersion: signer.metadata.signingVersion,
     issuedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + ttlSeconds * 1000).toISOString()
   };
 
   return {
     payload,
-    signature: signPermitPayload(payload, secret)
+    signature: signer.sign(payload)
   };
 }
 
@@ -267,16 +283,20 @@ export function verifyPermit(
   action: ActionContract,
   evidence: TelegraphEvidenceRecord,
   decision: DecisionRecord,
-  secret: string,
+  verifierOrSecret: PermitVerifier | string,
   options?: {
     now?: Date;
   }
 ): PermitVerificationResult {
-  requireStrongSecret(secret);
-
-  const expectedSignature = signPermitPayload(permit.payload, secret);
-
-  if (!safeSignatureEqual(permit.signature, expectedSignature)) {
+  const verifier = verifierFrom(verifierOrSecret);
+  if (!Number.isInteger(permit.payload.policyVersion) || permit.payload.policyVersion !== decision.policyVersion) {
+    return { valid: false, code: "signature_metadata_mismatch" };
+  }
+  if (!verifier.verify(permit.payload, permit.signature, {
+    keyId: permit.payload.keyId,
+    algorithm: permit.payload.algorithm,
+    signingVersion: permit.payload.signingVersion
+  })) {
     return {
       valid: false,
       code: "invalid_permit_signature"
@@ -304,7 +324,8 @@ export function verifyPermit(
     decision.policyId !== action.policyId ||
     mandate.policyId !== action.policyId ||
     permit.payload.policyId !== action.policyId ||
-    permit.payload.policyId !== decision.policyId
+    permit.payload.policyId !== decision.policyId ||
+    permit.payload.policyVersion !== decision.policyVersion
   ) {
     return {
       valid: false,

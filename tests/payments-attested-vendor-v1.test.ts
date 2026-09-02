@@ -422,6 +422,7 @@ describe(
               ],
             policyId:
               "payments.strict.v1",
+    policyVersion: 1,
             issuedAt:
               "2026-09-01T00:00:00.000Z",
             expiresAt:

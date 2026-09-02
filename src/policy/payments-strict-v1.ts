@@ -38,6 +38,7 @@ export interface DecisionRecord {
   decision: ProofGateDecision;
   reason: string;
   policyId: PaymentPolicyId;
+  policyVersion: number;
   checks: PolicyCheck[];
   evidenceRefs?: {
     vendorRuntimeAttestationHash?: string;
@@ -52,6 +53,7 @@ export interface PaymentsStrictEvaluationOptions {
 
 export const PAYMENTS_STRICT_V1 = {
   id: "payments.strict.v1" as const,
+  version: 1,
   allowedChainId: BASE_SEPOLIA_CHAIN_ID,
   allowedToken: BASE_SEPOLIA_USDC,
   maxAutonomousAmountRaw: 10_000_000n,
@@ -336,7 +338,7 @@ function finalize(
   checks: PolicyCheck[],
   now: Date
 ): DecisionRecord {
-  const context: Pick<DecisionRecord, "mandate" | "agentId" | "actionId" | "policyId" | "checks" | "decidedAt"> = {
+  const context: Pick<DecisionRecord, "mandate" | "agentId" | "actionId" | "policyId" | "policyVersion" | "checks" | "decidedAt"> = {
     mandate: {
       mandateId: mandate.mandateId,
       mandateHash: mandate.mandateHash,
@@ -347,6 +349,7 @@ function finalize(
     agentId: agentId.trim(),
     actionId: action.id,
     policyId: "payments.strict.v1",
+    policyVersion: PAYMENTS_STRICT_V1.version,
     checks,
     decidedAt: now.toISOString()
   };
@@ -356,6 +359,7 @@ function finalize(
   if (blocked) {
     return {
       ...context,
+      policyVersion: PAYMENTS_STRICT_V1.version,
       decision: "BLOCK",
       reason: blocked.code ?? blocked.name
     };
@@ -366,6 +370,7 @@ function finalize(
   if (held) {
     return {
       ...context,
+      policyVersion: PAYMENTS_STRICT_V1.version,
       decision: "HOLD",
       reason: held.code ?? held.name
     };
@@ -373,6 +378,7 @@ function finalize(
 
   return {
     ...context,
+    policyVersion: PAYMENTS_STRICT_V1.version,
     decision: "ALLOW",
     reason: "all_required_checks_passed"
   };

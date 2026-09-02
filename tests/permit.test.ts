@@ -58,6 +58,7 @@ function createMandate(destination: string, overrides: Partial<{ version: number
     maxPerActionRaw: overrides.maxPerActionRaw ?? "20000000",
     requiredIntents: ["FRAUD_DETECTION"],
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     issuedAt: "2026-09-01T00:00:00.000Z",
     expiresAt: "2026-09-08T01:00:00.000Z",
     version: overrides.version ?? 1
@@ -82,6 +83,7 @@ function unitAllowDecision(
     decision: "ALLOW",
     reason: "all_required_checks_passed",
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     checks: [
       {
         name: "unit_test_policy",

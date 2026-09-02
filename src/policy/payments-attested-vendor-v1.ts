@@ -492,6 +492,7 @@ function finalize(
         action.id,
       policyId:
         "payments.attested-vendor.v1",
+      policyVersion: 1,
       checks,
       decidedAt:
         now.toISOString(),
