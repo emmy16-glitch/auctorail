@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PermitConsumptionDatabase } from "./permit-store.js";
 import type { ExecutionKillSwitch } from "../security/execution-kill-switch.js";
+import type { PostgresSpendAuthorityStore } from "./spend-authority.js";
 import { hashTransactionIntent, verifyErc20TransferIntent, type TransactionIntent } from "./transaction-intent.js";
 
 export type DurableExecutionState =
@@ -227,6 +228,8 @@ export async function executeDurableProtectedAction(
     secret: string;
     permitStore: import("./permit-store.js").PermitConsumptionStore;
     executionStore: PostgresExecutionStore;
+    spendAuthority?: PostgresSpendAuthorityStore;
+    spendAuthorityId?: string;
     executionId?: string;
     transactionIntent: () => Promise<TransactionIntent> | TransactionIntent;
     killSwitch?: ExecutionKillSwitch;
@@ -301,6 +304,18 @@ export async function executeDurableProtectedAction(
     return { status: "FAILED", code: "execution_store_unavailable" };
   }
 
+  let spendReserved = false;
+  if (input.spendAuthority || input.spendAuthorityId) {
+    if (!input.spendAuthority || !input.spendAuthorityId) return { status: "FAILED", code: "spend_authority_misconfigured", executionId: record.executionId };
+    try {
+      const reservation = await input.spendAuthority.reserve({ authorityId: input.spendAuthorityId, executionId: record.executionId, amountRaw: input.action.payload.amountRaw, now });
+      if (!reservation.reserved && reservation.code !== "spend_already_reserved") return { status: "BLOCKED", code: reservation.code, executionId: record.executionId };
+      spendReserved = true;
+    } catch {
+      return { status: "FAILED", code: "spend_authority_unavailable", executionId: record.executionId };
+    }
+  }
+
   try {
     const claim = await input.permitStore.consume(
       input.permit.payload.permitId,
@@ -309,6 +324,7 @@ export async function executeDurableProtectedAction(
       record.executionId
     );
     if (!claim.consumed && claim.code !== "permit_already_consumed_by_this_execution") {
+      if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
       return {
         status: "BLOCKED",
         code: claim.code,
@@ -316,6 +332,7 @@ export async function executeDurableProtectedAction(
       };
     }
   } catch {
+    if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
     return {
       status: "FAILED",
       code: "permit_store_unavailable",
@@ -337,6 +354,7 @@ export async function executeDurableProtectedAction(
       now
     );
   } catch {
+    if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
     return {
       status: "FAILED",
       code: "execution_state_unavailable",
@@ -346,6 +364,7 @@ export async function executeDurableProtectedAction(
 
   if (input.killSwitch && await input.killSwitch.isDisabled()) {
     try { await input.executionStore.transition(record.executionId, "SUBMITTING", "FAILED", now); } catch { /* preserve fail-closed behavior */ }
+    if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
     return { status: "FAILED", code: "execution_disabled", executionId: record.executionId };
   }
 
@@ -355,10 +374,13 @@ export async function executeDurableProtectedAction(
     const intentBinding = verifyErc20TransferIntent(input.action, input.sender, finalIntent);
     if (!intentBinding.valid || hashTransactionIntent(finalIntent) !== record.transactionIntentHash) {
       try { await input.executionStore.transition(record.executionId, "SUBMITTING", "FAILED", now); } catch { /* preserve fail-closed behavior */ }
+      if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
       return { status: "FAILED", code: intentBinding.valid ? "transaction_intent_changed" : intentBinding.code, executionId: record.executionId };
     }
   } catch {
-    try { await input.executionStore.transition(record.executionId, "SUBMITTING", "FAILED", now); } catch { /* preserve fail-closed behavior */ }
+        try {
+      await input.executionStore.transition(record.executionId, "SUBMITTING", "FAILED", now); } catch { /* preserve fail-closed behavior */ }
+    if (spendReserved) await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
     return { status: "FAILED", code: "transaction_intent_malformed", executionId: record.executionId };
   }
 
@@ -408,6 +430,7 @@ export async function executeDurableProtectedAction(
       now,
       submission.transactionHash
     );
+    if (spendReserved && submission.state === "REJECTED") await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
     return {
       status: submission.state === "CONFIRMED" ? "EXECUTED" : "FAILED",
       code: submission.state === "CONFIRMED" ? "executed" : "execution_rejected",
