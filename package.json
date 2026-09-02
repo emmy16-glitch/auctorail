@@ -21,6 +21,7 @@
     "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
     "execute:approved": "tsx scripts/execute-approved-payment.ts",
     "attack:lab": "tsx scripts/attack-lab.ts",
+    "security:fuzz": "tsx scripts/final-fuzz.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts"
   },
