@@ -106,8 +106,6 @@ function planMatchesAction(
     return false;
   }
 
-  // Risk tier, Intent set, confidence floors, latency and x402 budget are
-  // derived from the exact action. The caller/agent cannot downgrade them.
   const expected = createAdaptiveEvidencePlan(action);
   return canonicalize(plan) === canonicalize(expected);
 }
@@ -270,14 +268,24 @@ function requirementChecks(
         status === "PASS" ? undefined : "adaptive_fraud_verdict_not_positive"
       )
     );
-  } else {
+  } else if (item.label === null) {
     checks.push(
       check(
         `${prefix}_conflict`,
         "PASS",
-        item.label
-          ? `No explicit negative conflict was found in label ${item.label}.`
-          : "Informational evidence has no explicit negative label."
+        "Informational evidence has no explicit status label and no negative conflict."
+      )
+    );
+  } else {
+    const status = classifyMinerLabel(item.label);
+    checks.push(
+      check(
+        `${prefix}_conflict`,
+        status === "PASS" ? "PASS" : "HOLD",
+        status === "PASS"
+          ? `Secondary evidence label ${item.label} is explicitly acceptable.`
+          : `Secondary evidence label ${item.label} is uncertain and cannot establish authority.`,
+        status === "PASS" ? undefined : "adaptive_secondary_result_uncertain"
       )
     );
   }
