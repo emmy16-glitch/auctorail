@@ -15,6 +15,13 @@ import {
 
 const PRIVATE_KEY =
   `0x${"1".repeat(64)}` as `0x${string}`;
+const ENGINE_URL =
+  "https://devnode.telegraphprotocol.com/engine";
+const ASK_URL = `${ENGINE_URL}/v1/ask`;
+const USDC =
+  "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const PAY_TO =
+  "0x2222222222222222222222222222222222222222";
 
 function miner(intents: string[]) {
   return {
@@ -33,6 +40,48 @@ function miner(intents: string[]) {
       }
     }
   };
+}
+
+function paymentRequiredHeader(
+  amount = "10000"
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      x402Version: 2,
+      error: "Payment required",
+      resource: {
+        url: ASK_URL,
+        description: "Telegraph test evidence",
+        mimeType: "application/json"
+      },
+      accepts: [
+        {
+          scheme: "exact",
+          network: "eip155:84532",
+          asset: USDC,
+          amount,
+          payTo: PAY_TO,
+          maxTimeoutSeconds: 300,
+          extra: {
+            name: "USDC",
+            version: "2",
+            resourceUrl: ASK_URL
+          }
+        }
+      ]
+    })
+  ).toString("base64");
+}
+
+function hasPaymentSignature(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): boolean {
+  const request = new Request(input, init);
+  return (
+    request.headers.has("payment-signature") ||
+    request.headers.has("x-payment")
+  );
 }
 
 describe("live Telegraph Intent client", () => {
@@ -145,22 +194,7 @@ describe("live Telegraph Intent client", () => {
     const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
     let calls = 0;
-    const challenge = Buffer.from(
-      JSON.stringify({
-        x402Version: 2,
-        accepts: [
-          {
-            scheme: "exact",
-            network: "eip155:84532",
-            asset:
-              "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            amount: "10000",
-            payTo:
-              "0x2222222222222222222222222222222222222222"
-          }
-        ]
-      })
-    ).toString("base64");
+    const challenge = paymentRequiredHeader("10000");
 
     const fetchImpl = async () => {
       calls++;
@@ -192,5 +226,73 @@ describe("live Telegraph Intent client", () => {
     );
 
     expect(calls).toBe(1);
+  });
+
+  it("reuses the validated 402 for signing so a second unpaid challenge cannot replace it", async () => {
+    const action = adaptiveAction("1000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    let calls = 0;
+    let unsignedChallengeCalls = 0;
+    let signedCalls = 0;
+
+    const fetchImpl = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      calls++;
+
+      if (calls === 1) {
+        expect(hasPaymentSignature(input, init)).toBe(false);
+        return new Response("", {
+          status: 402,
+          headers: {
+            "payment-required":
+              paymentRequiredHeader("10000")
+          }
+        });
+      }
+
+      if (!hasPaymentSignature(input, init)) {
+        // This is the challenge-swap shape the old implementation exposed:
+        // a second unpaid request could return a different, more expensive 402.
+        unsignedChallengeCalls++;
+        return new Response("", {
+          status: 402,
+          headers: {
+            "payment-required":
+              paymentRequiredHeader("20000")
+          }
+        });
+      }
+
+      signedCalls++;
+      throw new Error(
+        "simulated_transport_failure_after_signed_request"
+      );
+    };
+
+    const acquire = createLiveIntentAcquirer({
+      privateKey: PRIVATE_KEY,
+      miners: [miner(["FRAUD_DETECTION"])],
+      engineUrl: ENGINE_URL,
+      fetchImpl: fetchImpl as typeof fetch
+    });
+
+    await expect(
+      acquire({
+        action,
+        plan,
+        requirement: plan.requirements[0],
+        remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+        deadlineAt:
+          new Date(Date.now() + 30_000).toISOString()
+      })
+    ).rejects.toThrow(
+      /adaptive_x402_transport_ambiguous:simulated_transport_failure_after_signed_request/
+    );
+
+    expect(calls).toBe(2);
+    expect(unsignedChallengeCalls).toBe(0);
+    expect(signedCalls).toBe(1);
   });
 });
