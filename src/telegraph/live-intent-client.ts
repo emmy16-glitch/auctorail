@@ -555,11 +555,6 @@ export function createLiveIntentAcquirer(
       context.deadlineAt
     );
 
-    // The x402 wrapper normally performs its own initial unpaid request before
-    // signing a payment. Reuse the already validated 402 response as that first
-    // response so there is no second, unvalidated challenge between preflight
-    // and signing. A hard client policy independently revalidates the exact
-    // PaymentRequirements selected for the payload.
     let replayValidatedPreflight = true;
     const boundFetch: typeof fetch = async (
       input,
@@ -602,7 +597,7 @@ export function createLiveIntentAcquirer(
     let paymentPayloadCreated = false;
 
     client.onBeforePaymentCreation(
-      ({ paymentRequired: actualChallenge, selectedRequirements }) => {
+      async ({ paymentRequired: actualChallenge, selectedRequirements }) => {
         const selected =
           toPaymentLane(selectedRequirements);
         const decision =
@@ -635,12 +630,11 @@ export function createLiveIntentAcquirer(
         }
 
         actualLane = decision.lane;
-        return;
       }
     );
 
     client.onAfterPaymentCreation(
-      () => {
+      async () => {
         paymentPayloadCreated = true;
       }
     );
@@ -654,10 +648,6 @@ export function createLiveIntentAcquirer(
     let response: Response;
 
     try {
-      // The wrapper consumes the validated preflight response locally, then
-      // performs one network request carrying the payment signature. There is
-      // no second unpaid network challenge and no ProofGate recovery hook that
-      // could authorize a second paid attempt.
       response = await paidFetch(
         url,
         init
