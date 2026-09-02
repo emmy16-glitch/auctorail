@@ -44,6 +44,7 @@ const input = {
   actionHash: "action-hash",
   decisionHash: "decision-hash",
   policyId: "payments.strict.v1",
+    policyVersion: 1,
   transactionIntentHash: "intent-hash",
   chainId: 84532,
   sender: "0xsender",

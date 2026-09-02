@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS spend_authorities (
   authority_id TEXT PRIMARY KEY,
   mandate_hash TEXT NOT NULL,
   policy_id TEXT NOT NULL,
+  policy_version INTEGER NOT NULL CHECK (policy_version > 0),
   chain_id BIGINT NOT NULL,
   token TEXT NOT NULL,
   max_cumulative_raw NUMERIC(78, 0) NOT NULL CHECK (max_cumulative_raw > 0),
@@ -20,5 +21,6 @@ CREATE TABLE IF NOT EXISTS spend_reservations (
   PRIMARY KEY (authority_id, execution_id)
 );
 
-CREATE INDEX IF NOT EXISTS spend_reservations_execution_uq
+DROP INDEX IF EXISTS spend_reservations_execution_uq;
+CREATE UNIQUE INDEX IF NOT EXISTS spend_reservations_execution_uq
   ON spend_reservations (execution_id);

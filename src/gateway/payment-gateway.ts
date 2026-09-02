@@ -20,6 +20,7 @@ import {
   mintPermit,
   type Permit
 } from "../permit/permit.js";
+import type { PermitSigner, PermitVerifier } from "../permit/signer.js";
 import {
   createProofReceipt,
   verifyProofReceipt,
@@ -54,7 +55,10 @@ export interface RunPaymentGatewayInput {
   supplementalEvidence?: SupplementalEvidenceRef[];
   evaluatePolicy?: PaymentPolicyEvaluator;
   agentId: string;
-  secret: string;
+  /** Local/test compatibility only; production should provide signer and verifier. */
+  secret?: string;
+  signer?: PermitSigner;
+  verifier?: PermitVerifier;
   store: PermitConsumptionStore;
   /** Required for the production durable path; omitted only for local compatibility tests. */
   durableExecutionStore?: PostgresExecutionStore;
@@ -166,7 +170,7 @@ export async function runPaymentGateway(
     input.action,
     input.evidence,
     decision,
-    input.secret,
+    input.signer ?? input.secret ?? (() => { throw new Error("permit_signer_required"); })(),
     {
       now,
       ttlSeconds: input.permitTtlSeconds ?? 30
@@ -180,7 +184,7 @@ export async function runPaymentGateway(
         action: input.action,
         evidence: input.evidence,
         decision,
-        secret: input.secret,
+        verifierOrSecret: input.verifier ?? input.secret,
         permitStore: input.store,
         executionStore: input.durableExecutionStore,
         sender: input.sender,
@@ -206,7 +210,7 @@ export async function runPaymentGateway(
         action: input.action,
         evidence: input.evidence,
         decision,
-        secret: input.secret,
+        secret: input.secret ?? (() => { throw new Error("permit_verifier_required"); })(),
         store: input.store,
         execute: input.execute,
         now

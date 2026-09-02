@@ -40,6 +40,7 @@ function mandate(destination: string) {
     maxPerActionRaw: "10000000",
     requiredIntents: ["FRAUD_DETECTION"],
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     issuedAt: "2026-09-01T00:00:00.000Z",
     expiresAt: "2026-09-08T01:00:00.000Z",
     version: 1
@@ -60,6 +61,7 @@ function allow(delegated: MandateContract, actionId: string, now: Date): Decisio
     decision: "ALLOW",
     reason: "all_required_checks_passed",
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     checks: [
       {
         name: "ambiguity_test",

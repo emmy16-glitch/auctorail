@@ -23,6 +23,21 @@ export interface PermitSigner {
   sign(payload: unknown): string;
 }
 
+/** Remote KMS/HSM boundary; implementations may perform network I/O asynchronously. */
+export interface AsyncPermitSigner {
+  readonly metadata: PermitSignatureMetadata;
+  sign(payload: unknown): Promise<string>;
+}
+
+export function asAsyncPermitSigner(signer: PermitSigner): AsyncPermitSigner {
+  return {
+    metadata: signer.metadata,
+    async sign(payload: unknown): Promise<string> {
+      return signer.sign(payload);
+    }
+  };
+}
+
 export interface PermitVerifier {
   verify(payload: unknown, signature: string, metadata: PermitSignatureMetadata): boolean;
 }

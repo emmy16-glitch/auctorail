@@ -46,6 +46,7 @@ function mandate(destination: string) {
     maxPerActionRaw: "20000000",
     requiredIntents: ["FRAUD_DETECTION"],
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     issuedAt: "2026-09-01T00:00:00.000Z",
     expiresAt: "2026-09-08T01:00:00.000Z",
     version: 1
@@ -70,6 +71,7 @@ function allowDecision(
     decision: "ALLOW",
     reason: "all_required_checks_passed",
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     checks: [
       {
         name: "executor_security_test",

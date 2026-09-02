@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PermitConsumptionDatabase } from "./permit-store.js";
+import type { PermitVerifier } from "../permit/signer.js";
+import type { MandateStatus } from "../core/mandate-contract.js";
 import type { ExecutionKillSwitch } from "../security/execution-kill-switch.js";
 import type { PostgresSpendAuthorityStore } from "./spend-authority.js";
 import { hashTransactionIntent, verifyErc20TransferIntent, type TransactionIntent } from "./transaction-intent.js";
@@ -199,6 +201,10 @@ export class PostgresExecutionStore {
 }
 
 
+export interface MandateStatusAuthority {
+  getStatus(mandateId: string, version: number): Promise<MandateStatus> | MandateStatus;
+}
+
 export interface DurableSubmissionResult {
   state: "CONFIRMED" | "REJECTED" | "BROADCAST" | "AMBIGUOUS";
   transactionHash?: string;
@@ -225,8 +231,11 @@ export async function executeDurableProtectedAction(
     action: import("../core/action-contract.js").ActionContract;
     evidence: import("../evidence/telegraph.js").TelegraphEvidenceRecord;
     decision: import("../policy/payments-strict-v1.js").DecisionRecord;
-    secret: string;
-    permitStore: import("./permit-store.js").PermitConsumptionStore;
+        verifierOrSecret?: PermitVerifier | string;
+    secret?: string;
+    mandateStatusAuthority?: MandateStatusAuthority;
+    permitStore:
+ import("./permit-store.js").PermitConsumptionStore;
     executionStore: PostgresExecutionStore;
     spendAuthority?: PostgresSpendAuthorityStore;
     spendAuthorityId?: string;
@@ -239,6 +248,18 @@ export async function executeDurableProtectedAction(
   }
 ): Promise<DurableExecutionResult> {
   const now = input.now ?? new Date();
+  if (process.env.NODE_ENV === "production" && !input.mandateStatusAuthority) {
+    return { status: "FAILED", code: "mandate_status_authority_required" };
+  }
+  if (input.mandateStatusAuthority) {
+    let currentStatus: MandateStatus;
+    try {
+      currentStatus = await input.mandateStatusAuthority.getStatus(input.mandate.mandateId, input.mandate.version);
+    } catch {
+      return { status: "FAILED", code: "mandate_status_authority_unavailable" };
+    }
+    if (currentStatus !== "ACTIVE") return { status: "BLOCKED", code: currentStatus === "REVOKED" ? "mandate_revoked" : "mandate_expired" };
+  }
   if (input.killSwitch && await input.killSwitch.isDisabled()) {
     return { status: "FAILED", code: "execution_disabled" };
   }
@@ -249,11 +270,24 @@ export async function executeDurableProtectedAction(
     input.action,
     input.evidence,
     input.decision,
-    input.secret,
+    input.verifierOrSecret ?? input.secret ?? (() => { throw new Error("permit_verifier_required"); })(),
     { now }
   );
   if (!verification.valid) {
     return { status: "BLOCKED", code: verification.code };
+  }
+  if (input.mandate.maxCumulativeRaw !== undefined) {
+    if (!input.spendAuthority || !input.spendAuthorityId) {
+      return { status: "BLOCKED", code: "cumulative_spend_authority_required" };
+    }
+    try {
+      const authority = await input.spendAuthority.getAuthority(input.spendAuthorityId);
+      if (!authority || authority.mandateHash !== input.mandate.mandateHash || authority.policyId !== input.mandate.policyId || authority.policyVersion !== input.mandate.policyVersion || authority.chainId !== input.action.payload.chainId || authority.token.toLowerCase() !== input.action.payload.token.toLowerCase() || authority.maxCumulativeRaw !== input.mandate.maxCumulativeRaw) {
+        return { status: "BLOCKED", code: "spend_authority_binding_mismatch" };
+      }
+    } catch {
+      return { status: "FAILED", code: "spend_authority_unavailable" };
+    }
   }
 
   let record: DurableExecutionRecord;
@@ -431,6 +465,7 @@ export async function executeDurableProtectedAction(
       submission.transactionHash
     );
     if (spendReserved && submission.state === "REJECTED") await input.spendAuthority!.release(input.spendAuthorityId!, record.executionId, now);
+    if (spendReserved && submission.state === "CONFIRMED") await input.spendAuthority!.consume(input.spendAuthorityId!, record.executionId, now);
     return {
       status: submission.state === "CONFIRMED" ? "EXECUTED" : "FAILED",
       code: submission.state === "CONFIRMED" ? "executed" : "execution_rejected",

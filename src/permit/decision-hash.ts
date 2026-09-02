@@ -45,6 +45,7 @@ export function createDecisionHash(
     },
     policy: {
       id: decision.policyId,
+      version: decision.policyVersion,
       agentId: decision.agentId,
       mandate: decision.mandate,
       decision: decision.decision,

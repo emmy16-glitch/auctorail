@@ -37,6 +37,7 @@ function mandate(destination = VENDOR) {
     maxPerActionRaw: "10000000",
     requiredIntents: ["FRAUD_DETECTION"],
     policyId: "payments.strict.v1",
+    policyVersion: 1,
     issuedAt: "2026-09-01T00:00:00.000Z",
     expiresAt: "2026-09-08T01:00:00.000Z",
     version: 1
