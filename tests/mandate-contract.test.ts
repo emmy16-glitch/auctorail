@@ -106,6 +106,34 @@ describe("ProofGate Mandate Contract", () => {
     ).toThrow("mandate_expires_before_or_at_issue_time");
   });
 
+  it("binds policy version and blocks mismatches", () => {
+    const delegated = createMandateContract(mandateInput({ policyVersion: 2 }));
+    const result = evaluateMandate(delegated, action(), "procurement-agent", NOW);
+    expect(delegated.policyVersion).toBe(2);
+    expect(result.valid).toBe(false);
+    expect(result.checks.find((item) => item.code === "mandate_policy_version_violation")?.status).toBe("BLOCK");
+  });
+
+  it("fails closed for revoked and explicitly expired mandates", () => {
+    const revoked = evaluateMandate(
+      createMandateContract(mandateInput({ status: "REVOKED" })),
+      action(),
+      "procurement-agent",
+      NOW
+    );
+    expect(revoked.valid).toBe(false);
+    expect(revoked.checks[0].code).toBe("mandate_revoked");
+
+    const expired = evaluateMandate(
+      createMandateContract(mandateInput({ status: "EXPIRED" })),
+      action(),
+      "procurement-agent",
+      NOW
+    );
+    expect(expired.valid).toBe(false);
+    expect(expired.checks.find((item) => item.name === "mandate_active")?.code).toBe("mandate_expired");
+  });
+
   it("passes an exact action inside delegated authority", () => {
     const result = evaluateMandate(
       createMandateContract(mandateInput()),

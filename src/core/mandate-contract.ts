@@ -34,6 +34,8 @@ const TimestampSchema = z
   .string()
   .refine((value) => Number.isFinite(new Date(value).getTime()), "invalid timestamp");
 
+export type MandateStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
+
 const MandateContractInputSchema = z.object({
   mandateId: IdentifierSchema,
   principalId: IdentifierSchema,
@@ -62,6 +64,8 @@ const MandateContractInputSchema = z.object({
     .min(1),
 
   policyId: z.enum(PAYMENT_POLICY_IDS),
+  policyVersion: z.number().int().positive().optional(),
+  status: z.enum(["ACTIVE", "REVOKED", "EXPIRED"]).optional(),
   issuedAt: TimestampSchema,
   expiresAt: TimestampSchema,
   version: z.number().int().positive()
@@ -81,6 +85,8 @@ export interface MandateContract {
   maxPerActionRaw: string;
   requiredIntents: string[];
   policyId: PaymentPolicyId;
+  policyVersion: number;
+  status: MandateStatus;
   issuedAt: string;
   expiresAt: string;
   version: number;
@@ -92,6 +98,8 @@ export type MandateCheckStatus = "PASS" | "BLOCK";
 
 export type MandateViolationCode =
   | "mandate_integrity_violation"
+  | "mandate_status_invalid"
+  | "mandate_revoked"
   | "mandate_time_invalid"
   | "mandate_not_yet_active"
   | "mandate_expired"
@@ -102,6 +110,7 @@ export type MandateViolationCode =
   | "mandate_destination_violation"
   | "mandate_amount_violation"
   | "mandate_policy_violation"
+  | "mandate_policy_version_violation"
   | "mandate_required_intent_violation";
 
 export interface MandateCheck {
@@ -199,6 +208,8 @@ export function createMandateContract(
       validated.requiredIntents.map((value) => value.trim().toUpperCase())
     ),
     policyId: validated.policyId,
+    policyVersion: validated.policyVersion ?? 1,
+    status: validated.status ?? "ACTIVE",
     issuedAt,
     expiresAt,
     version: validated.version
@@ -237,6 +248,8 @@ export function verifyMandateContract(
     maxPerActionRaw: mandate.maxPerActionRaw,
     requiredIntents: mandate.requiredIntents,
     policyId: mandate.policyId,
+    policyVersion: mandate.policyVersion,
+    status: mandate.status,
     issuedAt: mandate.issuedAt,
     expiresAt: mandate.expiresAt,
     version: mandate.version
@@ -271,6 +284,13 @@ export function evaluateMandate(
     };
   }
 
+  if (!["ACTIVE", "REVOKED", "EXPIRED"].includes(mandate.status)) {
+    return { valid: false, checks: [{ name: "mandate_status", status: "BLOCK", reason: "Mandate has an invalid lifecycle status.", code: "mandate_status_invalid" }] };
+  }
+  if (mandate.status === "REVOKED") {
+    return { valid: false, checks: [{ name: "mandate_status", status: "BLOCK", reason: "Mandate is revoked.", code: "mandate_revoked" }] };
+  }
+
   const nowMs = now.getTime();
   const issuedAtMs = new Date(mandate.issuedAt).getTime();
   const expiresAtMs = new Date(mandate.expiresAt).getTime();
@@ -294,7 +314,7 @@ export function evaluateMandate(
       reason: "Mandate is not active yet.",
       code: "mandate_not_yet_active"
     });
-  } else if (nowMs >= expiresAtMs) {
+  } else if (nowMs >= expiresAtMs || mandate.status === "EXPIRED") {
     checks.push({
       name: "mandate_active",
       status: "BLOCK",
@@ -390,6 +410,13 @@ export function evaluateMandate(
       "Action policy matches the delegated mandate policy.",
       "Action policy is outside delegated authority.",
       "mandate_policy_violation"
+    ),
+    mandateCheck(
+      "mandate_policy_version",
+      mandate.policyVersion === action.policyVersion,
+      "Action policy version matches the delegated mandate policy version.",
+      "Action policy version is outside delegated authority.",
+      "mandate_policy_version_violation"
     )
   );
 

@@ -53,7 +53,8 @@ const PaymentActionInputSchema = z.object({
 
   reason: z.string().trim().min(1).max(256),
 
-  policyId: PaymentPolicyIdSchema
+  policyId: PaymentPolicyIdSchema,
+  policyVersion: z.number().int().positive().optional()
 });
 
 export type PaymentActionInput =
@@ -72,6 +73,7 @@ export interface ActionContract {
     destination: string;
     reason: string;
     policyId: PaymentPolicyId;
+    policyVersion: number;
   };
 
   canonicalPayload: string;
@@ -79,6 +81,7 @@ export interface ActionContract {
   actionHash: string;
 
   policyId: PaymentPolicyId;
+  policyVersion: number;
 
   createdAt: string;
 }
@@ -145,7 +148,10 @@ export function createActionContract(
     reason: validated.reason.trim(),
 
     policyId:
-      validated.policyId
+      validated.policyId,
+
+    policyVersion:
+      validated.policyVersion ?? 1
   };
 
   const canonicalPayload =
@@ -167,6 +173,9 @@ export function createActionContract(
 
     policyId:
       validated.policyId,
+
+    policyVersion:
+      validated.policyVersion ?? 1,
 
     createdAt:
       new Date().toISOString()
