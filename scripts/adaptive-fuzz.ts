@@ -28,20 +28,20 @@ import {
   type EvidenceBundle
 } from "../src/telegraph/evidence-bundle.js";
 
-const NOW = new Date(
-  "2026-09-02T18:00:00.000Z"
-);
+const NOW = new Date("2026-09-02T18:00:00.000Z");
 const AGENT = "adaptive-fuzz-agent";
-const VENDOR =
-  "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
-const SECRET =
-  "proofgate-adaptive-fuzz-secret-" +
-  "x".repeat(64);
+const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
+const SECRET = "proofgate-adaptive-fuzz-secret-" + "x".repeat(64);
 const CASES_PER_FAMILY = 100;
 
-function action(
-  amountRaw = "7000000"
-): ActionContract {
+function differentHash(current: string | null): string {
+  const candidate = `0x${"f".repeat(64)}`;
+  return current?.toLowerCase() === candidate
+    ? `0x${"e".repeat(64)}`
+    : candidate;
+}
+
+function action(amountRaw = "7000000"): ActionContract {
   return createActionContract({
     type: "payment",
     chainId: BASE_SEPOLIA_CHAIN_ID,
@@ -92,9 +92,8 @@ function evidence(
       : intent === "ONCHAIN_TX_LOOKUP"
         ? 2
         : 3;
-  const nibble =
-    ((intentCode + index) % 15 + 1)
-      .toString(16);
+  const nibble = ((intentCode + index) % 15 + 1).toString(16);
+  const rawNibble = ((intentCode + index + 6) % 15 + 1).toString(16);
 
   const base: TelegraphEvidenceRecord = {
     source: "telegraph",
@@ -106,29 +105,16 @@ function evidence(
     },
     subject: proposed.payload.destination,
     chainId: proposed.payload.chainId,
-    label:
-      intent === "FRAUD_DETECTION"
-        ? "ALLOW"
-        : null,
-    confidence:
-      intent === "FRAUD_DETECTION"
-        ? 0.91
-        : null,
+    label: intent === "FRAUD_DETECTION" ? "ALLOW" : null,
+    confidence: intent === "FRAUD_DETECTION" ? 0.91 : null,
     reason: `fuzz-${index}`,
     applicability: "APPLICABLE",
-    signalHash:
-      `0x${nibble.repeat(64)}`,
+    signalHash: `0x${nibble.repeat(64)}`,
     costUsd: 0.01,
     durationMs: 10 + index,
-    rawResponseHash:
-      `0x${((intentCode + index + 6) % 15 + 1).toString(16).repeat(64)}`,
-    receivedAt:
-      "2026-09-02T17:59:30.000Z",
-    rawResponse: {
-      synthetic: true,
-      index,
-      intent
-    }
+    rawResponseHash: `0x${rawNibble.repeat(64)}`,
+    receivedAt: "2026-09-02T17:59:30.000Z",
+    rawResponse: { synthetic: true, index, intent }
   };
 
   return {
@@ -149,10 +135,7 @@ function bundle(
     omit?: AdaptiveEvidenceIntent;
     paymentRaw?: string;
     overrides?: Partial<
-      Record<
-        AdaptiveEvidenceIntent,
-        Partial<TelegraphEvidenceRecord>
-      >
+      Record<AdaptiveEvidenceIntent, Partial<TelegraphEvidenceRecord>>
     >;
   }
 ): EvidenceBundle {
@@ -160,21 +143,15 @@ function bundle(
     proposed,
     plan,
     plan.requirements
-      .filter(
-        (requirement) =>
-          requirement.intent !== options?.omit
-      )
+      .filter((requirement) => requirement.intent !== options?.omit)
       .map((requirement) => ({
         evidence: evidence(
           proposed,
           requirement.intent,
           index,
-          options?.overrides?.[
-            requirement.intent
-          ]
+          options?.overrides?.[requirement.intent]
         ),
-        paymentAmountRaw:
-          options?.paymentRaw ?? "10000",
+        paymentAmountRaw: options?.paymentRaw ?? "10000",
         paymentNetwork: "eip155:84532",
         paymentAsset: BASE_SEPOLIA_USDC
       })),
@@ -184,30 +161,18 @@ function bundle(
 
 const baselineAction = action();
 const baselineMandate = mandate();
-const baselinePlan =
-  createAdaptiveEvidencePlan(
-    baselineAction
-  );
-const baselineBundle = bundle(
+const baselinePlan = createAdaptiveEvidencePlan(baselineAction);
+const baselineBundle = bundle(baselineAction, baselinePlan);
+const baselineDecision = evaluatePaymentsAdaptiveV1(
+  baselineMandate,
   baselineAction,
-  baselinePlan
+  baselinePlan,
+  baselineBundle,
+  { agentId: AGENT, now: NOW }
 );
-const baselineDecision =
-  evaluatePaymentsAdaptiveV1(
-    baselineMandate,
-    baselineAction,
-    baselinePlan,
-    baselineBundle,
-    {
-      agentId: AGENT,
-      now: NOW
-    }
-  );
 
 if (baselineDecision.decision !== "ALLOW") {
-  throw new Error(
-    `adaptive_fuzz_baseline_not_allow:${baselineDecision.reason}`
-  );
+  throw new Error(`adaptive_fuzz_baseline_not_allow:${baselineDecision.reason}`);
 }
 
 const baselinePermit = mintPermit(
@@ -216,10 +181,7 @@ const baselinePermit = mintPermit(
   baselineBundle,
   baselineDecision,
   SECRET,
-  {
-    now: NOW,
-    ttlSeconds: 30
-  }
+  { now: NOW, ttlSeconds: 30 }
 );
 
 interface Family {
@@ -238,10 +200,7 @@ function decisionContained(
     proposedAction,
     plan,
     evidenceBundle,
-    {
-      agentId: AGENT,
-      now: NOW
-    }
+    { agentId: AGENT, now: NOW }
   ).decision !== "ALLOW";
 }
 
@@ -260,11 +219,7 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         downgraded,
-        bundle(
-          baselineAction,
-          downgraded,
-          index
-        )
+        bundle(baselineAction, downgraded, index)
       );
     }
   },
@@ -275,12 +230,7 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          { omit: "FRAUD_DETECTION" }
-        )
+        bundle(baselineAction, baselinePlan, index, { omit: "FRAUD_DETECTION" })
       );
     }
   },
@@ -291,12 +241,7 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          { omit: "ONCHAIN_TX_LOOKUP" }
-        )
+        bundle(baselineAction, baselinePlan, index, { omit: "ONCHAIN_TX_LOOKUP" })
       );
     }
   },
@@ -307,12 +252,7 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          { omit: "WALLET_BALANCE_CHECK" }
-        )
+        bundle(baselineAction, baselinePlan, index, { omit: "WALLET_BALANCE_CHECK" })
       );
     }
   },
@@ -323,18 +263,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              FRAUD_DETECTION: {
-                label: "MALICIOUS"
-              }
-            }
-          }
-        )
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: { FRAUD_DETECTION: { label: "MALICIOUS" } }
+        })
       );
     }
   },
@@ -345,18 +276,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              ONCHAIN_TX_LOOKUP: {
-                label: "SUSPICIOUS"
-              }
-            }
-          }
-        )
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: { ONCHAIN_TX_LOOKUP: { label: "SUSPICIOUS" } }
+        })
       );
     }
   },
@@ -367,18 +289,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              FRAUD_DETECTION: {
-                confidence: 0.79
-              }
-            }
-          }
-        )
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: { FRAUD_DETECTION: { confidence: 0.79 } }
+        })
       );
     }
   },
@@ -389,19 +302,13 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              WALLET_BALANCE_CHECK: {
-                receivedAt:
-                  "2026-09-02T17:00:00.000Z"
-              }
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: {
+            WALLET_BALANCE_CHECK: {
+              receivedAt: "2026-09-02T17:00:00.000Z"
             }
           }
-        )
+        })
       );
     }
   },
@@ -412,18 +319,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              ONCHAIN_TX_LOOKUP: {
-                signalHash: null
-              }
-            }
-          }
-        )
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: { ONCHAIN_TX_LOOKUP: { signalHash: null } }
+        })
       );
     }
   },
@@ -434,27 +332,15 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          { paymentRaw: "20000" }
-        )
+        bundle(baselineAction, baselinePlan, index, { paymentRaw: "20000" })
       );
     }
   },
   {
     id: "bundle_signal_tamper",
     run(index) {
-      const mutated = structuredClone(
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index
-        )
-      );
-      mutated.items[0].signalHash =
-        `0x${"f".repeat(64)}`;
+      const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
+      mutated.items[0].signalHash = differentHash(mutated.items[0].signalHash);
       return decisionContained(
         baselineMandate,
         baselineAction,
@@ -466,15 +352,8 @@ const families: Family[] = [
   {
     id: "bundle_raw_response_hash_tamper",
     run(index) {
-      const mutated = structuredClone(
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index
-        )
-      );
-      mutated.items[1].rawResponseHash =
-        `0x${"e".repeat(64)}`;
+      const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
+      mutated.items[1].rawResponseHash = differentHash(mutated.items[1].rawResponseHash);
       return decisionContained(
         baselineMandate,
         baselineAction,
@@ -487,19 +366,13 @@ const families: Family[] = [
     id: "evidence_subject_substitution",
     run(index) {
       try {
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          {
-            overrides: {
-              FRAUD_DETECTION: {
-                subject:
-                  "0x1111111111111111111111111111111111111111"
-              }
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: {
+            FRAUD_DETECTION: {
+              subject: "0x1111111111111111111111111111111111111111"
             }
           }
-        );
+        });
         return false;
       } catch {
         return true;
@@ -509,11 +382,7 @@ const families: Family[] = [
   {
     id: "valid_bundle_substitution_after_permit",
     run(index) {
-      const alternate = bundle(
-        baselineAction,
-        baselinePlan,
-        index + 20
-      );
+      const alternate = bundle(baselineAction, baselinePlan, index + 20);
       return !verifyPermit(
         baselineMandate,
         baselinePermit,
@@ -521,22 +390,20 @@ const families: Family[] = [
         alternate,
         baselineDecision,
         SECRET,
-        {
-          now: new Date(
-            NOW.getTime() + 1000
-          )
-        }
+        { now: new Date(NOW.getTime() + 1000) }
       ).valid;
     }
   },
   {
     id: "permit_signature_forgery",
     run(index) {
-      const forged = structuredClone(
-        baselinePermit
-      );
+      const forged = structuredClone(baselinePermit);
+      const nibble = ((index % 15) + 1).toString(16);
+      const candidate = `0x${nibble.repeat(64)}`;
       forged.signature =
-        `0x${((index % 15) + 1).toString(16).repeat(64)}`;
+        candidate.toLowerCase() === baselinePermit.signature.toLowerCase()
+          ? `0x${"f".repeat(64)}`
+          : candidate;
       return !verifyPermit(
         baselineMandate,
         forged,
@@ -544,11 +411,7 @@ const families: Family[] = [
         baselineBundle,
         baselineDecision,
         SECRET,
-        {
-          now: new Date(
-            NOW.getTime() + 1000
-          )
-        }
+        { now: new Date(NOW.getTime() + 1000) }
       ).valid;
     }
   },
@@ -562,23 +425,15 @@ const families: Family[] = [
         baselineBundle,
         baselineDecision,
         SECRET,
-        {
-          now: new Date(
-            NOW.getTime() +
-            31_000 + index
-          )
-        }
+        { now: new Date(NOW.getTime() + 31_000 + index) }
       ).valid;
     }
   },
   {
     id: "action_semantic_mutation",
     run(index) {
-      const mutated = structuredClone(
-        baselineAction
-      );
-      mutated.payload.amountRaw =
-        String(6_000_000 + index);
+      const mutated = structuredClone(baselineAction);
+      mutated.payload.amountRaw = String(6_000_000 + index);
       return !verifyPermit(
         baselineMandate,
         baselinePermit,
@@ -586,11 +441,7 @@ const families: Family[] = [
         baselineBundle,
         baselineDecision,
         SECRET,
-        {
-          now: new Date(
-            NOW.getTime() + 1000
-          )
-        }
+        { now: new Date(NOW.getTime() + 1000) }
       ).valid;
     }
   },
@@ -623,12 +474,7 @@ console.log("");
 
 for (const family of families) {
   let passed = 0;
-
-  for (
-    let index = 0;
-    index < CASES_PER_FAMILY;
-    index++
-  ) {
+  for (let index = 0; index < CASES_PER_FAMILY; index++) {
     try {
       if (family.run(index)) {
         passed++;
@@ -647,11 +493,7 @@ for (const family of families) {
 }
 
 let validControls = 0;
-for (
-  let index = 0;
-  index < CASES_PER_FAMILY;
-  index++
-) {
+for (let index = 0; index < CASES_PER_FAMILY; index++) {
   const verification = verifyPermit(
     baselineMandate,
     baselinePermit,
@@ -659,33 +501,17 @@ for (
     baselineBundle,
     baselineDecision,
     SECRET,
-    {
-      now: new Date(
-        NOW.getTime() +
-        1000 + index
-      )
-    }
+    { now: new Date(NOW.getTime() + 1000 + index) }
   );
-
-  if (verification.valid) {
-    validControls++;
-  }
+  if (verification.valid) validControls++;
 }
 
-const total =
-  families.length * CASES_PER_FAMILY;
+const total = families.length * CASES_PER_FAMILY;
 
 console.log("");
-console.log(
-  `Adversarial cases contained: ${adversarialContained}/${total}`
-);
-console.log(
-  `Valid controls passed: ${validControls}/${CASES_PER_FAMILY}`
-);
-console.log(
-  "Unauthorized authorizations:",
-  unauthorized
-);
+console.log(`Adversarial cases contained: ${adversarialContained}/${total}`);
+console.log(`Valid controls passed: ${validControls}/${CASES_PER_FAMILY}`);
+console.log("Unauthorized authorizations:", unauthorized);
 console.log("Uncaught errors:", uncaught);
 console.log("Telegraph requests: 0");
 console.log("x402 payments: 0");
