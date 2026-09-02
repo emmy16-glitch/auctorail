@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS executions (
   action_hash TEXT NOT NULL,
   decision_hash TEXT NOT NULL,
   policy_id TEXT NOT NULL,
+  transaction_intent_hash TEXT NOT NULL,
   chain_id BIGINT NOT NULL,
   sender TEXT NOT NULL,
   destination TEXT NOT NULL,

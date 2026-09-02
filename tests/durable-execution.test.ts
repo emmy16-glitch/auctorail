@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PostgresExecutionStore,
+  recoverDurableExecution,
   allowedDurableExecutionTransitions,
   assertDurableExecutionTransition,
   type DurableExecutionState
@@ -17,8 +18,9 @@ class FakeExecutionDatabase {
         permitId: values[1],
         permitNonce: values[2],
         policyId: values[6],
-        state: values[12],
-        schemaVersion: values[13]
+        transactionIntentHash: values[7],
+        state: values[13],
+        schemaVersion: values[14]
       });
       return { rows: [] };
     }
@@ -42,6 +44,7 @@ const input = {
   actionHash: "action-hash",
   decisionHash: "decision-hash",
   policyId: "payments.strict.v1",
+  transactionIntentHash: "intent-hash",
   chainId: 84532,
   sender: "0xsender",
   destination: "0xdestination",
@@ -104,6 +107,46 @@ describe("durable execution state machine", () => {
     await store.transition(input.executionId, "AMBIGUOUS", "RECONCILING", input.now);
     expect(database.rows.get(input.executionId)).toMatchObject({ state: "RECONCILING", transactionHash: "0xabc" });
     await expect(store.transition(input.executionId, "RECONCILING", "SUBMITTING", input.now)).rejects.toThrow("invalid_execution_transition:RECONCILING->SUBMITTING");
+  });
+
+  it("recovers SUBMITTING to AMBIGUOUS without invoking any submission path", async () => {
+    const database = new FakeExecutionDatabase();
+    const store = new PostgresExecutionStore(database);
+    await store.create(input);
+    await store.transition(input.executionId, "AUTHORIZED", "CLAIMED", input.now);
+    await store.transition(input.executionId, "CLAIMED", "SUBMITTING", input.now);
+    let observations = 0;
+    const result = await recoverDurableExecution(store, input.executionId, [{ observe: async () => { observations += 1; return { provider: "rpc-a", status: "UNKNOWN" }; } }], input.now);
+    expect(result).toMatchObject({ state: "AMBIGUOUS", code: "execution_ambiguous" });
+    expect(observations).toBe(1);
+  });
+
+  it("keeps conflicting reconciliation providers fail-closed", async () => {
+    const database = new FakeExecutionDatabase();
+    const store = new PostgresExecutionStore(database);
+    await store.create(input);
+    await store.transition(input.executionId, "AUTHORIZED", "CLAIMED", input.now);
+    await store.transition(input.executionId, "CLAIMED", "SUBMITTING", input.now);
+    await store.transition(input.executionId, "SUBMITTING", "AMBIGUOUS", input.now);
+    const result = await recoverDurableExecution(store, input.executionId, [
+      { observe: async () => ({ provider: "rpc-a", status: "CONFIRMED" as const, transactionHash: "0x1" }) },
+      { observe: async () => ({ provider: "rpc-b", status: "REJECTED" as const, transactionHash: "0x2" }) }
+    ], input.now);
+    expect(result).toMatchObject({ state: "AMBIGUOUS", code: "execution_ambiguous" });
+  });
+
+  it("resolves unanimous reconciliation without resubmission", async () => {
+    const database = new FakeExecutionDatabase();
+    const store = new PostgresExecutionStore(database);
+    await store.create(input);
+    await store.transition(input.executionId, "AUTHORIZED", "CLAIMED", input.now);
+    await store.transition(input.executionId, "CLAIMED", "SUBMITTING", input.now);
+    await store.transition(input.executionId, "SUBMITTING", "AMBIGUOUS", input.now);
+    const result = await recoverDurableExecution(store, input.executionId, [
+      { observe: async () => ({ provider: "rpc-a", status: "CONFIRMED" as const, transactionHash: "0x1" }) },
+      { observe: async () => ({ provider: "rpc-b", status: "CONFIRMED" as const, transactionHash: "0x1" }) }
+    ], input.now);
+    expect(result).toMatchObject({ state: "CONFIRMED", code: "execution_confirmed" });
   });
 
   it("rejects stale concurrent state updates", async () => {

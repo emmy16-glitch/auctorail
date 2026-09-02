@@ -9,6 +9,9 @@ import {
   type ExecutorResult
 } from "../executor/controlled-executor.js";
 import type { PermitConsumptionStore } from "../executor/permit-store.js";
+import { executeDurableProtectedAction, type PostgresExecutionStore } from "../executor/durable-execution.js";
+import type { ExecutionKillSwitch } from "../security/execution-kill-switch.js";
+import type { TransactionIntent } from "../executor/transaction-intent.js";
 import {
   evaluatePaymentsStrictV1,
   type DecisionRecord
@@ -53,6 +56,11 @@ export interface RunPaymentGatewayInput {
   agentId: string;
   secret: string;
   store: PermitConsumptionStore;
+  /** Required for the production durable path; omitted only for local compatibility tests. */
+  durableExecutionStore?: PostgresExecutionStore;
+  sender?: string;
+  transactionIntent?: () => Promise<TransactionIntent> | TransactionIntent;
+  killSwitch?: ExecutionKillSwitch;
   execute: (action: ActionContract) => Promise<PaymentExecutionArtifact>;
   operationId?: string;
   now?: Date;
@@ -165,17 +173,44 @@ export async function runPaymentGateway(
     }
   );
 
-  const execution = await executeProtectedAction({
-    mandate: input.mandate,
-    permit,
-    action: input.action,
-    evidence: input.evidence,
-    decision,
-    secret: input.secret,
-    store: input.store,
-    execute: input.execute,
-    now
-  });
+  const execution = input.durableExecutionStore && input.sender && input.transactionIntent
+    ? await executeDurableProtectedAction({
+        mandate: input.mandate,
+        permit,
+        action: input.action,
+        evidence: input.evidence,
+        decision,
+        secret: input.secret,
+        permitStore: input.store,
+        executionStore: input.durableExecutionStore,
+        sender: input.sender,
+        transactionIntent: input.transactionIntent,
+        killSwitch: input.killSwitch,
+        now,
+        submit: async () => {
+          const artifact = await input.execute(input.action);
+          return {
+            state: "CONFIRMED" as const,
+            transactionHash: artifact.transactionHash
+          };
+        }
+      }).then((result) => ({
+        status: result.status,
+        code: result.code,
+        ...(result.transactionHash ? { result: { transactionHash: result.transactionHash } } : {}),
+        ...(result.error ? { error: result.error } : {})
+      }) as ExecutorResult<PaymentExecutionArtifact>)
+    : await executeProtectedAction({
+        mandate: input.mandate,
+        permit,
+        action: input.action,
+        evidence: input.evidence,
+        decision,
+        secret: input.secret,
+        store: input.store,
+        execute: input.execute,
+        now
+      });
 
   const receipt = createProofReceipt({
     mandate: input.mandate,
