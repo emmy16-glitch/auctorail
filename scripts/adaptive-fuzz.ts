@@ -25,6 +25,7 @@ import {
 } from "../src/telegraph/adaptive-evidence-plan.js";
 import {
   createEvidenceBundle,
+  verifyEvidenceBundle,
   type EvidenceBundle
 } from "../src/telegraph/evidence-bundle.js";
 
@@ -34,11 +35,20 @@ const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 const SECRET = "proofgate-adaptive-fuzz-secret-" + "x".repeat(64);
 const CASES_PER_FAMILY = 100;
 
-function differentHash(current: string | null): string {
-  const candidate = `0x${"f".repeat(64)}`;
-  return current?.toLowerCase() === candidate
-    ? `0x${"e".repeat(64)}`
-    : candidate;
+function mutateHash(current: string | null): string {
+  if (!current || !/^0x[0-9a-fA-F]{64}$/.test(current)) {
+    return `0x${"f".repeat(64)}`;
+  }
+
+  const body = current.slice(2).toLowerCase();
+  const replacement = body[0] === "0" ? "1" : "0";
+  const mutated = `0x${replacement}${body.slice(1)}`;
+
+  if (mutated.toLowerCase() === current.toLowerCase()) {
+    throw new Error("hash_mutation_not_distinct");
+  }
+
+  return mutated;
 }
 
 function action(amountRaw = "7000000"): ActionContract {
@@ -340,12 +350,21 @@ const families: Family[] = [
     id: "bundle_signal_tamper",
     run(index) {
       const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
-      mutated.items[0].signalHash = differentHash(mutated.items[0].signalHash);
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        baselinePlan,
-        mutated
+      const before = mutated.items[0].signalHash;
+      mutated.items[0].signalHash = mutateHash(before);
+
+      if (mutated.items[0].signalHash === before) {
+        throw new Error("signal_hash_mutation_not_distinct");
+      }
+
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
       );
     }
   },
@@ -353,12 +372,21 @@ const families: Family[] = [
     id: "bundle_raw_response_hash_tamper",
     run(index) {
       const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
-      mutated.items[1].rawResponseHash = differentHash(mutated.items[1].rawResponseHash);
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        baselinePlan,
-        mutated
+      const before = mutated.items[1].rawResponseHash;
+      mutated.items[1].rawResponseHash = mutateHash(before);
+
+      if (mutated.items[1].rawResponseHash === before) {
+        throw new Error("raw_response_hash_mutation_not_distinct");
+      }
+
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
       );
     }
   },
