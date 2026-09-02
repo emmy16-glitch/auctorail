@@ -4,6 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  BASE_SEPOLIA_USDC
+} from "../src/core/action-contract.js";
+import {
   executeProtectedAction
 } from "../src/executor/controlled-executor.js";
 import {
@@ -21,7 +24,8 @@ import {
   verifyProofReceipt
 } from "../src/receipt/proof-receipt.js";
 import {
-  createEvidenceBundle
+  createEvidenceBundle,
+  verifyEvidenceBundle
 } from "../src/telegraph/evidence-bundle.js";
 import {
   ADAPTIVE_TEST_AGENT,
@@ -109,12 +113,15 @@ describe("adaptive authorization cryptographic chain", () => {
                 }
               : undefined
           ),
-          paymentAmountRaw: "10000"
+          paymentAmountRaw: "10000",
+          paymentNetwork: "eip155:84532",
+          paymentAsset: BASE_SEPOLIA_USDC
         })
       ),
       { now: ADAPTIVE_TEST_NOW }
     );
 
+    expect(verifyEvidenceBundle(alternate)).toBe(true);
     expect(alternate.bundleHash).not.toBe(
       context.bundle.bundleHash
     );
