@@ -89,6 +89,65 @@ function unsigned(
   return BigInt(value);
 }
 
+function toPaymentLane(requirement: {
+  scheme: string;
+  network: string;
+  asset: string;
+  amount: string;
+  payTo: string;
+  maxTimeoutSeconds?: number;
+  extra?: unknown;
+}): X402PaymentLane {
+  return {
+    scheme: requirement.scheme,
+    network: requirement.network,
+    asset: requirement.asset,
+    amount: requirement.amount,
+    payTo: requirement.payTo,
+    ...(requirement.maxTimeoutSeconds !== undefined
+      ? { maxTimeoutSeconds: requirement.maxTimeoutSeconds }
+      : {}),
+    ...(requirement.extra !== undefined
+      ? { extra: requirement.extra }
+      : {})
+  };
+}
+
+function actualRequirementAllowed(
+  x402Version: number,
+  requirement: {
+    scheme: string;
+    network: string;
+    asset: string;
+    amount: string;
+    payTo: string;
+    maxTimeoutSeconds?: number;
+    extra?: unknown;
+  },
+  remainingBudget: bigint
+): boolean {
+  const decision =
+    selectApprovedTelegraphPaymentLane({
+      x402Version,
+      accepts: [toPaymentLane(requirement)]
+    });
+
+  if (!decision.approved) {
+    return false;
+  }
+
+  try {
+    return (
+      unsigned(
+        decision.lane.amount,
+        "payment_amount"
+      ) <= remainingBudget
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function preflightWithReadRetry(
   fetchImpl: typeof fetch,
   url: string,
@@ -381,24 +440,6 @@ export function createLiveIntentAcquirer(
   const signer =
     toClientEvmSigner(account);
 
-  const client =
-    x402Client.fromConfig({
-      schemes: [
-        {
-          network:
-            TELEGRAPH_X402_POLICY.network,
-          client:
-            new ExactEvmScheme(signer)
-        }
-      ]
-    });
-
-  const paidFetch =
-    wrapFetchWithPayment(
-      fetchImpl,
-      client
-    );
-
   return async (
     context: IntentAcquisitionContext
   ): Promise<LiveIntentAcquisitionResult> => {
@@ -491,22 +532,22 @@ export function createLiveIntentAcquirer(
       );
     }
 
-    const lane =
+    const preflightLane =
       laneDecision.lane;
     const remaining =
       unsigned(
         context.remainingBudgetRaw,
         "remaining_evidence_budget"
       );
-    const price =
+    const preflightPrice =
       unsigned(
-        lane.amount,
+        preflightLane.amount,
         "payment_amount"
       );
 
-    if (price > remaining) {
+    if (preflightPrice > remaining) {
       throw new Error(
-        `adaptive_payment_exceeds_remaining_budget:${price}:${remaining}`
+        `adaptive_payment_exceeds_remaining_budget:${preflightPrice}:${remaining}`
       );
     }
 
@@ -514,18 +555,128 @@ export function createLiveIntentAcquirer(
       context.deadlineAt
     );
 
+    // The x402 wrapper normally performs its own initial unpaid request before
+    // signing a payment. Reuse the already validated 402 response as that first
+    // response so there is no second, unvalidated challenge between preflight
+    // and signing. A hard client policy independently revalidates the exact
+    // PaymentRequirements selected for the payload.
+    let replayValidatedPreflight = true;
+    const boundFetch: typeof fetch = async (
+      input,
+      requestInit
+    ) => {
+      if (replayValidatedPreflight) {
+        replayValidatedPreflight = false;
+        return preflight.clone();
+      }
+
+      return fetchImpl(input, requestInit);
+    };
+
+    const client =
+      x402Client.fromConfig({
+        schemes: [
+          {
+            network:
+              TELEGRAPH_X402_POLICY.network,
+            client:
+              new ExactEvmScheme(signer)
+          }
+        ],
+        spendControls: false
+      });
+
+    client.registerPolicy(
+      (version, requirements) =>
+        requirements.filter(
+          (requirement) =>
+            actualRequirementAllowed(
+              version,
+              requirement,
+              remaining
+            )
+        )
+    );
+
+    let actualLane: X402PaymentLane | null = null;
+    let paymentPayloadCreated = false;
+
+    client.onBeforePaymentCreation(
+      ({ paymentRequired: actualChallenge, selectedRequirements }) => {
+        const selected =
+          toPaymentLane(selectedRequirements);
+        const decision =
+          selectApprovedTelegraphPaymentLane({
+            x402Version:
+              actualChallenge.x402Version,
+            accepts: [selected]
+          });
+
+        if (!decision.approved) {
+          return {
+            abort: true as const,
+            reason:
+              `proofgate_x402_actual_lane_rejected:${decision.code}`
+          };
+        }
+
+        const amount =
+          unsigned(
+            decision.lane.amount,
+            "payment_amount"
+          );
+
+        if (amount > remaining) {
+          return {
+            abort: true as const,
+            reason:
+              `adaptive_payment_exceeds_remaining_budget:${amount}:${remaining}`
+          };
+        }
+
+        actualLane = decision.lane;
+        return;
+      }
+    );
+
+    client.onAfterPaymentCreation(
+      () => {
+        paymentPayloadCreated = true;
+      }
+    );
+
+    const paidFetch =
+      wrapFetchWithPayment(
+        boundFetch,
+        client
+      );
+
     let response: Response;
 
     try {
-      // Exactly one paid attempt. A transport failure is ambiguous and is
-      // deliberately not retried here.
+      // The wrapper consumes the validated preflight response locally, then
+      // performs one network request carrying the payment signature. There is
+      // no second unpaid network challenge and no ProofGate recovery hook that
+      // could authorize a second paid attempt.
       response = await paidFetch(
         url,
         init
       );
     } catch (error) {
+      if (paymentPayloadCreated) {
+        throw new Error(
+          `adaptive_x402_transport_ambiguous:${errorMessage(error)}`
+        );
+      }
+
       throw new Error(
-        `adaptive_x402_transport_ambiguous:${errorMessage(error)}`
+        `adaptive_x402_pre_payment_failure:${errorMessage(error)}`
+      );
+    }
+
+    if (!actualLane || !paymentPayloadCreated) {
+      throw new Error(
+        "adaptive_x402_payment_payload_not_created"
       );
     }
 
@@ -565,7 +716,7 @@ export function createLiveIntentAcquirer(
       body: parsed,
       context,
       miners: options.miners,
-      paymentLane: lane,
+      paymentLane: actualLane,
       settlement,
       startedAt,
       evidenceDirectory
