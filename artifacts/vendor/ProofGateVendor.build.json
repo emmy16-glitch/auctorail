@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "proofgate.vendor-build-manifest.v1",
+  "contractName": "ProofGateVendor",
+  "source": {
+    "path": "contracts/ProofGateVendor.sol",
+    "sha256": "afcb3e214b74e6b4fdbed034a3a517498228fb7d59e15fa7ed613bf776cb1b22"
+  },
+  "compiler": {
+    "version": "0.8.36",
+    "longVersion": "0.8.36+commit.8a079791",
+    "platform": "linux-amd64",
+    "binary": "solc-linux-amd64-v0.8.36+commit.8a079791",
+    "url": "https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.8.36+commit.8a079791",
+    "sha256": "c8d35afdddc3cd2743ee88b8f25e0fecd16e2bdd5f2120f37e52cd9cc45ae0e6"
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object"
+        ]
+      }
+    }
+  },
+  "artifact": {
+    "path": "artifacts/vendor/ProofGateVendor.json",
+    "sha256": "3c7bbca4b8d4970b89cd9507e913e004ddcfa9fb061a0468805f465b6220d291",
+    "creationBytecodeBytes": 258,
+    "creationBytecodeSha256": "464fd958eacb3d1d58573bee83da851c04a0434e97ea46a363cc4066f6123303",
+    "runtimeBytecodeBytes": 165,
+    "runtimeBytecodeSha256": "98f7c12d98b3a58ceec03922eeac7674182eb2079af35ec7980a992faf28ce4f"
+  }
+}

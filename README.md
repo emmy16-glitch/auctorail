@@ -36,7 +36,11 @@ npm ci
 npm run ci
 ```
 
-`npm run ci` runs strict TypeScript checking and the full Vitest security suite.
+`npm run ci` runs strict TypeScript checking and the full Vitest security suite. Run `npm run audit:prod` to audit only the dependencies shipped to production; CI enforces that this audit remains clean.
+
+The Solidity compiler used by `vendor:compile` is development-only tooling and is intentionally kept out of production dependencies. Production installs must use `npm ci --omit=dev` so compiler-only transitive packages cannot enter the runtime image.
+
+`npm run vendor:compile` downloads the official native Solidity `0.8.36+commit.8a079791` binary into the ignored `.tools/` cache, verifies its SHA-256 digest, compiles with the pinned optimizer settings, and writes the tracked `artifacts/vendor/ProofGateVendor.build.json` manifest. The manifest records the source hash, compiler binary hash, compiler settings, and creation/runtime bytecode hashes. CI recompiles the artifact and fails if either tracked artifact changes.
 
 ## Live Telegraph proof
 
