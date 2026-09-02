@@ -15,6 +15,12 @@ import type { Permit } from "../permit/permit.js";
 import type {
   SupplementalEvidenceRef
 } from "../evidence/vendor-runtime.js";
+import {
+  isEvidenceBundle,
+  verifyEvidenceBundle,
+  type AuthorizationEvidence,
+  type EvidenceBundle
+} from "../telegraph/evidence-bundle.js";
 
 export type ReceiptExecutionStatus =
   | "EXECUTED"
@@ -32,8 +38,29 @@ export interface ReceiptExecution {
   error?: string;
 }
 
+export interface ReceiptSingleEvidence {
+  source: "telegraph";
+  minerId: string;
+  minerName: string;
+  subject: string;
+  chainId: number;
+  label: string | null;
+  confidence: number | null;
+  applicability: TelegraphEvidenceRecord["applicability"];
+  signalHash: string | null;
+  rawResponseHash: string;
+  receivedAt: string;
+}
+
+export interface ReceiptBundleEvidence {
+  source: "telegraph_bundle";
+  bundle: EvidenceBundle;
+}
+
 export interface ProofReceipt {
-  schemaVersion: "proofgate.receipt.v2";
+  schemaVersion:
+    | "proofgate.receipt.v2"
+    | "proofgate.receipt.v3";
   receiptId: string;
   operationId?: string;
   mandate: {
@@ -53,19 +80,10 @@ export interface ProofReceipt {
     policyId: string;
     canonicalPayload: string;
   };
-  evidence: {
-    source: "telegraph";
-    minerId: string;
-    minerName: string;
-    subject: string;
-    chainId: number;
-    label: string | null;
-    confidence: number | null;
-    applicability: TelegraphEvidenceRecord["applicability"];
-    signalHash: string | null;
-    rawResponseHash: string;
-    receivedAt: string;
-  } | null;
+  evidence:
+    | ReceiptSingleEvidence
+    | ReceiptBundleEvidence
+    | null;
   decision: {
     mandate: DecisionRecord["mandate"];
     agentId: string;
@@ -96,7 +114,7 @@ export interface ProofReceipt {
 export interface CreateProofReceiptInput {
   mandate: MandateContract;
   action: ActionContract;
-  evidence: TelegraphEvidenceRecord | null;
+  evidence: AuthorizationEvidence | null;
   decision: DecisionRecord;
   permit: Permit | null;
   execution: ReceiptExecution;
@@ -126,6 +144,33 @@ function decisionMatchesMandate(
   );
 }
 
+function receiptEvidence(
+  evidence: AuthorizationEvidence | null
+): ReceiptSingleEvidence | ReceiptBundleEvidence | null {
+  if (!evidence) return null;
+
+  if (isEvidenceBundle(evidence)) {
+    return {
+      source: "telegraph_bundle",
+      bundle: evidence
+    };
+  }
+
+  return {
+    source: "telegraph",
+    minerId: evidence.miner.id,
+    minerName: evidence.miner.name,
+    subject: evidence.subject,
+    chainId: evidence.chainId,
+    label: evidence.label,
+    confidence: evidence.confidence,
+    applicability: evidence.applicability,
+    signalHash: evidence.signalHash,
+    rawResponseHash: evidence.rawResponseHash,
+    receivedAt: evidence.receivedAt
+  };
+}
+
 export function createProofReceipt(
   input: CreateProofReceiptInput
 ): ProofReceipt {
@@ -139,6 +184,18 @@ export function createProofReceipt(
 
   if (!decisionMatchesMandate(input.mandate, input.decision)) {
     throw new Error("decision_mandate_mismatch");
+  }
+
+  if (
+    input.evidence &&
+    isEvidenceBundle(input.evidence) &&
+    (
+      !verifyEvidenceBundle(input.evidence) ||
+      input.evidence.actionId !== input.action.id ||
+      input.evidence.actionHash !== input.action.actionHash
+    )
+  ) {
+    throw new Error("receipt_evidence_bundle_mismatch");
   }
 
   const expectedRuntimeAttestationHash =
@@ -189,9 +246,16 @@ export function createProofReceipt(
   }
 
   const now = input.now ?? new Date();
+  const bundled = Boolean(
+    input.evidence &&
+    isEvidenceBundle(input.evidence)
+  );
 
   const body: Omit<ProofReceipt, "receiptHash"> = {
-    schemaVersion: "proofgate.receipt.v2",
+    schemaVersion:
+      bundled
+        ? "proofgate.receipt.v3"
+        : "proofgate.receipt.v2",
     receiptId: randomUUID(),
     ...(input.operationId ? { operationId: input.operationId } : {}),
     mandate: {
@@ -211,21 +275,8 @@ export function createProofReceipt(
       policyId: input.action.policyId,
       canonicalPayload: input.action.canonicalPayload
     },
-    evidence: input.evidence
-      ? {
-          source: "telegraph",
-          minerId: input.evidence.miner.id,
-          minerName: input.evidence.miner.name,
-          subject: input.evidence.subject,
-          chainId: input.evidence.chainId,
-          label: input.evidence.label,
-          confidence: input.evidence.confidence,
-          applicability: input.evidence.applicability,
-          signalHash: input.evidence.signalHash,
-          rawResponseHash: input.evidence.rawResponseHash,
-          receivedAt: input.evidence.receivedAt
-        }
-      : null,
+    evidence:
+      receiptEvidence(input.evidence),
     decision: {
       mandate: input.decision.mandate,
       agentId: input.decision.agentId,
@@ -340,6 +391,25 @@ export function verifyProofReceipt(receipt: ProofReceipt): boolean {
     parsedMandate.expiresAt !== receipt.mandate.expiresAt
   ) {
     return false;
+  }
+
+  if (
+    receipt.evidence?.source ===
+    "telegraph_bundle"
+  ) {
+    if (
+      receipt.schemaVersion !==
+        "proofgate.receipt.v3" ||
+      !verifyEvidenceBundle(
+        receipt.evidence.bundle
+      ) ||
+      receipt.evidence.bundle.actionId !==
+        receipt.action.actionId ||
+      receipt.evidence.bundle.actionHash !==
+        receipt.action.actionHash
+    ) {
+      return false;
+    }
   }
 
   const expectedRuntimeAttestationHash =
