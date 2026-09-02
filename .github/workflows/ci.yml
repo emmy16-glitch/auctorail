@@ -37,5 +37,8 @@ jobs:
       - name: Typecheck and test
         run: npm run ci
 
+      - name: Run deterministic final fuzz harness
+        run: npm run security:fuzz
+
       - name: Audit production dependencies
         run: npm run audit:prod
