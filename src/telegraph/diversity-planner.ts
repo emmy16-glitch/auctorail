@@ -40,6 +40,10 @@ export type DirectOutputBindingMode =
   | "STRUCTURED_EXACT"
   | "DECLARED_TEXT";
 
+export type DirectRequestBindingMode =
+  | "STRUCTURED_SUBJECT_CHAIN"
+  | "QUERY_ASSERTED";
+
 export interface DirectDiversityCandidate {
   miner: {
     id: string;
@@ -50,6 +54,7 @@ export interface DirectDiversityCandidate {
   endpoint: string;
   payload: Record<string, unknown>;
   outputBindingMode: DirectOutputBindingMode;
+  requestBindingMode: DirectRequestBindingMode;
   officialRank: number | null;
   selectionHash: string;
 }
@@ -219,9 +224,31 @@ function endpointDeclaredFields(
   return fields;
 }
 
+function requestBindingMode(
+  payload: Record<string, unknown>
+): DirectRequestBindingMode | null {
+  const fields = Object.keys(payload);
+  const hasSubject = fields.some(
+    (field) => SUBJECT_INPUT_FIELDS.has(field)
+  );
+  const hasChain = fields.some(
+    (field) => CHAIN_INPUT_FIELDS.has(field)
+  );
+
+  if (hasSubject && hasChain) {
+    return "STRUCTURED_SUBJECT_CHAIN";
+  }
+
+  if (fields.some((field) => QUERY_INPUT_FIELDS.has(field))) {
+    return "QUERY_ASSERTED";
+  }
+
+  return null;
+}
+
 function outputBindingMode(
   miner: ExtendedMinerRecord,
-  payload: Record<string, unknown>
+  requestMode: DirectRequestBindingMode
 ): DirectOutputBindingMode | null {
   const properties =
     miner.output_schema?.properties &&
@@ -237,25 +264,7 @@ function outputBindingMode(
     (field) => CHAIN_OUTPUT_FIELDS.has(field)
   );
 
-  const requestFields = Object.keys(payload);
-  const requestHasSubject = requestFields.some(
-    (field) => SUBJECT_INPUT_FIELDS.has(field)
-  );
-  const requestHasChain = requestFields.some(
-    (field) => CHAIN_INPUT_FIELDS.has(field)
-  );
-  const requestHasExactQuery = requestFields.some(
-    (field) => QUERY_INPUT_FIELDS.has(field)
-  );
-  const requestCanBindExactly =
-    requestHasExactQuery ||
-    (requestHasSubject && requestHasChain);
-
-  if (
-    hasSubject &&
-    hasChain &&
-    requestCanBindExactly
-  ) {
+  if (hasSubject && hasChain) {
     return "STRUCTURED_EXACT";
   }
 
@@ -273,7 +282,7 @@ function outputBindingMode(
   ]);
 
   if (
-    requestCanBindExactly &&
+    requestMode &&
     [...textCandidates].some(
       (field) => declared.has(field)
     )
@@ -444,6 +453,12 @@ function bindingPriority(
   return mode === "STRUCTURED_EXACT" ? 0 : 1;
 }
 
+function requestBindingPriority(
+  mode: DirectRequestBindingMode
+): number {
+  return mode === "STRUCTURED_SUBJECT_CHAIN" ? 0 : 1;
+}
+
 export function planDirectDiversity(input: {
   action: ActionContract;
   intent: AdaptiveEvidenceIntent;
@@ -497,7 +512,17 @@ export function planDirectDiversity(input: {
       continue;
     }
 
-    const bindingMode = outputBindingMode(miner, payload);
+    const requestMode = requestBindingMode(payload);
+    if (!requestMode) {
+      skipped.push({
+        minerId: id,
+        slug: miner.slug,
+        reason: "chosen endpoint cannot bind exact subject/chain through its declared request/output contract"
+      });
+      continue;
+    }
+
+    const bindingMode = outputBindingMode(miner, requestMode);
     if (!bindingMode) {
       skipped.push({
         minerId: id,
@@ -517,6 +542,7 @@ export function planDirectDiversity(input: {
       endpoint: endpoint.path,
       payload,
       outputBindingMode: bindingMode,
+      requestBindingMode: requestMode,
       officialRank: officialRank(miner, input.intent),
       selectionHash: selectionHash(
         input.action.actionHash,
@@ -531,6 +557,11 @@ export function planDirectDiversity(input: {
       bindingPriority(a.outputBindingMode) -
       bindingPriority(b.outputBindingMode);
     if (binding !== 0) return binding;
+
+    const requestBinding =
+      requestBindingPriority(a.requestBindingMode) -
+      requestBindingPriority(b.requestBindingMode);
+    if (requestBinding !== 0) return requestBinding;
 
     const ar = a.officialRank ?? Number.MAX_SAFE_INTEGER;
     const br = b.officialRank ?? Number.MAX_SAFE_INTEGER;
