@@ -1,20 +1,36 @@
-# ProofGate on Termux / Android ARM
+# ProofGate v1.2 on Termux / Android ARM
 
-ProofGate v1.1 can run its TypeScript suite, offline security harnesses, Telegraph proof flows, adaptive check flow and architecture-independent vendor verification inside an Ubuntu `proot-distro` environment on Termux.
+ProofGate can run its TypeScript suite, all deterministic security harnesses, Telegraph proof flows, adaptive/quorum check flow and architecture-independent vendor verification inside an Ubuntu `proot-distro` environment on Termux.
 
-## Get the v1.1 branch
+## Get the v1.2 branch
 
 From `~/proof-gate`:
 
 ```bash
 git fetch origin
-git switch v1.1-adaptive-evidence
-git pull origin v1.1-adaptive-evidence
 ```
 
-If the branch already exists locally, `git switch v1.1-adaptive-evidence` is enough before pulling.
+If you do not already have the local v1.2 branch:
 
-The frozen `v1.0.0-hackathon` tag remains separate and must not be moved.
+```bash
+git switch --track origin/v1.2-general-quorum
+```
+
+If it already exists locally:
+
+```bash
+git switch v1.2-general-quorum
+git pull origin v1.2-general-quorum
+```
+
+The frozen tags remain separate and must never be moved:
+
+```text
+v1.0.0-hackathon
+v1.1.0-hackathon
+```
+
+A later v1.2 tag should point only to the exact final green v1.2 SHA.
 
 ## Why `vendor:compile` does not run on ARM
 
@@ -22,9 +38,9 @@ The canonical Solidity build is intentionally pinned to the official native comp
 
 - compiler: `0.8.36+commit.8a079791`
 - canonical platform: `linux-amd64`
-- compiler SHA-256 pinned in `scripts/compile-vendor.mjs`
+- compiler binary SHA-256 is pinned by the repository
 
-Most Android/Termux devices are `arm64`. ProofGate does not silently replace the canonical compiler/platform and then claim the artifact was reproduced identically.
+Most Android/Termux devices are `arm64`. ProofGate does not silently replace the canonical compiler/platform and then claim the tracked artifact was reproduced identically.
 
 On unsupported hosts, `npm run vendor:compile` gives an explicit platform message.
 
@@ -36,7 +52,7 @@ Run:
 npm run vendor:verify
 ```
 
-This does **not** compile Solidity. It verifies the architecture-independent committed bindings:
+This does **not** execute solc. It verifies the committed architecture-independent bindings:
 
 - `ProofGateVendor.sol` source hash
 - tracked artifact hash
@@ -45,9 +61,9 @@ This does **not** compile Solidity. It verifies the architecture-independent com
 - runtime-bytecode length/hash
 - source/artifact/manifest consistency
 
-Canonical native recompilation remains a separate stronger CI check on Linux x64.
+Canonical native recompilation remains a separate stronger GitHub CI check on Linux x64.
 
-## v1.1 final local validation
+## Final v1.2 local validation
 
 ```bash
 npm ci
@@ -56,30 +72,99 @@ npm run audit:prod
 npm run attack:lab
 npm run security:fuzz
 npm run security:fuzz:adaptive
+npm run security:fuzz:general
 npm run vendor:verify
 git status --short
 git rev-parse HEAD
 ```
 
-Expected hardened security summaries include:
+Current validated v1.2 security summaries are:
 
 ```text
-Original fuzz:
+Vitest:
+43/43 test files
+225/225 tests
+
+Original exact-action fuzz:
 1100/1100 adversarial cases contained
 100/100 valid controls
 0 unauthorized executions
 
-Adaptive fuzz:
-1800/1800 adversarial cases contained
+Adaptive + distinct-Miner quorum fuzz:
+3100/3100 adversarial cases contained
 100/100 valid controls
 0 unauthorized authorizations
+
+General action authorization fuzz:
+3100/3100 adversarial cases contained
+100/100 valid controls
+0 unauthorized executions
+
+Total deterministic adversarial cases:
+7300/7300
+
+Uncaught fuzz errors: 0
+Production dependency vulnerabilities: 0
 ```
 
-The current hardened deterministic suite contains `42` test files and `210` tests; always trust the exact output of the revision you actually run if that count changes later.
+Always trust the exact command output from the revision you actually run if counts change after a later intentional commit.
+
+## What changed in v1.2
+
+The adaptive payment path now supports same-Intent provider diversity:
+
+```text
+LOW
+FRAUD_DETECTION → 1 distinct Miner
+
+MEDIUM
+FRAUD_DETECTION → 2 distinct positive Miners
++ ONCHAIN_TX_LOOKUP
+
+HIGH
+FRAUD_DETECTION → 3 distinct Miners / 2 positive votes
++ ONCHAIN_TX_LOOKUP
++ WALLET_BALANCE_CHECK
+```
+
+Repeated routing to one Miner does not count as multiple independent providers.
+
+v1.2 also adds the general authorization core and trusted Action Adapter SDK. These are deterministic/local code paths and can be tested on ARM like the rest of the TypeScript suite.
+
+## Adaptive/quorum live check
+
+Before a live Telegraph run, refresh the registry:
+
+```bash
+bash scripts/discover-telegraph.sh
+```
+
+LOW:
+
+```bash
+npm run proof:adaptive -- 1
+```
+
+HIGH standout path:
+
+```bash
+npm run proof:adaptive -- 7
+```
+
+Important:
+
+- the HIGH path may make multiple **real Telegraph/x402 evidence purchases** while trying to obtain provider diversity plus the additional required Intents;
+- each paid request remains capped by the per-request policy;
+- total evidence spend, attempts and deadline are bounded by the HIGH-risk plan;
+- the command is **check-only for the protected vendor payment** and does not broadcast 7 USDC;
+- if a paid request becomes transport-ambiguous, do not blindly rerun it; inspect/reconcile the existing state first;
+- until a real successful multi-Miner result is captured, do not present synthetic tests/fuzz data as live Telegraph evidence.
 
 ## Local working-tree caution
 
-Live Telegraph experiments can create local evidence/quarantine/receipt artifacts. Do **not** use:
+Live Telegraph experiments can create local evidence/quarantine/receipt artifacts.
+
+Do **not** use:
 
 ```bash
 git add .
@@ -87,40 +172,33 @@ git add .
 
 Commit only intentionally selected public artifacts after checking them for secrets.
 
-Never print or paste:
+Also do not casually run destructive cleanup such as `git clean -fd` when you have local evidence artifacts you may still need.
+
+Never print, paste or commit:
 
 - `.env`
 - wallet private keys
 - seed/recovery phrases
-- production permit-signing material
+- production Permit-signing material
 - database credentials
 
-## Adaptive live check
+## Generic adapter development on Termux
 
-The v1.1 check-only command is:
+You can build/test a custom adapter entirely offline before connecting it to a real external system.
 
-```bash
-npm run proof:adaptive -- 1
+Useful files:
+
+```text
+src/core/general-action.ts
+src/core/general-mandate.ts
+src/permit/general-permit.ts
+src/executor/general-executor.ts
+src/sdk/action-adapter.ts
+tests/general-authorization.test.ts
+scripts/general-fuzz.ts
 ```
 
-or the HIGH-risk standout path:
-
-```bash
-npm run proof:adaptive -- 7
-```
-
-Before it, refresh the registry:
-
-```bash
-bash scripts/discover-telegraph.sh
-```
-
-Important:
-
-- `proof:adaptive -- 7` may make up to three real Telegraph/x402 evidence purchases;
-- it does **not** broadcast the protected 7-USDC vendor payment;
-- if a paid request becomes transport-ambiguous, do not blindly rerun it;
-- preserve and inspect the existing result first.
+A real adapter should only execute through the controlled boundary and must not give the autonomous agent a second direct route to the protected tool.
 
 ## Integrity verification vs canonical recompilation
 
@@ -132,4 +210,4 @@ ProofGate intentionally keeps those claims separate.
 
 ## Validation record
 
-See `docs/V1_1_VALIDATION.md` for the hardened code snapshot, CI run and exact security results used to lock the v1.1 architecture before release.
+See `docs/V1_2_VALIDATION.md` for the exact v1.2 code/release SHA, GitHub CI run and current security-gate results.
