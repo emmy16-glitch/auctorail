@@ -310,17 +310,6 @@ function parseSuccessfulEvidence(input: {
     );
   }
 
-  if (
-    !servingMinerSupportsIntent(
-      servingMiner.record,
-      input.context.requirement.intent
-    )
-  ) {
-    throw new Error(
-      `serving_miner_intent_mismatch:${servingMiner.slug}:${input.context.requirement.intent}`
-    );
-  }
-
   const returnedIntent =
     typeof input.body.intent === "string"
       ? input.body.intent
@@ -330,8 +319,83 @@ function parseSuccessfulEvidence(input: {
     returnedIntent !==
     input.context.requirement.intent
   ) {
+    const finishedAt =
+      new Date().toISOString();
+    const rejectionPath =
+      saveEvidenceArtifact(
+        path.join(
+          input.evidenceDirectory,
+          "rejected"
+        ),
+        input.context.requirement.intent,
+        {
+          schemaVersion:
+            "proofgate.telegraph-evidence-rejection.v1",
+          source: "telegraph",
+          intent: returnedIntent,
+          miner: {
+            id: servingMiner.id,
+            name: servingMiner.name,
+            slug: servingMiner.slug
+          },
+          request: {
+            endpoint: "/v1/ask",
+            target:
+              input.context.action.payload.destination,
+            chainId:
+              input.context.action.payload.chainId,
+            actionHash:
+              input.context.action.actionHash,
+            requiredIntent:
+              input.context.requirement.intent,
+            attemptNumber:
+              input.context.attemptNumber ?? 1,
+            priorMinerIds:
+              input.context.priorMinerIds ?? [],
+            remainingBudgetRaw:
+              input.context.remainingBudgetRaw
+          },
+          rejection: {
+            code: "routed_intent_mismatch",
+            detail:
+              `expected ${input.context.requirement.intent}, returned ${returnedIntent}`
+          },
+          payment:
+            paymentRecord(
+              input.paymentLane,
+              input.settlement
+            ),
+          capturedAt: {
+            startedAt:
+              input.startedAt,
+            finishedAt
+          },
+          rawResponse:
+            input.body
+        }
+      );
+
+    throw new RetryableEvidenceAcquisitionError({
+      code: "routed_intent_mismatch",
+      detail:
+        `expected ${input.context.requirement.intent}, returned ${returnedIntent}`,
+      paymentAmountRaw:
+        input.paymentLane?.amount ?? "0",
+      artifactPath:
+        rejectionPath,
+      minerId:
+        servingMiner.id
+    });
+  }
+
+  if (
+    !servingMinerSupportsIntent(
+      servingMiner.record,
+      input.context.requirement.intent
+    )
+  ) {
     throw new Error(
-      `routed_intent_mismatch:${returnedIntent}`
+      `serving_miner_intent_mismatch:${servingMiner.slug}:${input.context.requirement.intent}`
     );
   }
 
