@@ -34,7 +34,7 @@ jobs:
           npm run vendor:verify
           git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
 
-      - name: Typecheck and test
+      - name: Typecheck, test, and build web UI
         run: npm run ci
 
       - name: Run deterministic v1 fuzz harness
