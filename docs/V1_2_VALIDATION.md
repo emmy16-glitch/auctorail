@@ -39,9 +39,7 @@ This code snapshot includes:
 - atomic generic Permit consumption/replay protection;
 - generic post-claim `AMBIGUOUS` handling.
 
-Documentation-only commits after this snapshot must still pass the complete CI pipeline before the v1.2 release/tag is frozen.
-
-## CI result
+## Code CI result
 
 **PASS**
 
@@ -104,30 +102,7 @@ x402 payments:                 0
 Blockchain writes:             0
 ```
 
-This suite includes attacks against:
-
-- risk-tier downgrade;
-- distinct-Miner requirement downgrade;
-- positive-vote threshold downgrade;
-- positive-confidence-floor downgrade;
-- disabling the high-confidence negative veto;
-- expanding bounded attempt limits;
-- duplicate-Miner / fake-independence counting;
-- insufficient positive quorum;
-- low-confidence positive votes;
-- high-confidence negative-veto suppression;
-- lower-confidence explicit negative suppression;
-- required-Intent deletion;
-- stale/missing evidence;
-- x402 network/asset/per-request-cap bypasses;
-- Evidence Bundle signal/raw-response tampering;
-- quorum-summary tampering;
-- Miner-identity substitution;
-- attempt collision/tampering;
-- valid-bundle substitution after Permit mint;
-- Permit forgery/expiry;
-- action mutation;
-- un-delegated Intents.
+This suite attacks risk/quorum threshold downgrade, fake provider diversity, low-confidence positive votes, negative-veto suppression, required-Intent deletion, stale/missing evidence, x402 provenance/cap bypasses, Evidence Bundle/quorum-summary/Miner-identity tampering, valid-bundle substitution, Permit forgery/expiry and action/Intent substitution.
 
 ### General authorization fuzz gate
 
@@ -143,29 +118,7 @@ x402 payments:            0
 Blockchain writes:        0
 ```
 
-This separate gate attacks:
-
-- valid action target/parameter/policy substitution;
-- stale action hash after semantic mutation;
-- Mandate agent/target/action-type/revocation substitution;
-- Mandate expiry while Permit is still alive;
-- self-consistent wrong-agent decision forgery;
-- self-consistent `ALLOW` inconsistent with checks;
-- stale decision hash after check mutation;
-- evidence-commitment substitution;
-- Permit signature/action/decision/evidence binding tampering;
-- Permit expiry;
-- disabled/unavailable execution kill switch;
-- Permit replay;
-- replay after an ambiguous external effect;
-- missing required adapter Intent coverage;
-- unrequested adapter Intent claims;
-- missing evidence commitment;
-- missing trusted checks;
-- undelegated action/Intent attempts before evidence acquisition;
-- adapter freeze-contract mismatch;
-- unregistered adapter;
-- malformed/non-finite action parameters.
+This separate gate attacks valid action target/parameter/policy substitution, Mandate identity/scope/lifecycle substitution, self-consistent forged decision semantics, evidence-commitment substitution, Permit binding/signature/expiry attacks, kill-switch failures, replay, ambiguous-effect replay, adapter evidence-coverage bypasses, undelegated evidence acquisition, adapter freeze mismatch and malformed action parameters.
 
 ## Combined deterministic security result
 
@@ -241,7 +194,7 @@ v1.2's same-Intent quorum and general authorization architecture are implemented
 
 ## Release gate
 
-Before creating the v1.2 tag, the exact final documentation-frozen SHA must pass:
+Before creating the v1.2 tag, the exact final SHA must pass:
 
 ```bash
 npm ci
@@ -254,18 +207,32 @@ npm run security:fuzz:general
 npm run vendor:verify
 ```
 
-GitHub CI must also pass the pinned native vendor recompilation/reproducibility check on that exact SHA.
+GitHub CI must also pass the pinned native vendor recompilation/reproducibility check.
 
-## Final documentation-frozen snapshot
+## Documentation-frozen release candidate
 
-Pending the final docs-only CI pass.
-
-When that run completes successfully, record here:
+All v1.2 architecture, developer, demo, resilience, security and validation documentation was present at:
 
 ```text
-Final SHA:     PENDING
-Final CI run:  PENDING
-Result:        PENDING
+Candidate SHA:    db49089d5f510ef2aa39ebf9e953fb5ba560c356
+Candidate CI run: 33724529325
+Result:           SUCCESS
 ```
 
-If any code or committed live evidence artifact changes after that point, every gate must run again and the release SHA must change. Existing v1.0/v1.1 tags must never be moved.
+That exact candidate passed:
+
+```text
+43/43 test files
+225/225 tests
+1100/1100 original fuzz
+3100/3100 adaptive + quorum fuzz
+3100/3100 general authorization fuzz
+0 unauthorized executions/authorizations
+0 uncaught fuzz errors
+0 production dependency vulnerabilities
+vendor native reproducibility PASS
+```
+
+This validation-record update itself is documentation-only and intentionally creates one later commit than the candidate SHA above. The **release tag must point to the resulting validation-record commit only after GitHub CI also passes on that exact final commit**.
+
+If any code or committed live evidence artifact changes after the final tag point, every gate must run again and a new release SHA/tag must be used. Existing v1.0/v1.1 tags must never be moved.
