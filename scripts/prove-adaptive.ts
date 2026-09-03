@@ -226,10 +226,10 @@ console.log(
   `The HIGH quorum may make up to ${maxRoutedRequests} provider-neutral Telegraph route attempt(s) before HOLD.`
 );
 console.log(
-  "Free schema-poor results are quarantined and may use another bounded route attempt; they never count as votes."
+  "Schema-poor results are quarantined and never count as votes. If x402 settlement is proven, their real cost still counts against the same precommitted evidence budget before another bounded route attempt is allowed."
 );
 console.log(
-  "A paid unusable result is not automatically retried, and paid transport ambiguity is never blindly retried."
+  "Paid transport ambiguity is never blindly retried."
 );
 console.log(
   "Each paid request must fit both the per-request x402 policy and the remaining total evidence budget."
@@ -282,7 +282,36 @@ console.log(
   "Accepted evidence spend raw:",
   collection.bundle.totalEvidenceSpendRaw
 );
+console.log(
+  "Actual acquisition spend raw:",
+  collection.actualEvidenceSpendRaw
+);
 console.log("");
+
+if (collection.rejectedAttempts.length > 0) {
+  console.log("REJECTED ROUTE ATTEMPTS");
+  console.log("-----------------------");
+  for (const rejected of collection.rejectedAttempts) {
+    console.log(
+      `${rejected.intent} / attempt ${rejected.attempt}`
+    );
+    console.log(
+      `  Miner ID: ${rejected.minerId ?? "(unknown)"}`
+    );
+    console.log(
+      `  rejection: ${rejected.code}`
+    );
+    console.log(
+      `  x402 raw spend: ${rejected.paymentAmountRaw}`
+    );
+    if (rejected.artifactPath) {
+      console.log(
+        `  artifact: ${rejected.artifactPath}`
+      );
+    }
+  }
+  console.log("");
+}
 
 for (const item of collection.bundle.items) {
   console.log(`${item.intent} / attempt ${item.attempt}`);
