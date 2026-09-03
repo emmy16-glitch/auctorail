@@ -38,27 +38,23 @@ const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 const SECRET = "proofgate-adaptive-fuzz-secret-" + "x".repeat(64);
 const CASES_PER_FAMILY = 100;
 
+type EvidenceOverride =
+  Omit<Partial<TelegraphEvidenceRecord>, "miner"> & {
+    miner?: Partial<TelegraphEvidenceRecord["miner"]>;
+  };
+
 function mutateHash(current: string | null): string {
   if (!current || !/^0x[0-9a-fA-F]{64}$/.test(current)) {
     return `0x${"f".repeat(64)}`;
   }
-
   const body = current.slice(2).toLowerCase();
   const replacement = body[0] === "0" ? "1" : "0";
-  const mutated = `0x${replacement}${body.slice(1)}`;
-
-  if (mutated.toLowerCase() === current.toLowerCase()) {
-    throw new Error("hash_mutation_not_distinct");
-  }
-
-  return mutated;
+  return `0x${replacement}${body.slice(1)}`;
 }
 
 function rehash(bundle: EvidenceBundle): void {
   const { bundleHash: _old, ...body } = bundle;
-  bundle.bundleHash = hashCanonicalPayload(
-    canonicalize(body)
-  );
+  bundle.bundleHash = hashCanonicalPayload(canonicalize(body));
 }
 
 function action(amountRaw = "7000000"): ActionContract {
@@ -105,7 +101,7 @@ function evidence(
   intent: AdaptiveEvidenceIntent,
   caseIndex: number,
   attempt: number,
-  overrides?: Partial<TelegraphEvidenceRecord>
+  override: EvidenceOverride = {}
 ): TelegraphEvidenceRecord {
   const intentCode =
     intent === "FRAUD_DETECTION"
@@ -117,15 +113,16 @@ function evidence(
     ((intentCode + attempt + caseIndex) % 15 + 1).toString(16);
   const rawDigit =
     ((intentCode + attempt + caseIndex + 7) % 15 + 1).toString(16);
+  const baseMiner = {
+    id: `${intent.toLowerCase()}-miner-${attempt}`,
+    name: `${intent} Miner ${attempt}`,
+    slug: `${intent.toLowerCase()}-miner-${attempt}`
+  };
 
   const base: TelegraphEvidenceRecord = {
     source: "telegraph",
     intent,
-    miner: {
-      id: `${intent.toLowerCase()}-miner-${attempt}`,
-      name: `${intent} Miner ${attempt}`,
-      slug: `${intent.toLowerCase()}-miner-${attempt}`
-    },
+    miner: baseMiner,
     subject: proposed.payload.destination,
     chainId: proposed.payload.chainId,
     label: intent === "FRAUD_DETECTION" ? "ALLOW" : null,
@@ -147,10 +144,10 @@ function evidence(
 
   return {
     ...base,
-    ...overrides,
+    ...override,
     miner: {
-      ...base.miner,
-      ...(overrides?.miner ?? {})
+      ...baseMiner,
+      ...(override.miner ?? {})
     }
   };
 }
@@ -159,49 +156,49 @@ interface BundleOptions {
   omit?: AdaptiveEvidenceIntent;
   paymentRaw?: string;
   sameFraudMiner?: boolean;
-  overrides?: Partial<
-    Record<AdaptiveEvidenceIntent, Partial<TelegraphEvidenceRecord>>
-  >;
-  fraudAttemptOverride?: (
-    attempt: number
-  ) => Partial<TelegraphEvidenceRecord> | undefined;
+  overrides?: Partial<Record<AdaptiveEvidenceIntent, EvidenceOverride>>;
+  fraudAttemptOverride?: (attempt: number) => EvidenceOverride | undefined;
 }
 
 function inputsFor(
   proposed: ActionContract,
   plan: AdaptiveEvidencePlan,
   caseIndex: number,
-  options?: BundleOptions
+  options: BundleOptions = {}
 ): EvidenceBundleItemInput[] {
   const inputs: EvidenceBundleItemInput[] = [];
 
   for (const requirement of plan.requirements) {
-    if (requirement.intent === options?.omit) {
-      continue;
-    }
+    if (requirement.intent === options.omit) continue;
 
     for (
       let attempt = 1;
       attempt <= requirement.quorum.minimumDistinctMiners;
       attempt++
     ) {
-      const genericOverride =
-        options?.overrides?.[requirement.intent];
-      const attemptOverride =
+      const generic = options.overrides?.[requirement.intent] ?? {};
+      const perAttempt =
         requirement.intent === "FRAUD_DETECTION"
-          ? options?.fraudAttemptOverride?.(attempt)
-          : undefined;
-      const sameMiner =
-        options?.sameFraudMiner &&
+          ? options.fraudAttemptOverride?.(attempt) ?? {}
+          : {};
+      const forcedMiner =
+        options.sameFraudMiner &&
         requirement.intent === "FRAUD_DETECTION"
           ? {
-              miner: {
-                id: "repeated-fraud-miner",
-                name: "Repeated Fraud Miner",
-                slug: "repeated-fraud-miner"
-              }
+              id: "repeated-fraud-miner",
+              name: "Repeated Fraud Miner",
+              slug: "repeated-fraud-miner"
             }
-          : {};
+          : undefined;
+
+      const override: EvidenceOverride = {
+        ...generic,
+        ...perAttempt,
+        miner: forcedMiner ?? {
+          ...(generic.miner ?? {}),
+          ...(perAttempt.miner ?? {})
+        }
+      };
 
       inputs.push({
         evidence: evidence(
@@ -209,19 +206,10 @@ function inputsFor(
           requirement.intent,
           caseIndex,
           attempt,
-          {
-            ...genericOverride,
-            ...attemptOverride,
-            ...sameMiner,
-            miner: {
-              ...(genericOverride?.miner ?? {}),
-              ...(attemptOverride?.miner ?? {}),
-              ...((sameMiner as { miner?: TelegraphEvidenceRecord["miner"] }).miner ?? {})
-            }
-          }
+          override
         ),
         attempt,
-        paymentAmountRaw: options?.paymentRaw ?? "10000",
+        paymentAmountRaw: options.paymentRaw ?? "10000",
         paymentNetwork: "eip155:84532",
         paymentAsset: BASE_SEPOLIA_USDC
       });
@@ -235,7 +223,7 @@ function bundle(
   proposed: ActionContract,
   plan: AdaptiveEvidencePlan,
   caseIndex = 0,
-  options?: BundleOptions
+  options: BundleOptions = {}
 ): EvidenceBundle {
   return createEvidenceBundle(
     proposed,
@@ -292,7 +280,7 @@ function decisionContained(
   ).decision !== "ALLOW";
 }
 
-function downgradedPlan(
+function changedPlan(
   mutate: (plan: AdaptiveEvidencePlan) => void
 ): AdaptiveEvidencePlan {
   const candidate = structuredClone(baselinePlan);
@@ -300,97 +288,47 @@ function downgradedPlan(
   return candidate;
 }
 
+const planAttack = (
+  id: string,
+  mutate: (plan: AdaptiveEvidencePlan) => void
+): Family => ({
+  id,
+  run(index) {
+    const plan = changedPlan(mutate);
+    return decisionContained(
+      baselineMandate,
+      baselineAction,
+      plan,
+      bundle(baselineAction, plan, index)
+    );
+  }
+});
+
 const families: Family[] = [
-  {
-    id: "risk_tier_downgrade",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.riskTier = "LOW";
-        candidate.requirements = [candidate.requirements[0]];
-        candidate.maxEvidenceSpendRaw = "15000";
-        candidate.maxEvidenceLatencyMs = 15000;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
-  {
-    id: "quorum_distinct_miner_downgrade",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.requirements[0].quorum.minimumDistinctMiners = 1;
-        candidate.requirements[0].quorum.minimumPositiveResults = 1;
-        candidate.requirements[0].quorum.maxAttempts = 1;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
-  {
-    id: "quorum_positive_vote_downgrade",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.requirements[0].quorum.minimumPositiveResults = 1;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
-  {
-    id: "quorum_confidence_floor_downgrade",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.requirements[0].quorum.minimumPositiveConfidence = 0.1;
-        candidate.requirements[0].minimumConfidence = 0.1;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
-  {
-    id: "quorum_negative_veto_disable",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.requirements[0].quorum.negativeVetoConfidence = null;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
-  {
-    id: "quorum_attempt_limit_expand",
-    run(index) {
-      const plan = downgradedPlan((candidate) => {
-        candidate.requirements[0].quorum.maxAttempts = 20;
-      });
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        plan,
-        bundle(baselineAction, plan, index)
-      );
-    }
-  },
+  planAttack("risk_tier_downgrade", (plan) => {
+    plan.riskTier = "LOW";
+    plan.requirements = [plan.requirements[0]];
+    plan.maxEvidenceSpendRaw = "15000";
+    plan.maxEvidenceLatencyMs = 15000;
+  }),
+  planAttack("quorum_distinct_miner_downgrade", (plan) => {
+    plan.requirements[0].quorum.minimumDistinctMiners = 1;
+    plan.requirements[0].quorum.minimumPositiveResults = 1;
+    plan.requirements[0].quorum.maxAttempts = 1;
+  }),
+  planAttack("quorum_positive_vote_downgrade", (plan) => {
+    plan.requirements[0].quorum.minimumPositiveResults = 1;
+  }),
+  planAttack("quorum_confidence_floor_downgrade", (plan) => {
+    plan.requirements[0].minimumConfidence = 0.1;
+    plan.requirements[0].quorum.minimumPositiveConfidence = 0.1;
+  }),
+  planAttack("quorum_negative_veto_disable", (plan) => {
+    plan.requirements[0].quorum.negativeVetoConfidence = null;
+  }),
+  planAttack("quorum_attempt_limit_expand", (plan) => {
+    plan.requirements[0].quorum.maxAttempts = 20;
+  }),
   {
     id: "duplicate_miner_sybil_count",
     run(index) {
@@ -398,12 +336,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(
-          baselineAction,
-          baselinePlan,
-          index,
-          { sameFraudMiner: true }
-        )
+        bundle(baselineAction, baselinePlan, index, {
+          sameFraudMiner: true
+        })
       );
     }
   },
@@ -432,9 +367,7 @@ const families: Family[] = [
         baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
           overrides: {
-            FRAUD_DETECTION: {
-              confidence: 0.79
-            }
+            FRAUD_DETECTION: { confidence: 0.79 }
           }
         })
       );
@@ -520,9 +453,7 @@ const families: Family[] = [
         baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
           overrides: {
-            ONCHAIN_TX_LOOKUP: {
-              label: "SUSPICIOUS"
-            }
+            ONCHAIN_TX_LOOKUP: { label: "SUSPICIOUS" }
           }
         })
       );
@@ -554,9 +485,7 @@ const families: Family[] = [
         baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
           overrides: {
-            ONCHAIN_TX_LOOKUP: {
-              signalHash: null
-            }
+            ONCHAIN_TX_LOOKUP: { signalHash: null }
           }
         })
       );
@@ -570,15 +499,13 @@ const families: Family[] = [
       );
       mutated.items[0].payment.network = "eip155:1";
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -590,15 +517,13 @@ const families: Family[] = [
       mutated.items[0].payment.asset =
         "0x1111111111111111111111111111111111111111";
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -612,15 +537,13 @@ const families: Family[] = [
         BigInt(mutated.totalEvidenceSpendRaw) + 1n
       );
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -631,34 +554,13 @@ const families: Family[] = [
       );
       mutated.items[0].signalHash =
         mutateHash(mutated.items[0].signalHash);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
-    }
-  },
-  {
-    id: "bundle_raw_response_hash_tamper",
-    run(index) {
-      const mutated = structuredClone(
-        bundle(baselineAction, baselinePlan, index)
-      );
-      mutated.items[1].rawResponseHash =
-        mutateHash(mutated.items[1].rawResponseHash);
-      return (
-        !verifyEvidenceBundle(mutated) &&
-        decisionContained(
-          baselineMandate,
-          baselineAction,
-          baselinePlan,
-          mutated
-        )
-      );
+        );
     }
   },
   {
@@ -667,19 +569,15 @@ const families: Family[] = [
       const mutated = structuredClone(
         bundle(baselineAction, baselinePlan, index)
       );
-      mutated.quorums[0].positiveMinerIds = [
-        "fabricated-miner"
-      ];
+      mutated.quorums[0].positiveMinerIds = ["fabricated-miner"];
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -690,15 +588,13 @@ const families: Family[] = [
       );
       mutated.items[0].miner.id = "substituted-miner";
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -709,15 +605,13 @@ const families: Family[] = [
       );
       mutated.items[1].attempt = mutated.items[0].attempt;
       rehash(mutated);
-      return (
-        !verifyEvidenceBundle(mutated) &&
+      return !verifyEvidenceBundle(mutated) &&
         decisionContained(
           baselineMandate,
           baselineAction,
           baselinePlan,
           mutated
-        )
-      );
+        );
     }
   },
   {
@@ -762,12 +656,13 @@ const families: Family[] = [
     run(index) {
       const forged = structuredClone(baselinePermit);
       const nibble = ((index % 15) + 1).toString(16);
-      const candidate = `0x${nibble.repeat(64)}`;
-      forged.signature =
-        candidate.toLowerCase() ===
+      forged.signature = `0x${nibble.repeat(64)}`;
+      if (
+        forged.signature.toLowerCase() ===
         baselinePermit.signature.toLowerCase()
-          ? `0x${"f".repeat(64)}`
-          : candidate;
+      ) {
+        forged.signature = `0x${"f".repeat(64)}`;
+      }
       return !verifyPermit(
         baselineMandate,
         forged,
@@ -797,9 +692,7 @@ const families: Family[] = [
     id: "action_semantic_mutation",
     run(index) {
       const mutated = structuredClone(baselineAction);
-      mutated.payload.amountRaw = String(
-        6_000_000 + index
-      );
+      mutated.payload.amountRaw = String(6_000_000 + index);
       return !verifyPermit(
         baselineMandate,
         baselinePermit,
@@ -821,6 +714,23 @@ const families: Family[] = [
         baselinePlan,
         baselineBundle
       );
+    }
+  },
+  {
+    id: "raw_response_hash_tamper",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[1].rawResponseHash =
+        mutateHash(mutated.items[1].rawResponseHash);
+      return !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        );
     }
   }
 ];
@@ -870,10 +780,7 @@ for (let index = 0; index < CASES_PER_FAMILY; index++) {
     SECRET,
     { now: new Date(NOW.getTime() + 1000 + index) }
   );
-
-  if (verification.valid) {
-    validControls++;
-  }
+  if (verification.valid) validControls++;
 }
 
 console.log("");
@@ -890,8 +797,7 @@ console.log("x402 payments: 0");
 console.log("Blockchain writes: 0");
 
 if (
-  adversarialContained !==
-    families.length * CASES_PER_FAMILY ||
+  adversarialContained !== families.length * CASES_PER_FAMILY ||
   validControls !== CASES_PER_FAMILY ||
   unauthorized !== 0 ||
   uncaught !== 0
