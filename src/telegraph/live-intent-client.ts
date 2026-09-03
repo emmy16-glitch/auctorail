@@ -41,9 +41,10 @@ import {
 import {
   createIntentVerificationPlan
 } from "./verification-planner.js";
-import type {
-  IntentAcquisitionContext,
-  IntentAcquisitionResult
+import {
+  RetryableEvidenceAcquisitionError,
+  type IntentAcquisitionContext,
+  type IntentAcquisitionResult
 } from "./adaptive-orchestrator.js";
 
 export interface LiveIntentClientOptions {
@@ -223,6 +224,64 @@ function saveEvidenceArtifact(
   return file;
 }
 
+function paymentRecord(
+  lane: X402PaymentLane | null,
+  settlement: X402SettlementResult | null
+): Record<string, unknown> {
+  return lane
+    ? {
+        network: lane.network,
+        asset: lane.asset,
+        amountRaw: lane.amount,
+        payTo: lane.payTo,
+        settlement
+      }
+    : {
+        mode: "free",
+        amountRaw: "0",
+        settlement: null
+      };
+}
+
+function routedQuery(
+  context: IntentAcquisitionContext
+): string {
+  const verificationPlan =
+    createIntentVerificationPlan(
+      context.action,
+      context.requirement.intent
+    );
+
+  const prior =
+    context.priorMinerIds ?? [];
+
+  if (prior.length === 0) {
+    return verificationPlan.query;
+  }
+
+  return [
+    verificationPlan.query,
+    `This is independent corroboration attempt ${context.attemptNumber ?? 1}.`,
+    `Previously served Miner IDs: ${prior.join(", ")}.`,
+    "When another capable Miner is available, prefer a different Miner for provider diversity regardless of the expected verdict. Do not change the requested Intent, subject, or chain."
+  ].join(" ");
+}
+
+function requestBody(
+  context: IntentAcquisitionContext
+): ReturnType<typeof buildTelegraphEngineAskBody> {
+  const verificationPlan =
+    createIntentVerificationPlan(
+      context.action,
+      context.requirement.intent
+    );
+
+  return buildTelegraphEngineAskBody({
+    ...verificationPlan,
+    query: routedQuery(context)
+  });
+}
+
 function parseSuccessfulEvidence(input: {
   body: Record<string, unknown>;
   context: IntentAcquisitionContext;
@@ -262,22 +321,6 @@ function parseSuccessfulEvidence(input: {
     );
   }
 
-  const binding =
-    validateExplicitEvidenceBinding({
-      result: input.body.result,
-      miner: servingMiner.record,
-      expectedSubject:
-        input.context.action.payload.destination,
-      expectedChainId:
-        input.context.action.payload.chainId
-    });
-
-  if (!binding.valid) {
-    throw new Error(
-      `${binding.code}:${binding.detail}`
-    );
-  }
-
   const returnedIntent =
     typeof input.body.intent === "string"
       ? input.body.intent
@@ -289,6 +332,95 @@ function parseSuccessfulEvidence(input: {
   ) {
     throw new Error(
       `routed_intent_mismatch:${returnedIntent}`
+    );
+  }
+
+  const binding =
+    validateExplicitEvidenceBinding({
+      result: input.body.result,
+      miner: servingMiner.record,
+      expectedSubject:
+        input.context.action.payload.destination,
+      expectedChainId:
+        input.context.action.payload.chainId
+    });
+
+  if (!binding.valid) {
+    const finishedAt =
+      new Date().toISOString();
+    const rejectionPath =
+      saveEvidenceArtifact(
+        path.join(
+          input.evidenceDirectory,
+          "rejected"
+        ),
+        returnedIntent,
+        {
+          schemaVersion:
+            "proofgate.telegraph-evidence-rejection.v1",
+          source: "telegraph",
+          intent: returnedIntent,
+          miner: {
+            id: servingMiner.id,
+            name: servingMiner.name,
+            slug: servingMiner.slug
+          },
+          request: {
+            endpoint: "/v1/ask",
+            target:
+              input.context.action.payload.destination,
+            chainId:
+              input.context.action.payload.chainId,
+            actionHash:
+              input.context.action.actionHash,
+            requiredIntent:
+              input.context.requirement.intent,
+            attemptNumber:
+              input.context.attemptNumber ?? 1,
+            priorMinerIds:
+              input.context.priorMinerIds ?? [],
+            remainingBudgetRaw:
+              input.context.remainingBudgetRaw
+          },
+          rejection: {
+            code: binding.code,
+            detail: binding.detail
+          },
+          payment:
+            paymentRecord(
+              input.paymentLane,
+              input.settlement
+            ),
+          capturedAt: {
+            startedAt:
+              input.startedAt,
+            finishedAt
+          },
+          rawResponse:
+            input.body
+        }
+      );
+
+    if (
+      binding.code ===
+        "evidence_subject_not_asserted" ||
+      binding.code ===
+        "evidence_chain_not_asserted"
+    ) {
+      throw new RetryableEvidenceAcquisitionError({
+        code: binding.code,
+        detail: binding.detail,
+        paymentAmountRaw:
+          input.paymentLane?.amount ?? "0",
+        artifactPath:
+          rejectionPath,
+        minerId:
+          servingMiner.id
+      });
+    }
+
+    throw new Error(
+      `${binding.code}:${binding.detail};artifact:${rejectionPath}`
     );
   }
 
@@ -324,6 +456,10 @@ function parseSuccessfulEvidence(input: {
         input.context.action.actionHash,
       requiredIntent:
         input.context.requirement.intent,
+      attemptNumber:
+        input.context.attemptNumber ?? 1,
+      priorMinerIds:
+        input.context.priorMinerIds ?? [],
       remainingBudgetRaw:
         input.context.remainingBudgetRaw
     },
@@ -353,24 +489,11 @@ function parseSuccessfulEvidence(input: {
           binding.chainField
       }
     },
-    payment: input.paymentLane
-      ? {
-          network:
-            input.paymentLane.network,
-          asset:
-            input.paymentLane.asset,
-          amountRaw:
-            input.paymentLane.amount,
-          payTo:
-            input.paymentLane.payTo,
-          settlement:
-            input.settlement
-        }
-      : {
-          mode: "free",
-          amountRaw: "0",
-          settlement: null
-        },
+    payment:
+      paymentRecord(
+        input.paymentLane,
+        input.settlement
+      ),
     capturedAt: {
       startedAt:
         input.startedAt,
@@ -447,12 +570,6 @@ export function createLiveIntentAcquirer(
       context.deadlineAt
     );
 
-    const verificationPlan =
-      createIntentVerificationPlan(
-        context.action,
-        context.requirement.intent
-      );
-
     const url =
       `${engineUrl}/v1/ask`;
     const init: RequestInit = {
@@ -463,9 +580,7 @@ export function createLiveIntentAcquirer(
       },
       body:
         JSON.stringify(
-          buildTelegraphEngineAskBody(
-            verificationPlan
-          )
+          requestBody(context)
         )
     };
 
