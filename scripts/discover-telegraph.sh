@@ -45,7 +45,18 @@ jq -n \
       $miner + {
         dispatcher_loaded: true,
         dispatcher_source: "miner-dispatcher/integrations",
-        endpoints: ($loaded.endpoints // []),
+        endpoints: (
+          ($loaded.endpoints // [])
+          | sort_by([
+              (.path // ""),
+              (
+                if ((.method // "") | ascii_upcase) == "POST" then 0
+                elif ((.method // "") | ascii_upcase) == "GET" then 1
+                else 2
+                end
+              )
+            ])
+        ),
         input_schema: ($loaded.input_schema // $miner.input_schema),
         output_schema: ($loaded.output_schema // $miner.output_schema),
         signal_mapping: (
@@ -120,3 +131,4 @@ done
 
 echo
 echo "Direct corroboration endpoints now come only from the live dispatcher integration catalog."
+echo "Duplicate semantic routes are ordered body-first (POST before GET) so direct Engine forwarding cannot accidentally choose a query-only variant when a JSON-body variant is declared."
