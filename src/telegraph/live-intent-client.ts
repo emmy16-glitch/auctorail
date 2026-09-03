@@ -874,6 +874,7 @@ export function createLiveIntentAcquirer(
 
     const paymentResponseHeader =
       response.headers.get("payment-response") ??
+      response.headers.get("x-payment-settle-response") ??
       response.headers.get("x-payment-response") ??
       null;
 
