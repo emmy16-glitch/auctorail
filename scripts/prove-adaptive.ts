@@ -170,6 +170,18 @@ const missingCoverage = missingIntentCoverage(
   miners,
   plan
 );
+const maxRoutedRequests =
+  plan.requirements.reduce(
+    (sum, requirement) =>
+      sum + requirement.quorum.maxAttempts,
+    0
+  );
+const minimumAcceptedEvidence =
+  plan.requirements.reduce(
+    (sum, requirement) =>
+      sum + requirement.quorum.minimumDistinctMiners,
+    0
+  );
 
 console.log("");
 console.log("PROOFGATE ADAPTIVE AUTHORIZATION");
@@ -181,10 +193,16 @@ console.log("Mandate hash:", mandate.mandateHash);
 console.log("Risk tier:", plan.riskTier);
 console.log("Evidence budget raw:", plan.maxEvidenceSpendRaw);
 console.log("Latency budget ms:", plan.maxEvidenceLatencyMs);
-console.log("Required Intents:");
-for (const item of coverage) {
+console.log("Required Intents / quorum:");
+for (const requirement of plan.requirements) {
+  const active = coverage.find(
+    (item) => item.intent === requirement.intent
+  )?.activeMinerCount ?? 0;
   console.log(
-    `  ${item.intent}: ${item.activeMinerCount} active Miner(s)`
+    `  ${requirement.intent}: ${active} active Miner(s); ` +
+    `need ${requirement.quorum.minimumDistinctMiners} distinct / ` +
+    `${requirement.quorum.minimumPositiveResults} positive; ` +
+    `max ${requirement.quorum.maxAttempts} route attempt(s)`
   );
 }
 console.log("");
@@ -202,13 +220,19 @@ if (missingCoverage.length > 0) {
 }
 
 console.log(
-  `About to make ${plan.requirements.length} provider-neutral Telegraph Intent request(s).`
+  `Minimum accepted evidence records: ${minimumAcceptedEvidence}.`
 );
 console.log(
-  "Each paid request is preflighted and must fit both the per-request x402 policy and the remaining total evidence budget."
+  `The HIGH quorum may make up to ${maxRoutedRequests} provider-neutral Telegraph route attempt(s) before HOLD.`
 );
 console.log(
-  "Paid transport ambiguity is never blindly retried."
+  "Free schema-poor results are quarantined and may use another bounded route attempt; they never count as votes."
+);
+console.log(
+  "A paid unusable result is not automatically retried, and paid transport ambiguity is never blindly retried."
+);
+console.log(
+  "Each paid request must fit both the per-request x402 policy and the remaining total evidence budget."
 );
 console.log("");
 
@@ -255,13 +279,13 @@ if (collection.error) {
 console.log("Bundle:", bundlePath);
 console.log("Bundle hash:", collection.bundle.bundleHash);
 console.log(
-  "Evidence spend raw:",
+  "Accepted evidence spend raw:",
   collection.bundle.totalEvidenceSpendRaw
 );
 console.log("");
 
 for (const item of collection.bundle.items) {
-  console.log(`${item.intent}`);
+  console.log(`${item.intent} / attempt ${item.attempt}`);
   console.log(
     `  routed Miner: ${item.miner.name} (${item.miner.id})`
   );
@@ -283,6 +307,32 @@ for (const item of collection.bundle.items) {
   console.log(
     `  x402 raw spend: ${item.payment.amountRaw}`
   );
+}
+
+console.log("");
+console.log("QUORUM SUMMARIES");
+console.log("----------------");
+for (const quorum of collection.bundle.quorums) {
+  console.log(`${quorum.intent}: ${quorum.status}`);
+  console.log(
+    `  distinct Miners: ${quorum.distinctMinerIds.length}/${quorum.rule.minimumDistinctMiners}`
+  );
+  console.log(
+    `  positive Miners: ${quorum.positiveMinerIds.length}/${quorum.rule.minimumPositiveResults}`
+  );
+  console.log(
+    `  distinct IDs: ${quorum.distinctMinerIds.join(", ") || "(none)"}`
+  );
+  if (quorum.duplicateMinerAttempts > 0) {
+    console.log(
+      `  duplicate Miner attempts: ${quorum.duplicateMinerAttempts}`
+    );
+  }
+  if (quorum.negativeMinerIds.length > 0) {
+    console.log(
+      `  negative Miner IDs: ${quorum.negativeMinerIds.join(", ")}`
+    );
+  }
 }
 
 console.log("");
