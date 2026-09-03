@@ -68,6 +68,16 @@ export class RetryableEvidenceAcquisitionError extends Error {
   }
 }
 
+export interface RejectedEvidenceAttempt {
+  intent: string;
+  attempt: number;
+  code: RetryableEvidenceAcquisitionCode;
+  detail: string;
+  paymentAmountRaw: string;
+  minerId?: string;
+  artifactPath?: string;
+}
+
 export type IntentAcquirer = (
   context: IntentAcquisitionContext
 ) => Promise<IntentAcquisitionResult>;
@@ -83,6 +93,8 @@ export interface AdaptiveCollectionResult {
     | "adaptive_evidence_negative_veto";
   bundle: EvidenceBundle;
   completedIntents: string[];
+  actualEvidenceSpendRaw: string;
+  rejectedAttempts: RejectedEvidenceAttempt[];
   failedIntent?: string;
   error?: string;
 }
@@ -118,6 +130,7 @@ export async function collectAdaptiveEvidence(
 
   const items: EvidenceBundleItemInput[] = [];
   const completedIntents: string[] = [];
+  const rejectedAttempts: RejectedEvidenceAttempt[] = [];
   let spent = 0n;
 
   const currentBundle = () =>
@@ -127,6 +140,13 @@ export async function collectAdaptiveEvidence(
       items,
       { now: clock() }
     );
+
+  const snapshot = () => ({
+    bundle: currentBundle(),
+    completedIntents: [...completedIntents],
+    actualEvidenceSpendRaw: spent.toString(),
+    rejectedAttempts: [...rejectedAttempts]
+  });
 
   for (const requirement of plan.requirements) {
     let satisfied = false;
@@ -142,8 +162,7 @@ export async function collectAdaptiveEvidence(
           status: "HOLD",
           code:
             "adaptive_evidence_deadline_exceeded",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent
         };
@@ -156,25 +175,33 @@ export async function collectAdaptiveEvidence(
           status: "HOLD",
           code:
             "adaptive_evidence_budget_exceeded",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent
         };
       }
 
-      const priorMinerIds = [
-        ...new Set(
-          items
-            .filter(
-              (item) =>
-                item.evidence.intent ===
-                requirement.intent
-            )
-            .map(
-              (item) => item.evidence.miner.id
-            )
+      const acceptedMinerIds = items
+        .filter(
+          (item) =>
+            item.evidence.intent ===
+            requirement.intent
         )
+        .map(
+          (item) => item.evidence.miner.id
+        );
+      const rejectedMinerIds = rejectedAttempts
+        .filter(
+          (item) =>
+            item.intent === requirement.intent &&
+            Boolean(item.minerId)
+        )
+        .map((item) => item.minerId!);
+      const priorMinerIds = [
+        ...new Set([
+          ...acceptedMinerIds,
+          ...rejectedMinerIds
+        ])
       ].sort();
 
       let result: IntentAcquisitionResult;
@@ -207,8 +234,7 @@ export async function collectAdaptiveEvidence(
               status: "HOLD",
               code:
                 "adaptive_evidence_acquisition_failed",
-              bundle: currentBundle(),
-              completedIntents,
+              ...snapshot(),
               failedIntent:
                 requirement.intent,
               error:
@@ -221,8 +247,7 @@ export async function collectAdaptiveEvidence(
               status: "HOLD",
               code:
                 "adaptive_evidence_budget_exceeded",
-              bundle: currentBundle(),
-              completedIntents,
+              ...snapshot(),
               failedIntent:
                 requirement.intent,
               error:
@@ -230,23 +255,28 @@ export async function collectAdaptiveEvidence(
             };
           }
 
-          // Safe automatic continuation is deliberately limited to free
-          // unusable responses. A completed paid response is not ambiguous,
-          // but automatically buying another response would be a new machine
-          // side effect. Stop instead of silently spending again.
-          if (retryPayment > 0n) {
-            return {
-              status: "HOLD",
-              code:
-                "adaptive_evidence_acquisition_failed",
-              bundle: currentBundle(),
-              completedIntents,
-              failedIntent:
-                requirement.intent,
-              error:
-                `paid_unusable_evidence_not_retried:${error.message}`
-            };
-          }
+          // The user authorized this bounded acquisition session up to the
+          // deterministic plan budget. A response with proven settlement but
+          // missing subject/chain assertion is unusable as authorization
+          // evidence, yet its cost is real. Account for that cost, quarantine
+          // the response, consume this route attempt, and continue only while
+          // the same precommitted deadline/attempt/spend limits still allow it.
+          // Transport ambiguity never reaches this branch and still stops.
+          spent += retryPayment;
+          rejectedAttempts.push({
+            intent: requirement.intent,
+            attempt: attemptNumber,
+            code: error.code,
+            detail: error.detail,
+            paymentAmountRaw:
+              retryPayment.toString(),
+            ...(error.minerId
+              ? { minerId: error.minerId }
+              : {}),
+            ...(error.artifactPath
+              ? { artifactPath: error.artifactPath }
+              : {})
+          });
 
           lastRetryableError = error.message;
           continue;
@@ -256,8 +286,7 @@ export async function collectAdaptiveEvidence(
           status: "HOLD",
           code:
             "adaptive_evidence_acquisition_failed",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent,
           error:
@@ -275,8 +304,7 @@ export async function collectAdaptiveEvidence(
           status: "HOLD",
           code:
             "adaptive_evidence_acquisition_failed",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent,
           error:
@@ -296,8 +324,7 @@ export async function collectAdaptiveEvidence(
           status: "HOLD",
           code:
             "adaptive_evidence_budget_exceeded",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent,
           error:
@@ -333,8 +360,7 @@ export async function collectAdaptiveEvidence(
           status: "BLOCKED",
           code:
             "adaptive_evidence_negative_veto",
-          bundle: currentBundle(),
-          completedIntents,
+          ...snapshot(),
           failedIntent:
             requirement.intent,
           error:
@@ -356,8 +382,7 @@ export async function collectAdaptiveEvidence(
         status: "HOLD",
         code:
           "adaptive_evidence_quorum_unsatisfied",
-        bundle: currentBundle(),
-        completedIntents,
+        ...snapshot(),
         failedIntent:
           requirement.intent,
         error:
@@ -372,7 +397,6 @@ export async function collectAdaptiveEvidence(
     status: "COMPLETE",
     code:
       "adaptive_evidence_complete",
-    bundle: currentBundle(),
-    completedIntents
+    ...snapshot()
   };
 }
