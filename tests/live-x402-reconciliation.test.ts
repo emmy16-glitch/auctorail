@@ -113,6 +113,12 @@ function settlementHeader(transaction: string): string {
   ).toString("base64");
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request
+    ? input.url
+    : String(input);
+}
+
 function hasPaymentSignature(
   input: RequestInfo | URL,
   init?: RequestInit
@@ -180,7 +186,7 @@ describe("live x402 settlement reconciliation", () => {
       init?: RequestInit
     ) => {
       calls++;
-      const url = String(input);
+      const url = requestUrl(input);
 
       if (!hasPaymentSignature(input, init)) {
         return new Response("", {
@@ -292,7 +298,7 @@ describe("live x402 settlement reconciliation", () => {
       input: RequestInfo | URL,
       init?: RequestInit
     ) => {
-      const url = String(input);
+      const url = requestUrl(input);
 
       if (!hasPaymentSignature(input, init)) {
         return new Response("", {
@@ -386,7 +392,7 @@ describe("live x402 settlement reconciliation", () => {
       input: RequestInfo | URL,
       init?: RequestInit
     ) => {
-      const url = String(input);
+      const url = requestUrl(input);
 
       if (!hasPaymentSignature(input, init)) {
         return new Response("", {
@@ -459,7 +465,7 @@ describe("live x402 settlement reconciliation", () => {
       input: RequestInfo | URL,
       init?: RequestInit
     ) => {
-      const url = String(input);
+      const url = requestUrl(input);
       seenUrls.push(url);
 
       if (!hasPaymentSignature(input, init)) {
