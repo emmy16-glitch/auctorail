@@ -9,6 +9,9 @@ import {
   type EvidenceBundle,
   type EvidenceBundleItemInput
 } from "./evidence-bundle.js";
+import {
+  summarizeEvidenceQuorum
+} from "./evidence-quorum.js";
 import type {
   AdaptiveEvidencePlan,
   AdaptiveEvidenceRequirement
@@ -18,6 +21,8 @@ export interface IntentAcquisitionContext {
   action: ActionContract;
   plan: AdaptiveEvidencePlan;
   requirement: AdaptiveEvidenceRequirement;
+  attemptNumber: number;
+  priorMinerIds: string[];
   remainingBudgetRaw: string;
   deadlineAt: string;
 }
@@ -34,12 +39,14 @@ export type IntentAcquirer = (
 ) => Promise<IntentAcquisitionResult>;
 
 export interface AdaptiveCollectionResult {
-  status: "COMPLETE" | "HOLD";
+  status: "COMPLETE" | "HOLD" | "BLOCKED";
   code:
     | "adaptive_evidence_complete"
     | "adaptive_evidence_deadline_exceeded"
     | "adaptive_evidence_budget_exceeded"
-    | "adaptive_evidence_acquisition_failed";
+    | "adaptive_evidence_acquisition_failed"
+    | "adaptive_evidence_quorum_unsatisfied"
+    | "adaptive_evidence_negative_veto";
   bundle: EvidenceBundle;
   completedIntents: string[];
   failedIntent?: string;
@@ -76,172 +83,199 @@ export async function collectAdaptiveEvidence(
   );
 
   const items: EvidenceBundleItemInput[] = [];
+  const completedIntents: string[] = [];
   let spent = 0n;
 
-  for (const requirement of plan.requirements) {
-    if (clock().getTime() > deadline.getTime()) {
-      return {
-        status: "HOLD",
-        code:
-          "adaptive_evidence_deadline_exceeded",
-        bundle:
-          createEvidenceBundle(
-            action,
-            plan,
-            items,
-            { now: clock() }
-          ),
-        completedIntents:
-          items.map(
-            (item) => item.evidence.intent
-          ),
-        failedIntent:
-          requirement.intent
-      };
-    }
-
-    const remaining = budget - spent;
-
-    if (remaining < 0n) {
-      return {
-        status: "HOLD",
-        code:
-          "adaptive_evidence_budget_exceeded",
-        bundle:
-          createEvidenceBundle(
-            action,
-            plan,
-            items,
-            { now: clock() }
-          ),
-        completedIntents:
-          items.map(
-            (item) => item.evidence.intent
-          ),
-        failedIntent:
-          requirement.intent
-      };
-    }
-
-    let result: IntentAcquisitionResult;
-
-    try {
-      result = await acquire({
-        action,
-        plan,
-        requirement,
-        remainingBudgetRaw:
-          remaining.toString(),
-        deadlineAt:
-          deadline.toISOString()
-      });
-    } catch (error: unknown) {
-      return {
-        status: "HOLD",
-        code:
-          "adaptive_evidence_acquisition_failed",
-        bundle:
-          createEvidenceBundle(
-            action,
-            plan,
-            items,
-            { now: clock() }
-          ),
-        completedIntents:
-          items.map(
-            (item) => item.evidence.intent
-          ),
-        failedIntent:
-          requirement.intent,
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error)
-      };
-    }
-
-    if (
-      result.evidence.intent !==
-      requirement.intent
-    ) {
-      return {
-        status: "HOLD",
-        code:
-          "adaptive_evidence_acquisition_failed",
-        bundle:
-          createEvidenceBundle(
-            action,
-            plan,
-            items,
-            { now: clock() }
-          ),
-        completedIntents:
-          items.map(
-            (item) => item.evidence.intent
-          ),
-        failedIntent:
-          requirement.intent,
-        error:
-          `routed_intent_mismatch:${result.evidence.intent}`
-      };
-    }
-
-    const paymentAmountRaw =
-      result.paymentAmountRaw ?? "0";
-    const payment = unsigned(
-      paymentAmountRaw,
-      "evidence_payment_amount"
+  const currentBundle = () =>
+    createEvidenceBundle(
+      action,
+      plan,
+      items,
+      { now: clock() }
     );
 
-    if (payment > remaining) {
+  for (const requirement of plan.requirements) {
+    let satisfied = false;
+
+    for (
+      let attemptNumber = 1;
+      attemptNumber <= requirement.quorum.maxAttempts;
+      attemptNumber++
+    ) {
+      if (clock().getTime() > deadline.getTime()) {
+        return {
+          status: "HOLD",
+          code:
+            "adaptive_evidence_deadline_exceeded",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent
+        };
+      }
+
+      const remaining = budget - spent;
+
+      if (remaining < 0n) {
+        return {
+          status: "HOLD",
+          code:
+            "adaptive_evidence_budget_exceeded",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent
+        };
+      }
+
+      const priorMinerIds = [
+        ...new Set(
+          items
+            .filter(
+              (item) =>
+                item.evidence.intent ===
+                requirement.intent
+            )
+            .map(
+              (item) => item.evidence.miner.id
+            )
+        )
+      ].sort();
+
+      let result: IntentAcquisitionResult;
+
+      try {
+        result = await acquire({
+          action,
+          plan,
+          requirement,
+          attemptNumber,
+          priorMinerIds,
+          remainingBudgetRaw:
+            remaining.toString(),
+          deadlineAt:
+            deadline.toISOString()
+        });
+      } catch (error: unknown) {
+        return {
+          status: "HOLD",
+          code:
+            "adaptive_evidence_acquisition_failed",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent,
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error)
+        };
+      }
+
+      if (
+        result.evidence.intent !==
+        requirement.intent
+      ) {
+        return {
+          status: "HOLD",
+          code:
+            "adaptive_evidence_acquisition_failed",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent,
+          error:
+            `routed_intent_mismatch:${result.evidence.intent}`
+        };
+      }
+
+      const paymentAmountRaw =
+        result.paymentAmountRaw ?? "0";
+      const payment = unsigned(
+        paymentAmountRaw,
+        "evidence_payment_amount"
+      );
+
+      if (payment > remaining) {
+        return {
+          status: "HOLD",
+          code:
+            "adaptive_evidence_budget_exceeded",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent,
+          error:
+            `payment ${payment} exceeds remaining evidence budget ${remaining}`
+        };
+      }
+
+      spent += payment;
+
+      items.push({
+        evidence: result.evidence,
+        attempt: attemptNumber,
+        paymentAmountRaw,
+        paymentNetwork:
+          result.paymentNetwork ?? null,
+        paymentAsset:
+          result.paymentAsset ?? null
+      });
+
+      const quorum = summarizeEvidenceQuorum(
+        requirement.intent,
+        requirement.quorum,
+        items.map((item) => ({
+          intent: item.evidence.intent,
+          miner: item.evidence.miner,
+          label: item.evidence.label,
+          confidence: item.evidence.confidence
+        }))
+      );
+
+      if (quorum.status === "VETOED") {
+        return {
+          status: "BLOCKED",
+          code:
+            "adaptive_evidence_negative_veto",
+          bundle: currentBundle(),
+          completedIntents,
+          failedIntent:
+            requirement.intent,
+          error:
+            `high_confidence_negative_veto:${quorum.vetoMinerIds.join(",")}`
+        };
+      }
+
+      if (quorum.status === "SATISFIED") {
+        completedIntents.push(
+          requirement.intent
+        );
+        satisfied = true;
+        break;
+      }
+    }
+
+    if (!satisfied) {
       return {
         status: "HOLD",
         code:
-          "adaptive_evidence_budget_exceeded",
-        bundle:
-          createEvidenceBundle(
-            action,
-            plan,
-            items,
-            { now: clock() }
-          ),
-        completedIntents:
-          items.map(
-            (item) => item.evidence.intent
-          ),
+          "adaptive_evidence_quorum_unsatisfied",
+        bundle: currentBundle(),
+        completedIntents,
         failedIntent:
           requirement.intent,
         error:
-          `payment ${payment} exceeds remaining evidence budget ${remaining}`
+          `distinct_miner_quorum_not_met:${requirement.intent}`
       };
     }
-
-    spent += payment;
-
-    items.push({
-      evidence: result.evidence,
-      paymentAmountRaw,
-      paymentNetwork:
-        result.paymentNetwork ?? null,
-      paymentAsset:
-        result.paymentAsset ?? null
-    });
   }
 
   return {
     status: "COMPLETE",
     code:
       "adaptive_evidence_complete",
-    bundle:
-      createEvidenceBundle(
-        action,
-        plan,
-        items,
-        { now: clock() }
-      ),
-    completedIntents:
-      items.map(
-        (item) => item.evidence.intent
-      )
+    bundle: currentBundle(),
+    completedIntents
   };
 }
