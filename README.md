@@ -138,13 +138,17 @@ For a paid Telegraph request, the adaptive client:
 
 1. freezes the protected action first;
 2. preflights Telegraph;
-3. parses the live x402 challenge;
+3. parses and validates the returned x402 challenge;
 4. validates the exact scheme/network/asset/payment recipient and per-request price policy;
 5. checks the quote against the **remaining aggregate risk-tier evidence budget before paying**;
-6. performs exactly one paid attempt;
-7. requires provable settlement;
-8. never blindly retries a paid request after transport ambiguity;
-9. accepts evidence only after serving-Miner/Intent/subject/chain verification.
+6. binds payment creation to that already validated 402 instead of allowing a second unpaid challenge to appear between validation and signing;
+7. independently revalidates the exact `PaymentRequirements` selected for the payment payload;
+8. performs one payment-bearing network attempt;
+9. requires provable settlement;
+10. never blindly retries a paid request after transport ambiguity;
+11. accepts evidence only after serving-Miner/Intent/subject/chain verification.
+
+This closes the challenge-swap / time-of-check-time-of-use gap that would otherwise exist if the x402 wrapper fetched a new 402 after ProofGate had validated an earlier one.
 
 The global per-request Telegraph proof ceiling remains `0.01 USDC` on Base Sepolia USDC.
 
@@ -300,19 +304,23 @@ ProofGate also implements:
 Current v1.1 hardened code validation has passed:
 
 ```text
-Vitest:                    42/42 test files
-Tests:                     210/210
-Original adversarial fuzz: 1100/1100 contained
-Original valid controls:   100/100
-Unauthorized executions:   0
-Adaptive fuzz:             1800/1800 contained
-Adaptive valid controls:   100/100
+Validated code SHA:         369f37d8e4f0aec020f58ae027d1e1810a6d5449
+GitHub Actions run:         33676884023
+Vitest:                     42/42 test files
+Tests:                      211/211
+Original adversarial fuzz:  1100/1100 contained
+Original valid controls:    100/100
+Unauthorized executions:    0
+Adaptive fuzz:              1800/1800 contained
+Adaptive valid controls:    100/100
 Unauthorized authorizations: 0
-Uncaught fuzz errors:      0
-Production npm audit:      0 vulnerabilities
+Uncaught fuzz errors:       0
+Production npm audit:       0 vulnerabilities
 ```
 
 Both fuzz harnesses are deterministic/offline: zero Telegraph requests, zero x402 payments and zero blockchain writes.
+
+The deterministic suite includes the x402 challenge-swap regression proving that payment creation uses the validated 402 and does not introduce a second unvalidated challenge before signing.
 
 Run locally:
 
@@ -366,6 +374,7 @@ docs/               architecture, integration, demo and live proof docs
 
 - `docs/ARCHITECTURE.md` — trust boundaries and invariants
 - `docs/DEVELOPER_INTEGRATION.md` — integrate another autonomous agent safely
+- `docs/V1_1_VALIDATION.md` — exact v1.1 hardened validation snapshot and security gates
 - `docs/HACKATHON_DEMO.md` — judge-facing demo sequence
 - `docs/LIVE_EXECUTION.md` — canonical real v1.0 transaction
 - `docs/V1_1_COMPETITIVE_PLAN.md` — v1.1 competitive design/status
