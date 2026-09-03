@@ -7,6 +7,9 @@ import {
   createAdaptiveEvidencePlan
 } from "../src/telegraph/adaptive-evidence-plan.js";
 import {
+  RetryableEvidenceAcquisitionError
+} from "../src/telegraph/adaptive-orchestrator.js";
+import {
   createLiveIntentAcquirer
 } from "../src/telegraph/live-intent-client.js";
 import {
@@ -100,6 +103,13 @@ function paymentRequiredHeader(
         }
       ]
     })
+  ).toString("base64");
+}
+
+function settlementHeader(transaction: string): string {
+  return Buffer.from(
+    JSON.stringify({ transaction }),
+    "utf8"
   ).toString("base64");
 }
 
@@ -393,10 +403,7 @@ describe("live x402 settlement reconciliation", () => {
         direct.slug,
         {
           "x-payment-settle-response":
-            Buffer.from(
-              JSON.stringify({ transaction: tx }),
-              "utf8"
-            ).toString("base64")
+            settlementHeader(tx)
         }
       );
     };
@@ -427,5 +434,118 @@ describe("live x402 settlement reconciliation", () => {
     expect(result.settlement?.transaction).toBe(tx);
     expect(result.evidence.miner.id).toBe("9002");
     expect(result.paymentAmountRaw).toBe("10000");
+  });
+
+  it("quarantines a proven-paid direct 404 as a bounded retryable provider failure", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const prior = fraudMiner({
+      id: "91001",
+      slug: "prior-auto-miner",
+      rank: 2
+    });
+    const direct = fraudMiner({
+      id: "9002",
+      slug: "direct-miner",
+      rank: 1
+    });
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "proofgate-direct-404-")
+    );
+    const tx = `0x${"8".repeat(64)}`;
+    const seenUrls: string[] = [];
+
+    const fetchImpl = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const url = String(input);
+      seenUrls.push(url);
+
+      if (!hasPaymentSignature(input, init)) {
+        return new Response("", {
+          status: 402,
+          headers: {
+            "payment-required":
+              paymentRequiredHeader(url)
+          }
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: "upstream endpoint not found"
+        }),
+        {
+          status: 404,
+          headers: {
+            "content-type": "application/json",
+            "x-payment-settle-response":
+              settlementHeader(tx)
+          }
+        }
+      );
+    };
+
+    try {
+      const acquire = createLiveIntentAcquirer({
+        privateKey: PRIVATE_KEY,
+        miners: [prior, direct],
+        evidenceDirectory: directory,
+        fetchImpl: fetchImpl as typeof fetch
+      });
+
+      let caught: unknown;
+      try {
+        await acquire({
+          action,
+          plan,
+          requirement: plan.requirements[0],
+          attemptNumber: 2,
+          priorMinerIds: ["91001"],
+          remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+          deadlineAt:
+            new Date(Date.now() + 30_000).toISOString()
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(
+        RetryableEvidenceAcquisitionError
+      );
+      if (!(caught instanceof RetryableEvidenceAcquisitionError)) {
+        throw caught;
+      }
+
+      expect(caught.code).toBe(
+        "direct_route_http_unavailable"
+      );
+      expect(caught.paymentAmountRaw).toBe("10000");
+      expect(caught.minerId).toBe("9002");
+      expect(caught.detail).toContain("http_404");
+      expect(seenUrls).toEqual([
+        expect.stringContaining("/v1/ask/9002"),
+        expect.stringContaining("/v1/ask/9002")
+      ]);
+      expect(caught.artifactPath).toBeTruthy();
+
+      const rejected = JSON.parse(
+        fs.readFileSync(caught.artifactPath!, "utf8")
+      );
+      expect(rejected.request.endpoint).toBe(
+        "/v1/ask/9002"
+      );
+      expect(rejected.rejection.code).toBe(
+        "direct_route_http_unavailable"
+      );
+      expect(rejected.payment.amountRaw).toBe("10000");
+      expect(rejected.payment.settlement.transaction).toBe(tx);
+    } finally {
+      fs.rmSync(directory, {
+        recursive: true,
+        force: true
+      });
+    }
   });
 });
