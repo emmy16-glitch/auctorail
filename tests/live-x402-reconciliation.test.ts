@@ -114,7 +114,11 @@ function hasPaymentSignature(
   );
 }
 
-function directResponse(action: ReturnType<typeof adaptiveAction>, slug: string) {
+function directResponse(
+  action: ReturnType<typeof adaptiveAction>,
+  slug: string,
+  headers?: Record<string, string>
+) {
   return new Response(
     JSON.stringify({
       intent: "FRAUD_DETECTION",
@@ -133,7 +137,8 @@ function directResponse(action: ReturnType<typeof adaptiveAction>, slug: string)
     {
       status: 200,
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
+        ...(headers ?? {})
       }
     }
   );
@@ -349,5 +354,78 @@ describe("live x402 settlement reconciliation", () => {
         force: true
       });
     }
+  });
+
+  it("uses Telegraph x-payment-settle-response directly and skips reconciliation when it reports a transaction", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const prior = fraudMiner({
+      id: "91001",
+      slug: "prior-auto-miner",
+      rank: 2
+    });
+    const direct = fraudMiner({
+      id: "9002",
+      slug: "direct-miner",
+      rank: 1
+    });
+    const tx = `0x${"9".repeat(64)}`;
+    let reconciliationCalls = 0;
+
+    const fetchImpl = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const url = String(input);
+
+      if (!hasPaymentSignature(input, init)) {
+        return new Response("", {
+          status: 402,
+          headers: {
+            "payment-required":
+              paymentRequiredHeader(url)
+          }
+        });
+      }
+
+      return directResponse(
+        action,
+        direct.slug,
+        {
+          "x-payment-settle-response":
+            Buffer.from(
+              JSON.stringify({ transaction: tx }),
+              "utf8"
+            ).toString("base64")
+        }
+      );
+    };
+
+    const acquire = createLiveIntentAcquirer({
+      privateKey: PRIVATE_KEY,
+      miners: [prior, direct],
+      fetchImpl: fetchImpl as typeof fetch,
+      settlementReconciler: async () => {
+        reconciliationCalls++;
+        return null;
+      }
+    });
+
+    const result = await acquire({
+      action,
+      plan,
+      requirement: plan.requirements[0],
+      attemptNumber: 2,
+      priorMinerIds: ["91001"],
+      remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+      deadlineAt:
+        new Date(Date.now() + 30_000).toISOString()
+    });
+
+    expect(reconciliationCalls).toBe(0);
+    expect(result.settlement?.code).toBe("payment_settled");
+    expect(result.settlement?.transaction).toBe(tx);
+    expect(result.evidence.miner.id).toBe("9002");
+    expect(result.paymentAmountRaw).toBe("10000");
   });
 });
