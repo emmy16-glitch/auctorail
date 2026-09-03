@@ -19,7 +19,8 @@ import {
   adaptiveAction,
   adaptiveContext,
   adaptiveEvidence,
-  adaptiveMandate
+  adaptiveMandate,
+  adaptiveQuorumInputs
 } from "./helpers/adaptive-fixtures.js";
 
 function paid(evidence: ReturnType<typeof adaptiveEvidence>, amountRaw = "10000") {
@@ -61,21 +62,20 @@ describe("payments.adaptive.v1", () => {
     ).toBe("ALLOW");
   });
 
-  it("HOLDs when a required medium-risk Intent is missing", () => {
+  it("HOLDs when a required medium-risk Intent is missing after fraud quorum is satisfied", () => {
     const action = adaptiveAction("3000000");
     const plan = createAdaptiveEvidencePlan(action);
     const mandate = adaptiveMandate();
+    const fraudOnly = adaptiveQuorumInputs(
+      action,
+      plan
+    ).filter(
+      (input) => input.evidence.intent === "FRAUD_DETECTION"
+    );
     const bundle = createEvidenceBundle(
       action,
       plan,
-      [
-        paid(
-          adaptiveEvidence(
-            action,
-            "FRAUD_DETECTION"
-          )
-        )
-      ],
+      fraudOnly,
       { now: ADAPTIVE_TEST_NOW }
     );
 
@@ -130,7 +130,7 @@ describe("payments.adaptive.v1", () => {
     );
   });
 
-  it("HOLDs stale or under-confidence required evidence", () => {
+  it("HOLDs stale or under-confidence quorum evidence", () => {
     const stale = adaptiveContext(
       "7000000",
       {
@@ -155,11 +155,11 @@ describe("payments.adaptive.v1", () => {
     );
     expect(decide(weak).decision).toBe("HOLD");
     expect(decide(weak).reason).toBe(
-      "adaptive_confidence_below_floor"
+      "adaptive_quorum_insufficient_positives"
     );
   });
 
-  it("BLOCKs total Telegraph evidence spend above the risk-tier budget", () => {
+  it("BLOCKs paid evidence above the approved per-request x402 ceiling", () => {
     const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
     const mandate = adaptiveMandate();
@@ -218,14 +218,23 @@ describe("payments.adaptive.v1", () => {
     );
   });
 
-  it("BLOCKs a caller-forged risk-tier downgrade plan", () => {
+  it("BLOCKs a caller-forged risk-tier or quorum downgrade plan", () => {
     const action = adaptiveAction("7000000");
     const expected = createAdaptiveEvidencePlan(action);
     const downgraded: AdaptiveEvidencePlan = {
       ...expected,
       riskTier: "LOW",
       requirements: [
-        expected.requirements[0]
+        {
+          ...expected.requirements[0],
+          quorum: {
+            minimumDistinctMiners: 1,
+            minimumPositiveResults: 1,
+            minimumPositiveConfidence: 0.70,
+            maxAttempts: 1,
+            negativeVetoConfidence: null
+          }
+        }
       ],
       maxEvidenceSpendRaw: "15000",
       maxEvidenceLatencyMs: 15000
