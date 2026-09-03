@@ -927,8 +927,60 @@ export function createLiveIntentAcquirer(
     }
 
     if (!response.ok) {
+      const bodyText = await response.text().catch(() => "");
+      const compactBody = bodyText
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 800);
+      const detail =
+        `http_${response.status}` +
+        (compactBody ? `:${compactBody}` : "");
+
+      if (
+        route.mode === "TELEGRAPH_DIRECT_CORROBORATION" &&
+        (response.status === 404 || response.status === 405)
+      ) {
+        const rejectedAt = new Date().toISOString();
+        const rejectionPath =
+          saveEvidenceArtifact(
+            path.join(evidenceDirectory, "rejected"),
+            context.requirement.intent,
+            {
+              schemaVersion:
+                "proofgate.telegraph-evidence-rejection.v1",
+              source: "telegraph",
+              intent: context.requirement.intent,
+              miner: {
+                id: String(route.expectedMiner.id),
+                name: route.expectedMiner.name,
+                slug: route.expectedMiner.slug
+              },
+              request: routeRequestRecord(route, context),
+              rejection: {
+                code: "direct_route_http_unavailable",
+                detail,
+                httpStatus: response.status
+              },
+              payment: paymentRecord(actualLane, settlement),
+              capturedAt: {
+                startedAt,
+                finishedAt: rejectedAt
+              },
+              rawResponse: compactBody || null
+            }
+          );
+
+        throw new RetryableEvidenceAcquisitionError({
+          code: "direct_route_http_unavailable",
+          detail,
+          paymentAmountRaw: actualLane.amount,
+          artifactPath: rejectionPath,
+          minerId: String(route.expectedMiner.id)
+        });
+      }
+
       throw new Error(
-        `adaptive_miner_failed_after_payment:http_${response.status}`
+        `adaptive_miner_failed_after_payment:${detail}`
       );
     }
 
