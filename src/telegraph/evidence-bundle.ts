@@ -289,7 +289,7 @@ export function createEvidenceBundle(
     throw new Error("adaptive_plan_action_mismatch");
   }
 
-  const maxEvidenceSpend = requireUnsignedInteger(
+  requireUnsignedInteger(
     plan.maxEvidenceSpendRaw,
     "max_evidence_spend"
   );
@@ -338,10 +338,6 @@ export function createEvidenceBundle(
       ),
     0n
   );
-
-  if (totalEvidenceSpend > maxEvidenceSpend) {
-    throw new Error("evidence_bundle_budget_exceeded");
-  }
 
   const quorums = plan.requirements.map(
     (requirement) =>
@@ -447,7 +443,7 @@ export function verifyEvidenceBundle(
       return false;
     }
 
-    const maxEvidenceSpend = requireUnsignedInteger(
+    requireUnsignedInteger(
       bundle.maxEvidenceSpendRaw,
       "max_evidence_spend"
     );
@@ -464,8 +460,7 @@ export function verifyEvidenceBundle(
 
     if (
       total.toString() !==
-      bundle.totalEvidenceSpendRaw ||
-      total > maxEvidenceSpend
+      bundle.totalEvidenceSpendRaw
     ) {
       return false;
     }
