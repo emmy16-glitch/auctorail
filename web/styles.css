@@ -13,9 +13,12 @@ header .header-actions { display: flex; align-items: center; gap: 22px; }
 nav { display: flex; align-self: stretch; align-items: center; gap: 40px; }
 nav a { color: #666b73; display: inline-flex; align-items: center; height: 100%; text-decoration: none; font-size: 15px; border-bottom: 2px solid transparent; }
 nav a.active { color: var(--text); border-bottom-color: var(--text); }
+:root[data-theme="dark"] nav a { color: #aeb7c7; }
 .theme-toggle { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--input); color: var(--muted); padding: 7px 10px; font-size: 12px; transition: border-color .2s ease, background .2s ease, color .2s ease; }
 .theme-toggle:hover { border-color: #7e9fe8; color: var(--text); }
 .theme-icon { font-size: 16px; line-height: 1; }
+:root[data-theme="dark"] h1, :root[data-theme="dark"] h2, :root[data-theme="dark"] .result-heading { color: var(--text); }
+:root[data-theme="dark"] .hero p, :root[data-theme="dark"] .card-title p, :root[data-theme="dark"] .action-area small, :root[data-theme="dark"] .result p { color: #b1bac8; }
 .page { width: min(1390px, 89vw); margin: 0 auto; padding: 64px 0 70px; }
 .hero { display: flex; justify-content: space-between; align-items: end; gap: 36px; margin-bottom: 22px; }
 h1 { margin: 0; font-size: clamp(42px, 4.1vw, 70px); line-height: 1.02; letter-spacing: -.065em; font-weight: 700; }
