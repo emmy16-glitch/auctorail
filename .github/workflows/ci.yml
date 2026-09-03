@@ -40,8 +40,11 @@ jobs:
       - name: Run deterministic v1 fuzz harness
         run: npm run security:fuzz
 
-      - name: Run adaptive evidence fuzz harness
+      - name: Run adaptive and quorum fuzz harness
         run: npm run security:fuzz:adaptive
+
+      - name: Run generic authorization fuzz harness
+        run: npm run security:fuzz:general
 
       - name: Audit production dependencies
         run: npm run audit:prod
