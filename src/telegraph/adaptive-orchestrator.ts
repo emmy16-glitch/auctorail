@@ -21,8 +21,8 @@ export interface IntentAcquisitionContext {
   action: ActionContract;
   plan: AdaptiveEvidencePlan;
   requirement: AdaptiveEvidenceRequirement;
-  attemptNumber: number;
-  priorMinerIds: string[];
+  attemptNumber?: number;
+  priorMinerIds?: string[];
   remainingBudgetRaw: string;
   deadlineAt: string;
 }
