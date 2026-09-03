@@ -1,7 +1,9 @@
 import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC,
+  canonicalize,
   createActionContract,
+  hashCanonicalPayload,
   type ActionContract
 } from "../src/core/action-contract.js";
 import {
@@ -26,7 +28,8 @@ import {
 import {
   createEvidenceBundle,
   verifyEvidenceBundle,
-  type EvidenceBundle
+  type EvidenceBundle,
+  type EvidenceBundleItemInput
 } from "../src/telegraph/evidence-bundle.js";
 
 const NOW = new Date("2026-09-02T18:00:00.000Z");
@@ -51,6 +54,13 @@ function mutateHash(current: string | null): string {
   return mutated;
 }
 
+function rehash(bundle: EvidenceBundle): void {
+  const { bundleHash: _old, ...body } = bundle;
+  bundle.bundleHash = hashCanonicalPayload(
+    canonicalize(body)
+  );
+}
+
 function action(amountRaw = "7000000"): ActionContract {
   return createActionContract({
     type: "payment",
@@ -58,7 +68,7 @@ function action(amountRaw = "7000000"): ActionContract {
     token: BASE_SEPOLIA_USDC,
     amountRaw,
     destination: VENDOR,
-    reason: "Adaptive fuzz baseline",
+    reason: "Adaptive quorum fuzz baseline",
     policyId: "payments.adaptive.v1",
     policyVersion: 1
   });
@@ -93,7 +103,8 @@ function mandate(
 function evidence(
   proposed: ActionContract,
   intent: AdaptiveEvidenceIntent,
-  index = 0,
+  caseIndex: number,
+  attempt: number,
   overrides?: Partial<TelegraphEvidenceRecord>
 ): TelegraphEvidenceRecord {
   const intentCode =
@@ -102,29 +113,36 @@ function evidence(
       : intent === "ONCHAIN_TX_LOOKUP"
         ? 2
         : 3;
-  const nibble = ((intentCode + index) % 15 + 1).toString(16);
-  const rawNibble = ((intentCode + index + 6) % 15 + 1).toString(16);
+  const signalDigit =
+    ((intentCode + attempt + caseIndex) % 15 + 1).toString(16);
+  const rawDigit =
+    ((intentCode + attempt + caseIndex + 7) % 15 + 1).toString(16);
 
   const base: TelegraphEvidenceRecord = {
     source: "telegraph",
     intent,
     miner: {
-      id: `fuzz-miner-${intentCode}`,
-      name: `Fuzz Miner ${intentCode}`,
-      slug: `fuzz-miner-${intentCode}`
+      id: `${intent.toLowerCase()}-miner-${attempt}`,
+      name: `${intent} Miner ${attempt}`,
+      slug: `${intent.toLowerCase()}-miner-${attempt}`
     },
     subject: proposed.payload.destination,
     chainId: proposed.payload.chainId,
     label: intent === "FRAUD_DETECTION" ? "ALLOW" : null,
     confidence: intent === "FRAUD_DETECTION" ? 0.91 : null,
-    reason: `fuzz-${index}`,
+    reason: `fuzz-${caseIndex}-${attempt}`,
     applicability: "APPLICABLE",
-    signalHash: `0x${nibble.repeat(64)}`,
+    signalHash: `0x${signalDigit.repeat(64)}`,
     costUsd: 0.01,
-    durationMs: 10 + index,
-    rawResponseHash: `0x${rawNibble.repeat(64)}`,
+    durationMs: 10 + attempt,
+    rawResponseHash: `0x${rawDigit.repeat(64)}`,
     receivedAt: "2026-09-02T17:59:30.000Z",
-    rawResponse: { synthetic: true, index, intent }
+    rawResponse: {
+      synthetic: true,
+      caseIndex,
+      attempt,
+      intent
+    }
   };
 
   return {
@@ -137,34 +155,92 @@ function evidence(
   };
 }
 
+interface BundleOptions {
+  omit?: AdaptiveEvidenceIntent;
+  paymentRaw?: string;
+  sameFraudMiner?: boolean;
+  overrides?: Partial<
+    Record<AdaptiveEvidenceIntent, Partial<TelegraphEvidenceRecord>>
+  >;
+  fraudAttemptOverride?: (
+    attempt: number
+  ) => Partial<TelegraphEvidenceRecord> | undefined;
+}
+
+function inputsFor(
+  proposed: ActionContract,
+  plan: AdaptiveEvidencePlan,
+  caseIndex: number,
+  options?: BundleOptions
+): EvidenceBundleItemInput[] {
+  const inputs: EvidenceBundleItemInput[] = [];
+
+  for (const requirement of plan.requirements) {
+    if (requirement.intent === options?.omit) {
+      continue;
+    }
+
+    for (
+      let attempt = 1;
+      attempt <= requirement.quorum.minimumDistinctMiners;
+      attempt++
+    ) {
+      const genericOverride =
+        options?.overrides?.[requirement.intent];
+      const attemptOverride =
+        requirement.intent === "FRAUD_DETECTION"
+          ? options?.fraudAttemptOverride?.(attempt)
+          : undefined;
+      const sameMiner =
+        options?.sameFraudMiner &&
+        requirement.intent === "FRAUD_DETECTION"
+          ? {
+              miner: {
+                id: "repeated-fraud-miner",
+                name: "Repeated Fraud Miner",
+                slug: "repeated-fraud-miner"
+              }
+            }
+          : {};
+
+      inputs.push({
+        evidence: evidence(
+          proposed,
+          requirement.intent,
+          caseIndex,
+          attempt,
+          {
+            ...genericOverride,
+            ...attemptOverride,
+            ...sameMiner,
+            miner: {
+              ...(genericOverride?.miner ?? {}),
+              ...(attemptOverride?.miner ?? {}),
+              ...((sameMiner as { miner?: TelegraphEvidenceRecord["miner"] }).miner ?? {})
+            }
+          }
+        ),
+        attempt,
+        paymentAmountRaw: options?.paymentRaw ?? "10000",
+        paymentNetwork: "eip155:84532",
+        paymentAsset: BASE_SEPOLIA_USDC
+      });
+    }
+  }
+
+  return inputs;
+}
+
 function bundle(
   proposed: ActionContract,
   plan: AdaptiveEvidencePlan,
-  index = 0,
-  options?: {
-    omit?: AdaptiveEvidenceIntent;
-    paymentRaw?: string;
-    overrides?: Partial<
-      Record<AdaptiveEvidenceIntent, Partial<TelegraphEvidenceRecord>>
-    >;
-  }
+  caseIndex = 0,
+  options?: BundleOptions
 ): EvidenceBundle {
   return createEvidenceBundle(
     proposed,
     plan,
-    plan.requirements
-      .filter((requirement) => requirement.intent !== options?.omit)
-      .map((requirement) => ({
-        evidence: evidence(
-          proposed,
-          requirement.intent,
-          index,
-          options?.overrides?.[requirement.intent]
-        ),
-        paymentAmountRaw: options?.paymentRaw ?? "10000",
-        paymentNetwork: "eip155:84532",
-        paymentAsset: BASE_SEPOLIA_USDC
-      })),
+    inputsFor(proposed, plan, caseIndex, options),
     { now: NOW }
   );
 }
@@ -182,7 +258,9 @@ const baselineDecision = evaluatePaymentsAdaptiveV1(
 );
 
 if (baselineDecision.decision !== "ALLOW") {
-  throw new Error(`adaptive_fuzz_baseline_not_allow:${baselineDecision.reason}`);
+  throw new Error(
+    `adaptive_fuzz_baseline_not_allow:${baselineDecision.reason}`
+  );
 }
 
 const baselinePermit = mintPermit(
@@ -214,22 +292,183 @@ function decisionContained(
   ).decision !== "ALLOW";
 }
 
+function downgradedPlan(
+  mutate: (plan: AdaptiveEvidencePlan) => void
+): AdaptiveEvidencePlan {
+  const candidate = structuredClone(baselinePlan);
+  mutate(candidate);
+  return candidate;
+}
+
 const families: Family[] = [
   {
     id: "risk_tier_downgrade",
     run(index) {
-      const downgraded: AdaptiveEvidencePlan = {
-        ...baselinePlan,
-        riskTier: "LOW",
-        requirements: [baselinePlan.requirements[0]],
-        maxEvidenceSpendRaw: "15000",
-        maxEvidenceLatencyMs: 15000
-      };
+      const plan = downgradedPlan((candidate) => {
+        candidate.riskTier = "LOW";
+        candidate.requirements = [candidate.requirements[0]];
+        candidate.maxEvidenceSpendRaw = "15000";
+        candidate.maxEvidenceLatencyMs = 15000;
+      });
       return decisionContained(
         baselineMandate,
         baselineAction,
-        downgraded,
-        bundle(baselineAction, downgraded, index)
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "quorum_distinct_miner_downgrade",
+    run(index) {
+      const plan = downgradedPlan((candidate) => {
+        candidate.requirements[0].quorum.minimumDistinctMiners = 1;
+        candidate.requirements[0].quorum.minimumPositiveResults = 1;
+        candidate.requirements[0].quorum.maxAttempts = 1;
+      });
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "quorum_positive_vote_downgrade",
+    run(index) {
+      const plan = downgradedPlan((candidate) => {
+        candidate.requirements[0].quorum.minimumPositiveResults = 1;
+      });
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "quorum_confidence_floor_downgrade",
+    run(index) {
+      const plan = downgradedPlan((candidate) => {
+        candidate.requirements[0].quorum.minimumPositiveConfidence = 0.1;
+        candidate.requirements[0].minimumConfidence = 0.1;
+      });
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "quorum_negative_veto_disable",
+    run(index) {
+      const plan = downgradedPlan((candidate) => {
+        candidate.requirements[0].quorum.negativeVetoConfidence = null;
+      });
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "quorum_attempt_limit_expand",
+    run(index) {
+      const plan = downgradedPlan((candidate) => {
+        candidate.requirements[0].quorum.maxAttempts = 20;
+      });
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        plan,
+        bundle(baselineAction, plan, index)
+      );
+    }
+  },
+  {
+    id: "duplicate_miner_sybil_count",
+    run(index) {
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        baselinePlan,
+        bundle(
+          baselineAction,
+          baselinePlan,
+          index,
+          { sameFraudMiner: true }
+        )
+      );
+    }
+  },
+  {
+    id: "insufficient_positive_quorum",
+    run(index) {
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        baselinePlan,
+        bundle(baselineAction, baselinePlan, index, {
+          fraudAttemptOverride: (attempt) =>
+            attempt === 1
+              ? undefined
+              : { label: null, confidence: null }
+        })
+      );
+    }
+  },
+  {
+    id: "below_confidence_positive_votes",
+    run(index) {
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        baselinePlan,
+        bundle(baselineAction, baselinePlan, index, {
+          overrides: {
+            FRAUD_DETECTION: {
+              confidence: 0.79
+            }
+          }
+        })
+      );
+    }
+  },
+  {
+    id: "high_confidence_negative_veto",
+    run(index) {
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        baselinePlan,
+        bundle(baselineAction, baselinePlan, index, {
+          fraudAttemptOverride: (attempt) =>
+            attempt === 2
+              ? { label: "MALICIOUS", confidence: 0.97 }
+              : undefined
+        })
+      );
+    }
+  },
+  {
+    id: "low_confidence_negative_still_blocks",
+    run(index) {
+      return decisionContained(
+        baselineMandate,
+        baselineAction,
+        baselinePlan,
+        bundle(baselineAction, baselinePlan, index, {
+          fraudAttemptOverride: (attempt) =>
+            attempt === 3
+              ? { label: "SUSPICIOUS", confidence: 0.40 }
+              : undefined
+        })
       );
     }
   },
@@ -240,7 +479,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(baselineAction, baselinePlan, index, { omit: "FRAUD_DETECTION" })
+        bundle(baselineAction, baselinePlan, index, {
+          omit: "FRAUD_DETECTION"
+        })
       );
     }
   },
@@ -251,7 +492,9 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(baselineAction, baselinePlan, index, { omit: "ONCHAIN_TX_LOOKUP" })
+        bundle(baselineAction, baselinePlan, index, {
+          omit: "ONCHAIN_TX_LOOKUP"
+        })
       );
     }
   },
@@ -262,19 +505,8 @@ const families: Family[] = [
         baselineMandate,
         baselineAction,
         baselinePlan,
-        bundle(baselineAction, baselinePlan, index, { omit: "WALLET_BALANCE_CHECK" })
-      );
-    }
-  },
-  {
-    id: "negative_fraud_signal",
-    run(index) {
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
-          overrides: { FRAUD_DETECTION: { label: "MALICIOUS" } }
+          omit: "WALLET_BALANCE_CHECK"
         })
       );
     }
@@ -287,20 +519,11 @@ const families: Family[] = [
         baselineAction,
         baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
-          overrides: { ONCHAIN_TX_LOOKUP: { label: "SUSPICIOUS" } }
-        })
-      );
-    }
-  },
-  {
-    id: "fraud_confidence_below_floor",
-    run(index) {
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        baselinePlan,
-        bundle(baselineAction, baselinePlan, index, {
-          overrides: { FRAUD_DETECTION: { confidence: 0.79 } }
+          overrides: {
+            ONCHAIN_TX_LOOKUP: {
+              label: "SUSPICIOUS"
+            }
+          }
         })
       );
     }
@@ -330,33 +553,84 @@ const families: Family[] = [
         baselineAction,
         baselinePlan,
         bundle(baselineAction, baselinePlan, index, {
-          overrides: { ONCHAIN_TX_LOOKUP: { signalHash: null } }
+          overrides: {
+            ONCHAIN_TX_LOOKUP: {
+              signalHash: null
+            }
+          }
         })
       );
     }
   },
   {
-    id: "evidence_budget_overrun",
+    id: "x402_wrong_network",
     run(index) {
-      return decisionContained(
-        baselineMandate,
-        baselineAction,
-        baselinePlan,
-        bundle(baselineAction, baselinePlan, index, { paymentRaw: "20000" })
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[0].payment.network = "eip155:1";
+      rehash(mutated);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
+      );
+    }
+  },
+  {
+    id: "x402_asset_swap",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[0].payment.asset =
+        "0x1111111111111111111111111111111111111111";
+      rehash(mutated);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
+      );
+    }
+  },
+  {
+    id: "x402_per_request_overcap",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[0].payment.amountRaw = "10001";
+      mutated.totalEvidenceSpendRaw = String(
+        BigInt(mutated.totalEvidenceSpendRaw) + 1n
+      );
+      rehash(mutated);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
       );
     }
   },
   {
     id: "bundle_signal_tamper",
     run(index) {
-      const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
-      const before = mutated.items[0].signalHash;
-      mutated.items[0].signalHash = mutateHash(before);
-
-      if (mutated.items[0].signalHash === before) {
-        throw new Error("signal_hash_mutation_not_distinct");
-      }
-
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[0].signalHash =
+        mutateHash(mutated.items[0].signalHash);
       return (
         !verifyEvidenceBundle(mutated) &&
         decisionContained(
@@ -371,14 +645,70 @@ const families: Family[] = [
   {
     id: "bundle_raw_response_hash_tamper",
     run(index) {
-      const mutated = structuredClone(bundle(baselineAction, baselinePlan, index));
-      const before = mutated.items[1].rawResponseHash;
-      mutated.items[1].rawResponseHash = mutateHash(before);
-
-      if (mutated.items[1].rawResponseHash === before) {
-        throw new Error("raw_response_hash_mutation_not_distinct");
-      }
-
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[1].rawResponseHash =
+        mutateHash(mutated.items[1].rawResponseHash);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
+      );
+    }
+  },
+  {
+    id: "quorum_summary_tamper",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.quorums[0].positiveMinerIds = [
+        "fabricated-miner"
+      ];
+      rehash(mutated);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
+      );
+    }
+  },
+  {
+    id: "quorum_miner_identity_substitution",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[0].miner.id = "substituted-miner";
+      rehash(mutated);
+      return (
+        !verifyEvidenceBundle(mutated) &&
+        decisionContained(
+          baselineMandate,
+          baselineAction,
+          baselinePlan,
+          mutated
+        )
+      );
+    }
+  },
+  {
+    id: "quorum_attempt_collision",
+    run(index) {
+      const mutated = structuredClone(
+        bundle(baselineAction, baselinePlan, index)
+      );
+      mutated.items[1].attempt = mutated.items[0].attempt;
+      rehash(mutated);
       return (
         !verifyEvidenceBundle(mutated) &&
         decisionContained(
@@ -397,7 +727,8 @@ const families: Family[] = [
         bundle(baselineAction, baselinePlan, index, {
           overrides: {
             FRAUD_DETECTION: {
-              subject: "0x1111111111111111111111111111111111111111"
+              subject:
+                "0x1111111111111111111111111111111111111111"
             }
           }
         });
@@ -410,7 +741,11 @@ const families: Family[] = [
   {
     id: "valid_bundle_substitution_after_permit",
     run(index) {
-      const alternate = bundle(baselineAction, baselinePlan, index + 20);
+      const alternate = bundle(
+        baselineAction,
+        baselinePlan,
+        index + 20
+      );
       return !verifyPermit(
         baselineMandate,
         baselinePermit,
@@ -429,7 +764,8 @@ const families: Family[] = [
       const nibble = ((index % 15) + 1).toString(16);
       const candidate = `0x${nibble.repeat(64)}`;
       forged.signature =
-        candidate.toLowerCase() === baselinePermit.signature.toLowerCase()
+        candidate.toLowerCase() ===
+        baselinePermit.signature.toLowerCase()
           ? `0x${"f".repeat(64)}`
           : candidate;
       return !verifyPermit(
@@ -461,7 +797,9 @@ const families: Family[] = [
     id: "action_semantic_mutation",
     run(index) {
       const mutated = structuredClone(baselineAction);
-      mutated.payload.amountRaw = String(6_000_000 + index);
+      mutated.payload.amountRaw = String(
+        6_000_000 + index
+      );
       return !verifyPermit(
         baselineMandate,
         baselinePermit,
@@ -492,10 +830,11 @@ let unauthorized = 0;
 let uncaught = 0;
 
 console.log("");
-console.log("PROOFGATE ADAPTIVE FUZZ");
-console.log("=======================");
+console.log("PROOFGATE ADAPTIVE + QUORUM FUZZ");
+console.log("================================");
 console.log("Mode: OFFLINE_DETERMINISTIC");
 console.log("Policy: payments.adaptive.v1");
+console.log("Provider diversity: DISTINCT_MINER_IDS");
 console.log("Mutation families:", families.length);
 console.log("Cases per family:", CASES_PER_FAMILY);
 console.log("");
@@ -531,22 +870,28 @@ for (let index = 0; index < CASES_PER_FAMILY; index++) {
     SECRET,
     { now: new Date(NOW.getTime() + 1000 + index) }
   );
-  if (verification.valid) validControls++;
+
+  if (verification.valid) {
+    validControls++;
+  }
 }
 
-const total = families.length * CASES_PER_FAMILY;
-
 console.log("");
-console.log(`Adversarial cases contained: ${adversarialContained}/${total}`);
-console.log(`Valid controls passed: ${validControls}/${CASES_PER_FAMILY}`);
-console.log("Unauthorized authorizations:", unauthorized);
-console.log("Uncaught errors:", uncaught);
+console.log(
+  `Adversarial cases contained: ${adversarialContained}/${families.length * CASES_PER_FAMILY}`
+);
+console.log(
+  `Valid controls passed: ${validControls}/${CASES_PER_FAMILY}`
+);
+console.log(`Unauthorized authorizations: ${unauthorized}`);
+console.log(`Uncaught errors: ${uncaught}`);
 console.log("Telegraph requests: 0");
 console.log("x402 payments: 0");
 console.log("Blockchain writes: 0");
 
 if (
-  adversarialContained !== total ||
+  adversarialContained !==
+    families.length * CASES_PER_FAMILY ||
   validControls !== CASES_PER_FAMILY ||
   unauthorized !== 0 ||
   uncaught !== 0
