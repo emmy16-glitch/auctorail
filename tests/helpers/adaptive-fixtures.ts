@@ -18,7 +18,8 @@ import {
 } from "../../src/telegraph/adaptive-evidence-plan.js";
 import {
   createEvidenceBundle,
-  type EvidenceBundle
+  type EvidenceBundle,
+  type EvidenceBundleItemInput
 } from "../../src/telegraph/evidence-bundle.js";
 
 export const ADAPTIVE_TEST_NOW =
@@ -138,6 +139,65 @@ export function adaptiveEvidence(
   };
 }
 
+export function adaptiveQuorumInputs(
+  action: ActionContract,
+  plan: AdaptiveEvidencePlan,
+  evidenceOverrides?: Partial<
+    Record<
+      AdaptiveEvidenceIntent,
+      Partial<TelegraphEvidenceRecord>
+    >
+  >
+): EvidenceBundleItemInput[] {
+  const inputs: EvidenceBundleItemInput[] = [];
+
+  for (const requirement of plan.requirements) {
+    for (
+      let attempt = 1;
+      attempt <= requirement.quorum.minimumDistinctMiners;
+      attempt++
+    ) {
+      const hashDigit =
+        ((inputs.length + 1) % 9) + 1;
+      const rawDigit =
+        ((inputs.length + 5) % 9) + 1;
+      const baseOverride =
+        evidenceOverrides?.[requirement.intent] ?? {};
+
+      inputs.push({
+        evidence: adaptiveEvidence(
+          action,
+          requirement.intent,
+          {
+            ...baseOverride,
+            miner: {
+              id:
+                `${requirement.intent.toLowerCase()}-miner-${attempt}`,
+              name:
+                `${requirement.intent} Miner ${attempt}`,
+              slug:
+                `${requirement.intent.toLowerCase()}-miner-${attempt}`,
+              ...(baseOverride.miner ?? {})
+            },
+            signalHash:
+              baseOverride.signalHash ??
+              `0x${String(hashDigit).repeat(64)}`,
+            rawResponseHash:
+              baseOverride.rawResponseHash ??
+              `0x${String(rawDigit).repeat(64)}`
+          }
+        ),
+        attempt,
+        paymentAmountRaw: "10000",
+        paymentNetwork: "eip155:84532",
+        paymentAsset: BASE_SEPOLIA_USDC
+      });
+    }
+  }
+
+  return inputs;
+}
+
 export function adaptiveContext(
   amountRaw = "7000000",
   evidenceOverrides?: Partial<
@@ -159,18 +219,11 @@ export function adaptiveContext(
   const bundle = createEvidenceBundle(
     action,
     plan,
-    plan.requirements.map((requirement) => ({
-      evidence: adaptiveEvidence(
-        action,
-        requirement.intent,
-        evidenceOverrides?.[
-          requirement.intent
-        ]
-      ),
-      paymentAmountRaw: "10000",
-      paymentNetwork: "eip155:84532",
-      paymentAsset: BASE_SEPOLIA_USDC
-    })),
+    adaptiveQuorumInputs(
+      action,
+      plan,
+      evidenceOverrides
+    ),
     { now: ADAPTIVE_TEST_NOW }
   );
 
