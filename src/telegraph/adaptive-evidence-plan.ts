@@ -1,6 +1,9 @@
 import type {
   ActionContract
 } from "../core/action-contract.js";
+import type {
+  EvidenceQuorumRule
+} from "./evidence-quorum.js";
 
 export const ADAPTIVE_EVIDENCE_INTENTS = [
   "FRAUD_DETECTION",
@@ -23,6 +26,7 @@ export interface AdaptiveEvidenceRequirement {
   requireSignalHash: true;
   requireExactSubject: true;
   requireExactChain: true;
+  quorum: EvidenceQuorumRule;
 }
 
 export interface AdaptiveEvidencePlan {
@@ -44,6 +48,8 @@ export interface AdaptiveEvidencePlan {
     "EXPLICIT_NEGATIVE_BLOCKS";
   missingEvidenceRule:
     "HOLD";
+  providerDiversityRule:
+    "DISTINCT_MINER_IDS";
 }
 
 const ONE_USDC =
@@ -52,9 +58,24 @@ const ONE_USDC =
 const FIVE_USDC =
   5_000_000n;
 
+function quorum(
+  minimumDistinctMiners: number,
+  minimumPositiveResults: number,
+  maxAttempts: number,
+  negativeVetoConfidence: number | null
+): EvidenceQuorumRule {
+  return {
+    minimumDistinctMiners,
+    minimumPositiveResults,
+    maxAttempts,
+    negativeVetoConfidence
+  };
+}
+
 function requirement(
   intent: AdaptiveEvidenceIntent,
-  minimumConfidence?: number
+  minimumConfidence: number | undefined,
+  evidenceQuorum: EvidenceQuorumRule
 ): AdaptiveEvidenceRequirement {
   return {
     intent,
@@ -64,7 +85,8 @@ function requirement(
     requireApplicable: true,
     requireSignalHash: true,
     requireExactSubject: true,
-    requireExactChain: true
+    requireExactChain: true,
+    quorum: evidenceQuorum
   };
 }
 
@@ -102,29 +124,38 @@ export function createAdaptiveEvidencePlan(
       ? [
           requirement(
             "FRAUD_DETECTION",
-            0.70
+            0.70,
+            quorum(1, 1, 1, null)
           )
         ]
       : riskTier === "MEDIUM"
         ? [
             requirement(
               "FRAUD_DETECTION",
-              0.75
+              0.75,
+              quorum(2, 2, 4, 0.90)
             ),
             requirement(
-              "ONCHAIN_TX_LOOKUP"
+              "ONCHAIN_TX_LOOKUP",
+              undefined,
+              quorum(1, 0, 1, null)
             )
           ]
         : [
             requirement(
               "FRAUD_DETECTION",
-              0.80
+              0.80,
+              quorum(3, 2, 5, 0.90)
             ),
             requirement(
-              "ONCHAIN_TX_LOOKUP"
+              "ONCHAIN_TX_LOOKUP",
+              undefined,
+              quorum(1, 0, 1, null)
             ),
             requirement(
-              "WALLET_BALANCE_CHECK"
+              "WALLET_BALANCE_CHECK",
+              undefined,
+              quorum(1, 0, 1, null)
             )
           ];
 
@@ -132,15 +163,15 @@ export function createAdaptiveEvidencePlan(
     riskTier === "LOW"
       ? "15000"
       : riskTier === "MEDIUM"
-        ? "30000"
-        : "50000";
+        ? "50000"
+        : "70000";
 
   const maxEvidenceLatencyMs =
     riskTier === "LOW"
       ? 15_000
       : riskTier === "MEDIUM"
-        ? 25_000
-        : 40_000;
+        ? 35_000
+        : 60_000;
 
   return {
     schemaVersion:
@@ -164,6 +195,8 @@ export function createAdaptiveEvidencePlan(
     conflictRule:
       "EXPLICIT_NEGATIVE_BLOCKS",
     missingEvidenceRule:
-      "HOLD"
+      "HOLD",
+    providerDiversityRule:
+      "DISTINCT_MINER_IDS"
   };
 }
