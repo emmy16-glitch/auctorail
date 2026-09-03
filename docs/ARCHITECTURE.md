@@ -2,438 +2,451 @@
 
 ## Product definition
 
-ProofGate is a **risk-adaptive pre-execution authorization firewall for autonomous agents**.
-
-It separates an agent's ability to decide from its ability to create a consequential external effect.
+ProofGate is a **pre-execution authorization firewall for autonomous agents**.
 
 > **Agent confidence is not permission to act.**
 
+The system separates reasoning, evidence and authority:
+
 ```text
-MANDATE
-  → PROPOSE
-  → FREEZE ACTION
-  → DERIVE RISK
-  → ROUTE TELEGRAPH INTENTS
-  → EVIDENCE BUNDLE
-  → DETERMINISTIC POLICY
-  → ONE-USE PERMIT
-  → CONTROLLED EXECUTION
-  → PROOF RECEIPT
+PRINCIPAL MANDATE
+      ↓
+AGENT PROPOSAL
+      ↓
+CANONICAL ACTION
+      ↓
+CONSEQUENCE / EVIDENCE PLAN
+      ↓
+TELEGRAPH ROUTING + MINER DIVERSITY
+      ↓
+EVIDENCE COMMITMENT
+      ↓
+DETERMINISTIC DECISION
+      ↓
+SIGNED ONE-USE PERMIT
+      ↓
+CONTROLLED EXECUTOR
+      ↓
+EXTERNAL EFFECT / RECEIPT
 ```
 
-The system is fail-closed. Missing, stale, mismatched, ambiguous, under-confidence, uncertain, over-budget or explicitly negative proof never becomes authority.
+The core invariant is:
+
+**The component that proposes an action must not be able to create, expand or bypass the authority required to execute it.**
 
 ## 1. Trust boundaries
 
-ProofGate separates the following roles.
-
-### Principal / Mandate authority
-Defines standing authority before the agent acts and can revoke it.
+### Principal
+Creates standing authority before the agent acts. The principal decides what action types, targets, policy versions and evidence classes the agent may use.
 
 ### Autonomous agent
-May reason and propose. It cannot expand its Mandate, choose its authoritative risk tier, remove required Intents, lower confidence floors, increase verification budgets, mint a permit or bypass the executor.
+May reason and propose. It does not own the authoritative Mandate, evidence acquisition, Permit signer, replay store, kill switch or protected executor.
 
-### Trusted evidence-acquisition boundary
-Owns live Telegraph acquisition. It sends Intent requests, validates serving-Miner/Intent/subject/chain provenance, validates x402 payment constraints and settlement, normalizes the response, and constructs Evidence Bundles.
+### Telegraph / Miners
+Supply external intelligence. A Miner result is evidence, not permission.
 
-### Telegraph
-Routes external intelligence requests to Miners. Telegraph/Miners produce evidence; they do not mint ProofGate permission.
+### Trusted evidence boundary
+Owns live Telegraph/x402 requests, validates serving-Miner identity and evidence provenance, and creates the cryptographic evidence commitment used by policy.
 
-### Deterministic policy
-Evaluates the exact Mandate + Action Contract + required evidence and returns `ALLOW`, `HOLD` or `BLOCK`.
+### ProofGate policy / decision authority
+Returns `ALLOW`, `HOLD` or `BLOCK` deterministically from committed authority + action + evidence context.
 
 ### Permit authority
-Cryptographically commits an `ALLOW` decision to one exact Mandate, action and evidence context for a short time.
-
-### Shared state authority
-Provides replay, durable execution, Mandate-lifecycle and cumulative-spend state when used in production-oriented deployments.
+Signs a short-lived single-use capability bound to one exact successful decision.
 
 ### Controlled executor
-Is the final enforcement boundary immediately before the external side effect. The agent must not have another direct route to the protected tool/wallet.
+Re-verifies authority immediately before the external effect, claims the Permit atomically, and is the only supported path to the protected tool.
 
-## 2. Standing Mandate
+### Trusted Action Adapter
+In the generic v1.2 core, an adapter is trusted deployment code that knows how to freeze one external action, define required evidence, evaluate trusted evidence and execute the frozen action. It is **not** an untrusted plugin sandbox.
 
-`proofgate.mandate.v1` defines the envelope within which an agent may act, including:
+## 2. Two action models
+
+ProofGate preserves the proven payment path and adds a general action path.
+
+### Payment Action Contract — v1
+
+The original payment contract remains deliberately narrow:
+
+- Base Sepolia (`84532`)
+- canonical Base Sepolia USDC
+- positive minor-unit amount
+- exact EVM destination
+- reason
+- policy ID/version
+
+Its canonical semantic payload is SHA-256 committed as `actionHash`.
+
+### General Action Envelope — v2
+
+`proofgate.action.v2` allows the authorization core to protect non-payment actions without pretending all tools share payment semantics.
+
+A general action commits:
+
+- namespaced action `type`, for example `github.merge`
+- exact `target`
+- bounded JSON-safe `parameters`
+- namespaced policy ID/version
+- creation timestamp
+- canonical payload
+- `actionHash`
+
+The constructor rejects malformed/non-finite/deep/oversized parameter structures. `verifyGeneralActionIntegrity()` recomputes the canonical payload/hash rather than trusting derived caller fields.
+
+Changing type, target, parameters or policy creates a different action hash and requires fresh authorization.
+
+## 3. Two Mandate models
+
+### `proofgate.mandate.v1`
+
+Used by the payment path. It binds principal/agent identity, payment scope, destinations, amount limits, required Intents, policy and lifecycle.
+
+### `proofgate.mandate.v2`
+
+Used by the general action core. It commits:
 
 - mandate/principal/agent identity
 - allowed action types
-- allowed chains/assets/destinations
-- maximum per-action amount
-- optional maximum cumulative amount
-- allowed/required Telegraph Intents
+- exact allowed targets
+- required/delegated evidence Intents
 - policy ID/version
-- lifecycle state
-- issue/expiry timestamps
+- status
+- issued/expiry times
 - version
+- canonical `mandateHash`
 
-The Mandate is canonicalized and SHA-256 committed as `mandateHash`.
+A general action outside type/target/policy scope is blocked **before trusted evidence acquisition**, so an undelegated agent cannot spend the principal's Telegraph/x402 evidence budget.
 
-Lifecycle states are `ACTIVE`, `REVOKED` and `EXPIRED`.
+The Mandate is evaluated again at Permit mint and again immediately before generic execution. A Permit that is still temporally valid cannot outlive a Mandate that has expired or become invalid.
 
-For adaptive authorization, every risk-derived Intent must also be delegated by the Mandate. ProofGate cannot silently introduce a new evidence class outside the principal's authority model.
+## 4. Consequence-adaptive payment evidence
 
-## 3. Exact Action Contract
+`payments.adaptive.v1` derives its evidence plan from the frozen payment amount.
 
-The proposal is normalized before external evidence is requested.
+| Tier | Amount | FRAUD_DETECTION quorum | Other Intents | Fraud positive confidence | Max evidence spend | Deadline |
+| --- | ---: | --- | --- | ---: | ---: | ---: |
+| LOW | `<=1 USDC` | 1 distinct / 1 positive | none | `>=0.70` | `0.015 USDC` | `15s` |
+| MEDIUM | `>1 <=5 USDC` | 2 distinct / 2 positive, max 4 attempts | `ONCHAIN_TX_LOOKUP` | `>=0.75` | `0.050 USDC` | `35s` |
+| HIGH | `>5 <=10 USDC` | 3 distinct / 2 positive, max 5 attempts | `ONCHAIN_TX_LOOKUP`, `WALLET_BALANCE_CHECK` | `>=0.80` | `0.070 USDC` | `60s` |
 
-Current protected scope:
+MEDIUM/HIGH fraud quorum has a `0.90` high-confidence early negative veto.
 
-- action: payment
-- network: Base Sepolia (`84532`)
-- asset: canonical Base Sepolia USDC
-- positive amount in minor units
-- exact EVM destination
-- bounded reason
-- explicit policy ID/version
+The caller does not supply the authoritative risk tier or quorum thresholds. Policy recreates the complete expected plan from the exact action and requires canonical equality.
 
-The normalized semantic payload is hashed as `actionHash`.
+## 5. Horizontal and vertical evidence diversity
 
-```text
-1 USDC → Vendor A = hash A
-7 USDC → Vendor A = hash B
-1 USDC → Vendor B = hash C
-```
+### Vertical diversity
 
-Permit verification recomputes this semantic hash; it does not trust a stale caller-supplied derived hash.
-
-## 4. Consequence-adaptive evidence plan
-
-`payments.adaptive.v1` derives the security plan from the exact action.
-
-| Tier | Amount | Required Intents | Fraud confidence | Evidence budget | Deadline |
-| --- | ---: | --- | ---: | ---: | ---: |
-| LOW | `<=1 USDC` | `FRAUD_DETECTION` | `>=0.70` | `0.015 USDC` | `15 s` |
-| MEDIUM | `>1 <=5 USDC` | `FRAUD_DETECTION`, `ONCHAIN_TX_LOOKUP` | `>=0.75` | `0.030 USDC` | `25 s` |
-| HIGH | `>5 <=10 USDC` | `FRAUD_DETECTION`, `ONCHAIN_TX_LOOKUP`, `WALLET_BALANCE_CHECK` | `>=0.80` | `0.050 USDC` | `40 s` |
-
-The caller does not supply the authoritative tier. Policy recreates the expected plan and requires an exact canonical match. A HIGH action paired with a caller-forged LOW plan is `BLOCK`.
-
-## 5. Telegraph Intent routing
-
-Adaptive acquisition is Intent-first and provider-neutral.
-
-ProofGate requests a capability such as:
+Different questions are asked:
 
 ```text
-Intent: FRAUD_DETECTION
-Exact subject: 0x...
-Exact chain: 84532
+FRAUD_DETECTION
++ ONCHAIN_TX_LOOKUP
++ WALLET_BALANCE_CHECK
 ```
 
-It then verifies the Miner Telegraph actually served:
+### Horizontal diversity
 
-- resolvable Miner identity
-- active Miner status
-- support for the exact requested Intent
-- explicit exact-subject evidence binding
-- explicit exact-chain evidence binding
+The same critical question may require multiple independent serving Miners:
 
-The current live Miner registry is checked before acquisition. Zero active coverage for a required Intent fails closed.
+```text
+FRAUD_DETECTION
+   ├─ route → Miner A
+   ├─ route → Miner B
+   └─ route → Miner C
+```
 
-Request metadata is not substituted for returned evidence bindings.
+Provider independence is measured by **distinct Miner ID**, not request count.
 
-## 6. x402 intelligence-purchase boundary
+If Telegraph returns the same Miner repeatedly:
 
-Buying intelligence is itself a machine side effect.
+```text
+attempt 1 → Miner A
+attempt 2 → Miner A  (duplicate, not another independent vote)
+attempt 3 → Miner B
+```
 
-For each paid Telegraph request, ProofGate:
+then distinct provider count is only two.
 
-1. freezes the protected action first;
-2. preflights the request;
-3. parses the live x402 challenge;
-4. validates version/scheme/network/asset/payment recipient/amount;
-5. keeps the global per-request ceiling at `0.01 USDC`;
-6. checks the quote against the **remaining aggregate tier budget before paying**;
-7. performs exactly one paid attempt;
-8. requires provable settlement;
-9. never blindly retries a paid request after transport ambiguity;
-10. accepts evidence only after the routed response passes provenance checks.
+ProofGate uses bounded attempts, evidence spend and deadline. Failure to obtain the required diversity is `HOLD`, not fabricated consensus.
 
-The adaptive Evidence Bundle verifier independently rejects committed paid-evidence metadata outside the approved Base Sepolia USDC x402 lane or per-request cap.
+## 6. Evidence quorum semantics
 
-## 7. Telegraph normalization and provenance
+Every quorum rule commits:
 
-Raw Miner response schemas may differ. The trusted live client normalizes security-relevant fields while preserving the raw-response commitment.
+- `minimumDistinctMiners`
+- `minimumPositiveResults`
+- `minimumPositiveConfidence`
+- `maxAttempts`
+- `negativeVetoConfidence`
 
-Normalized evidence includes:
+The canonical summary commits:
 
-- source
+- observed attempt count
+- distinct Miner IDs
+- positive Miner IDs
+- negative Miner IDs
+- uncertain Miner IDs
+- veto Miner IDs
+- duplicate-Miner attempts
+- final quorum status
+
+Possible status includes:
+
+- `SATISFIED`
+- `INSUFFICIENT_DIVERSITY`
+- `INSUFFICIENT_POSITIVES`
+- `VETOED`
+- `ATTEMPT_LIMIT_EXCEEDED`
+
+A positive vote only counts when its confidence meets the quorum's positive-confidence floor.
+
+The early-veto threshold optimizes fail-closed collection. Final payment policy is stricter: **any explicit negative evidence blocks**, so lower-confidence known-negative evidence is not averaged away either.
+
+## 7. Telegraph routing
+
+ProofGate remains Intent-first and provider-neutral.
+
+It asks Telegraph for a capability such as `FRAUD_DETECTION`; Telegraph determines the serving Miner. ProofGate then records/verifies the actual provider.
+
+For quorum, ProofGate may perform additional bounded requests for the same Intent. Prior Miner IDs are tracked for diversity accounting, but a repeated provider never counts as a new independent source.
+
+The acquisition boundary verifies:
+
+- requested Intent
+- actual serving Miner identity
+- active/capable Miner where registry data is used
+- exact subject
+- exact chain for the payment evidence contract
+- signal metadata
+- response commitment
+- x402 provenance when paid
+
+## 8. x402 evidence-purchase boundary
+
+Evidence purchasing is also a machine side effect.
+
+The live payment evidence client:
+
+1. freezes the protected action;
+2. preflights the Telegraph request;
+3. validates the returned x402 challenge;
+4. enforces scheme/network/asset/payee/amount rules;
+5. enforces `0.01 USDC` maximum per evidence request;
+6. enforces the remaining aggregate risk-tier budget;
+7. reuses the already validated challenge rather than fetching an unvalidated replacement;
+8. independently filters the exact `PaymentRequirements` used for signing;
+9. sends one payment-bearing attempt;
+10. requires provable settlement;
+11. refuses blind retries after paid transport ambiguity.
+
+This closes the x402 challenge-swap/TOCTOU gap found during v1.1 hardening.
+
+## 9. Evidence Bundle
+
+Adaptive payments use `proofgate.evidence-bundle.v1`.
+
+Each attempt commits:
+
 - Intent
-- Miner ID/name/slug
-- exact subject/chain
-- label/verdict when available
-- confidence when available
-- applicability
-- signal hash
-- raw-response hash
-- received timestamp
-- cost/duration metadata
-
-Normalization validates signal-hash shape, confidence range and nonnegative cost/duration metadata.
-
-### Integrity vs authenticity
-
-This is a deliberate boundary:
-
-- **Evidence Bundle hash** proves bundle integrity after construction.
-- **Trusted live acquisition** establishes that the evidence came through the intended Telegraph path and satisfied serving-Miner/Intent/binding/x402 checks.
-
-A self-consistent arbitrary JSON bundle is not automatically authentic Telegraph evidence.
-
-Therefore a production permit-minter must not accept an arbitrary agent-supplied Evidence Bundle. The recommended SDK path creates the bundle internally through a trusted `IntentAcquirer`.
-
-Synthetic evidence is allowed only in deterministic tests/fuzzing and must never be presented as live Telegraph activity.
-
-## 8. Canonical Evidence Bundle
-
-Adaptive authorization uses `proofgate.evidence-bundle.v1`.
-
-Each item commits:
-
-- required Intent
-- actual serving Miner
-- exact subject/chain
+- serving Miner ID/name/slug
+- subject/chain
 - label/confidence/applicability
 - signal hash
 - raw-response hash
 - received timestamp
-- cost/duration metadata
-- evidence payment amount/network/asset
+- attempt number
+- cost/duration
+- payment amount/network/asset
 
 The bundle commits:
 
 - action ID/hash
-- protected amount
+- subject/chain/amount
 - risk tier
-- adaptive-plan hash
-- maximum evidence spend
-- actual aggregate evidence spend
-- creation time
+- plan hash
+- max and actual evidence spend
+- every attempt
+- every canonical quorum summary
+- creation timestamp
 - `bundleHash`
 
-Verification rejects:
+Tampering with a vote, Miner identity, attempt, payment field or quorum summary invalidates the bundle.
 
-- body/hash mismatch
-- malformed cryptographic hashes
-- duplicate/unsupported Intents
-- wrong subject/chain
-- invalid timestamps/metadata
-- invalid paid-evidence provenance
-- aggregate-spend inconsistency
+### Integrity is not provenance
 
-The decision hash commits the Evidence Bundle. Replacing it with another valid bundle after permit mint fails permit verification.
+A valid bundle hash proves integrity after construction. It does not make arbitrary JSON authentic Telegraph evidence.
 
-## 9. Adaptive policy semantics
+Live provenance is established by the trusted acquisition process. A production Permit service must not treat agent-submitted arbitrary bundles as authenticated Telegraph proof.
 
-Every check produces `PASS`, `HOLD` or `BLOCK`.
+## 10. Decision semantics
 
-### ALLOW
-All required authority and evidence checks pass. A permit may be minted.
+Every authorization check has one of three statuses:
 
-### HOLD
-Sufficient current proof cannot be established. Examples:
+### `ALLOW`
+All authority/evidence checks pass. Permit minting may proceed.
 
-- missing required Intent
-- missing signal hash
-- stale evidence
-- non-applicable evidence
-- fraud confidence below the risk-tier floor
-- secondary status such as `UNKNOWN` or `UNAVAILABLE`
-- acquisition/infrastructure uncertainty
+### `HOLD`
+Authority is not disproven, but sufficient current evidence cannot be established. Examples: missing evidence, insufficient Miner diversity, insufficient positives, low confidence, stale evidence, uncertain result, provider unavailability or bounded deadline exhaustion.
 
-### BLOCK
-A known security or authority invariant failed. Examples:
-
-- invalid/revoked/expired Mandate
-- wrong agent/destination/asset/chain
-- amount outside delegated authority
-- adaptive-plan downgrade
-- bundle integrity/provenance failure
-- evidence budget violation
-- wrong evidence subject/chain
-- un-delegated required Intent
-- explicit negative evidence
+### `BLOCK`
+A known invariant failed. Examples: wrong action scope, invalid Mandate, plan downgrade, tampered evidence, un-delegated Intent, explicit negative evidence or prohibited payment provenance.
 
 `BLOCK` dominates `HOLD`.
 
-## 10. Conflict semantics
+## 11. General trusted adapter contract
 
-A required explicit negative result such as `MALICIOUS`, `SUSPICIOUS`, `DENY`, `BLOCK`, `FRAUD`, `RISKY` or `HIGH_RISK` causes `BLOCK`.
+A `ProofGateActionAdapter` declares:
 
-ProofGate does not use naive majority voting. Positive evidence cannot average away a known negative signal.
+```text
+type + policy ID/version
+freeze(proposal)
+requiredIntents(action)
+evaluateTrusted(action, requiredIntents)
+execute(action)
+```
 
-For `FRAUD_DETECTION`, a classified positive verdict is additionally required. For secondary informational Intents, no label is acceptable when the evidence is otherwise applicable/fresh/bound; an explicit uncertain status label becomes `HOLD` rather than being treated as positive.
+The SDK requires `evaluateTrusted()` to return:
 
-## 11. Policy profiles
+- `evidenceCommitmentHash`
+- exact `coveredIntents`
+- trusted deterministic checks
 
-### `payments.strict.v1`
-Original strict single-Telegraph-evidence payment policy.
+Enforcement rules:
 
-### `payments.attested-vendor.v1`
-Policy used by the canonical v1.0 real execution: fresh real `FRAUD_DETECTION` evidence + exact live vendor-runtime attestation.
+1. adapter registration metadata must be valid;
+2. `freeze()` must return the registered action type/policy/version;
+3. the Mandate must authorize the action before evidence work;
+4. each adapter-required Intent must be delegated;
+5. trusted coverage must include every required Intent;
+6. claimed unrequested Intents are `BLOCK`;
+7. required evidence without a commitment is `HOLD`;
+8. required evidence without trusted checks is `HOLD`;
+9. only all-PASS `ALLOW` can mint a Permit.
 
-### `payments.adaptive.v1`
-Risk-adaptive provider-neutral multi-Intent policy with tier derivation, canonical Evidence Bundles, verification economics, conflict semantics and principal-delegated Intent enforcement.
+The evidence commitment can point to a Telegraph Evidence Bundle or another adapter-specific trusted evidence structure. The adapter is responsible for verifying source-specific authenticity before producing its commitment/checks.
 
-All policies fail closed.
+## 12. General decision + Permit
 
-## 12. Decision commitment and permit
+`proofgate.decision.v2` commits:
 
-A mutable `ALLOW` string is not authority.
+- mandate hash
+- action hash
+- exact agent ID
+- policy ID/version
+- evidence commitment hash
+- all checks
+- final decision/reason
+- decision timestamp
+- `decisionHash`
 
-`decisionHash` commits the evaluated Mandate, Action Contract, evidence/bundle, policy checks and final decision context.
+Decision verification recomputes the hash **and** checks semantic consistency: wrong agent, empty checks or an `ALLOW` whose checks contain `HOLD/BLOCK` is invalid even if an attacker recomputes the outer decision hash.
 
-Only `ALLOW` may mint a permit.
-
-Permit payload includes:
+`proofgate.permit.v2` commits:
 
 - permit ID
 - mandate hash
 - action hash
 - decision hash
-- nonce
+- evidence commitment hash
 - policy ID/version
-- signing key ID/algorithm/version
-- issued/expiry timestamps
+- nonce
+- issue/expiry times
+- signer metadata
+- signature
 
-Properties:
+Only a valid all-PASS `ALLOW` may mint it.
 
-- exact-Mandate bound
-- exact-action bound
-- exact-evidence/decision bound
-- short lived
-- single use
-- replay protected
-- authenticated
+Production mode rejects the local HMAC development signer; the production-oriented signer is Ed25519/KMS-compatible.
 
-Local/test/demo signing may use HMAC; `NODE_ENV=production` rejects that development signer. Production-oriented signing uses Ed25519 and key lifecycle states `ACTIVE`, `VERIFY_ONLY`, `REVOKED`.
+## 13. Generic controlled execution
 
-## 13. Controlled execution
+Before any generic adapter callback, ProofGate:
 
-The executor independently verifies authorization immediately before the side effect, including:
+1. checks the operational execution kill switch;
+2. fails closed if kill-switch state is unavailable;
+3. verifies the decision and Permit;
+4. re-evaluates the current Mandate at execution time;
+5. verifies Permit/action/decision/evidence bindings and time window;
+6. atomically claims `permitId + nonce` in the replay store;
+7. calls the trusted adapter only after successful claim.
 
-1. permit signature/metadata;
-2. Mandate binding/current constraints;
-3. policy binding;
-4. Evidence Bundle/action binding;
-5. permit times;
-6. recomputed semantic action hash;
-7. decision commitment;
-8. atomic single-use permit claim.
+The agent must not have another direct path to the protected tool.
 
-The permit is claimed before the protected callback. Unknown/unavailable claim state fails closed.
+If the callback throws after claim, ProofGate returns `AMBIGUOUS` because the external effect may already have happened. The Permit remains consumed and is never automatically replayed.
 
-The transaction fields must be derived from the authorized Action Contract, not fresh agent-supplied values.
+## 14. Replay and shared state
 
-## 14. Shared replay and durable execution
+- `FilePermitConsumptionStore` — local/single-host tooling.
+- `PostgresPermitConsumptionStore` — shared atomic replay protection for multi-worker deployments.
 
-`FilePermitConsumptionStore` is local/single-host tooling.
+One Permit may cause at most one protected callback attempt.
 
-`PostgresPermitConsumptionStore` provides shared atomic claims for multi-worker deployments.
+For irreversible integrations, adapter-specific reconciliation should determine the real external state after `AMBIGUOUS` rather than submitting a duplicate.
 
-The production-oriented durable path also supports:
+## 15. Existing payment execution controls
 
-- durable execution records
-- exact transaction-intent commitment
-- authoritative Mandate status checks
-- cumulative spend reservations
-- execution kill switch
-- explicit pre-submit failure vs post-submit ambiguity
+The original Base Sepolia executor still provides the stronger chain-specific path for the proven payment use case:
 
-An unknown outcome after possible broadcast is `AMBIGUOUS`, not a reason to blindly broadcast a duplicate.
+- exact chain/token/action validation
+- local tx hash before broadcast
+- transaction-intent journaling
+- one irreversible broadcast attempt
+- RPC reconciliation
+- explicit `AMBIGUOUS` post-submit semantics
+- optional shared replay/durable execution/spend controls
 
-## 15. Cumulative spend authority
+The general executor does not pretend it can automatically reconcile every arbitrary external service; reconciliation belongs to the adapter/integration.
 
-Per-action limits alone do not stop repeated individually valid actions from exceeding an economic budget.
+## 16. Proof Receipts
 
-Optional cumulative authority is bound to Mandate hash, policy, chain, token and maximum cumulative amount. Database transactions/locking protect concurrent reservations.
+- `proofgate.receipt.v2` — original single-evidence payment path.
+- `proofgate.receipt.v3` — adaptive Evidence Bundle payment path.
 
-## 16. Proof Receipt v2 / v3
+The general action core currently commits its evidence/decision/Permit and returns a controlled execution result. A universal generic receipt schema is not falsely claimed until the adapter-independent receipt design is implemented.
 
-### v2
-Records the original single-evidence path.
+## 17. Security gates
 
-### v3
-Records adaptive authorization and embeds the Evidence Bundle.
-
-A v3 receipt can prove/reference:
-
-- Mandate/hash
-- Action Contract/hash
-- risk tier and plan hash
-- Evidence Bundle/hash
-- routed Intents/Miners/signal hashes
-- evidence-payment metadata and aggregate spend
-- deterministic policy checks
-- permit
-- execution result
-- transaction hash when present
-- timestamps
-- receipt hash
-
-Receipt verification checks both the outer receipt and the embedded bundle/action binding.
-
-## 17. Developer integration surface
-
-`src/sdk/proofgate.ts` exposes two levels.
-
-### Recommended trusted-host path
-
-`authorizePaymentWithEvidence(...)` accepts only the proposal from the agent; the trusted host supplies the Mandate, `IntentAcquirer` and signer. It plans, collects, evaluates and mints a permit only on complete `ALLOW`.
-
-### Lower-level composition
-
-Advanced integrations may use planning, collection, evaluation and permit helpers separately, but the same trust boundary applies.
-
-An evaluate-only HTTP gateway is available with:
-
-```bash
-npm run gateway:serve
-```
-
-It intentionally does not accept wallet secrets, buy evidence, mint permits or execute funds.
-
-See `docs/DEVELOPER_INTEGRATION.md`.
-
-## 18. Live adaptive command
-
-```bash
-npm run proof:adaptive -- <AMOUNT_USDC>
-```
-
-This may make real Telegraph/x402 evidence requests but is **check-only for the protected payment**.
+Current v1.2 validation on the pre-documentation code snapshot:
 
 ```text
-buy intelligence != authorization
-authorization != execution
+Vitest:                       43/43 files
+Tests:                        225/225
+Original fuzz:                1100/1100
+Adaptive + quorum fuzz:       3100/3100
+General authorization fuzz:   3100/3100
+Total adversarial cases:      7300/7300
+Unauthorized executions:     0
+Unauthorized authorizations: 0
+Uncaught fuzz errors:         0
+Production dependency audit: 0 vulnerabilities
 ```
 
-A real multi-Intent output should only be claimed after an actual successful saved run exists.
+All fuzzing is offline: no Telegraph requests, x402 payments or blockchain writes.
 
-## 19. Security validation
+GitHub CI also reproducibly recompiles the pinned Solidity vendor artifact with native `solc 0.8.36+commit.8a079791` on Linux x64.
 
-The hardened v1.1 code has passed:
+## 18. Proven vs generalized scope
 
-- vendor artifact verification
-- pinned native x64 vendor recompilation + reproducibility diff
-- TypeScript typecheck
-- `42/42` Vitest files
-- `210/210` tests
-- original fuzz: `1100/1100`, `100/100` controls, `0` unauthorized executions
-- adaptive fuzz: `1800/1800`, `100/100` controls, `0` unauthorized authorizations
-- `0` fuzz uncaught errors
-- production dependency audit: `0` vulnerabilities
+### Publicly proven live side effect
 
-Both fuzz harnesses are offline and perform zero Telegraph requests, x402 payments or blockchain writes.
+The frozen v1.0 artifact contains a genuine Telegraph proof and one real protected **Base Sepolia USDC** transfer. See `LIVE_EXECUTION.md`.
 
-## 20. Canonical real execution vs v1.1
+### Implemented/tested v1.2 architecture
 
-The public Base Sepolia transaction in `docs/LIVE_EXECUTION.md` belongs to the frozen v1.0 single-Intent `payments.attested-vendor.v1` flow.
+- adaptive multi-Intent evidence
+- same-Intent distinct-Miner quorum
+- generic Action/Mandate/Decision/Permit core
+- trusted Action Adapter Registry
+- generic controlled executor
 
-It proves the real end-to-end authorization/execution concept, but it must not be described as having exercised v1.1 multi-Intent routing.
+### Not claimed without a live artifact
 
-Likewise, v1.1 currently implements **multiple Intents routed to serving Miners**, not a same-Intent 2-of-3 Miner-consensus protocol.
+- a real saved three-Miner Telegraph quorum run
+- production GitHub/cloud/database adapters
+- independent production security audit
+- sandbox safety for arbitrary untrusted adapter code
 
 ## Final principle
 
-**Telegraph answers what the outside world says. The principal defines what the agent may do. ProofGate decides how much intelligence the consequence deserves and whether that exact evidence plus that exact authority is enough to permit this exact action.**
+**Telegraph answers what the outside world says. The principal defines what the agent may do. ProofGate determines how much breadth and provider independence the consequence deserves, then turns sufficient evidence plus standing authority into one-use permission for one exact action.**
