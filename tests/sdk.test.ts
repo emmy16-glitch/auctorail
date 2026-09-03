@@ -14,7 +14,8 @@ import {
   createEvidenceBundle
 } from "../src/telegraph/evidence-bundle.js";
 import {
-  adaptiveEvidence
+  adaptiveEvidence,
+  adaptiveQuorumInputs
 } from "./helpers/adaptive-fixtures.js";
 
 const NOW = new Date(
@@ -46,8 +47,26 @@ function mandateFor(destination: string) {
   });
 }
 
+function routedEvidence(
+  action: Parameters<typeof adaptiveEvidence>[0],
+  intent: Parameters<typeof adaptiveEvidence>[1],
+  attemptNumber = 1
+) {
+  return adaptiveEvidence(
+    action,
+    intent,
+    {
+      miner: {
+        id: `${intent}-sdk-miner-${attemptNumber}`,
+        name: `${intent} SDK Miner ${attemptNumber}`,
+        slug: `${intent.toLowerCase()}-sdk-miner-${attemptNumber}`
+      }
+    }
+  );
+}
+
 describe("ProofGate developer SDK", () => {
-  it("plans risk automatically from a developer payment proposal", () => {
+  it("plans risk and provider diversity automatically from a developer payment proposal", () => {
     const planned = planPaymentAuthorization({
       amountRaw: "7000000",
       destination: VENDOR,
@@ -67,6 +86,14 @@ describe("ProofGate developer SDK", () => {
       "ONCHAIN_TX_LOOKUP",
       "WALLET_BALANCE_CHECK"
     ]);
+    expect(
+      planned.plan.requirements[0].quorum
+        .minimumDistinctMiners
+    ).toBe(3);
+    expect(
+      planned.plan.requirements[0].quorum
+        .minimumPositiveResults
+    ).toBe(2);
   });
 
   it("lets a host evaluate and mint authority without giving ProofGate direct execution power", () => {
@@ -81,16 +108,9 @@ describe("ProofGate developer SDK", () => {
     const bundle = createEvidenceBundle(
       planned.action,
       planned.plan,
-      planned.plan.requirements.map(
-        (requirement) => ({
-          evidence: adaptiveEvidence(
-            planned.action,
-            requirement.intent
-          ),
-          paymentAmountRaw: "10000",
-          paymentNetwork: "eip155:84532",
-          paymentAsset: BASE_SEPOLIA_USDC
-        })
+      adaptiveQuorumInputs(
+        planned.action,
+        planned.plan
       ),
       { now: NOW }
     );
@@ -125,7 +145,7 @@ describe("ProofGate developer SDK", () => {
     );
   });
 
-  it("returns a deterministic counterfactual for incomplete evidence", () => {
+  it("returns a deterministic counterfactual after required fraud quorum but missing secondary evidence", () => {
     const planned = planPaymentAuthorization({
       amountRaw: "3000000",
       destination: VENDOR,
@@ -137,17 +157,14 @@ describe("ProofGate developer SDK", () => {
     const partial = createEvidenceBundle(
       planned.action,
       planned.plan,
-      [
-        {
-          evidence: adaptiveEvidence(
-            planned.action,
-            "FRAUD_DETECTION"
-          ),
-          paymentAmountRaw: "10000",
-          paymentNetwork: "eip155:84532",
-          paymentAsset: BASE_SEPOLIA_USDC
-        }
-      ],
+      adaptiveQuorumInputs(
+        planned.action,
+        planned.plan
+      ).filter(
+        (input) =>
+          input.evidence.intent ===
+          "FRAUD_DETECTION"
+      ),
       { now: NOW }
     );
 
@@ -177,10 +194,15 @@ describe("ProofGate developer SDK", () => {
       },
       mandate,
       agentId: "sdk-agent",
-      acquire: async ({ action, requirement }) => ({
-        evidence: adaptiveEvidence(
+      acquire: async ({
+        action,
+        requirement,
+        attemptNumber = 1
+      }) => ({
+        evidence: routedEvidence(
           action,
-          requirement.intent
+          requirement.intent,
+          attemptNumber
         ),
         paymentAmountRaw: "10000",
         paymentNetwork: "eip155:84532",
@@ -213,15 +235,20 @@ describe("ProofGate developer SDK", () => {
       },
       mandate,
       agentId: "sdk-agent",
-      acquire: async ({ action, requirement }) => {
+      acquire: async ({
+        action,
+        requirement,
+        attemptNumber = 1
+      }) => {
         if (requirement.intent === "ONCHAIN_TX_LOOKUP") {
           throw new Error("provider_unavailable");
         }
 
         return {
-          evidence: adaptiveEvidence(
+          evidence: routedEvidence(
             action,
-            requirement.intent
+            requirement.intent,
+            attemptNumber
           ),
           paymentAmountRaw: "10000",
           paymentNetwork: "eip155:84532",
