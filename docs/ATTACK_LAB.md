@@ -1,19 +1,21 @@
 # ProofGate Defensive Security Harnesses
 
-ProofGate uses three deterministic offline security layers:
+ProofGate v1.2 uses **four deterministic offline security layers**:
 
 1. the focused **Attack Lab**;
-2. the original **1,100-case authorization fuzz gate**;
-3. the v1.1 **1,800-case adaptive-evidence fuzz gate**.
+2. the original **1,100-case exact-action authorization fuzz gate**;
+3. the **3,100-case adaptive + distinct-Miner quorum fuzz gate**;
+4. the **3,100-case general action authorization fuzz gate**.
 
-All are intentionally isolated from live side effects:
+All security harnesses are intentionally isolated from live side effects:
 
-- no Telegraph requests
-- no x402 payments
-- no blockchain writes
-- no real wallet spending
+```text
+Telegraph requests: 0
+x402 payments:      0
+blockchain writes:  0
+```
 
-Synthetic evidence in these harnesses is test material only and must never be presented as live Miner activity.
+Synthetic evidence in these harnesses is test material only. It must never be represented as live Telegraph/Miner activity.
 
 ## 1. Focused Attack Lab
 
@@ -23,14 +25,14 @@ Run:
 npm run attack:lab
 ```
 
-The Attack Lab contains one valid baseline plus ten adversarial scenarios.
+The Attack Lab contains one valid baseline plus ten adversarial scenarios:
 
-1. valid exact permit executes once;
-2. consumed permit replay is blocked;
+1. valid exact Permit executes once;
+2. consumed Permit replay is blocked;
 3. amount mutation breaks action binding;
 4. evidence-subject substitution breaks binding;
-5. forged permit signature fails;
-6. expired permit fails;
+5. forged Permit signature fails;
+6. expired Permit fails;
 7. decision tampering breaks commitment;
 8. Mandate substitution breaks binding;
 9. negative Telegraph result still blocks despite supplemental runtime proof;
@@ -46,9 +48,9 @@ x402 payments: 0
 Blockchain writes: 0
 ```
 
-The baseline is not counted as an attack.
+The valid baseline is not counted as an attack.
 
-## 2. Original authorization fuzz gate
+## 2. Original exact-action fuzz gate
 
 Run:
 
@@ -56,34 +58,34 @@ Run:
 npm run security:fuzz
 ```
 
-Validated structure:
+Current validated result:
 
 ```text
-11 mutation families
-100 cases per family
-1100/1100 adversarial cases contained
-100/100 valid controls
-0 unauthorized executions
-0 uncaught errors
+Mutation families:        11
+Cases per family:         100
+Adversarial contained:    1100/1100
+Valid controls:           100/100
+Unauthorized executions: 0
+Uncaught errors:          0
 ```
 
-Families cover:
+Families include:
 
 - stale amount/action hash
-- destination mutation
+- destination substitution
 - chain confusion
-- asset mutation
+- asset substitution
 - reason mutation
-- signature forgery
+- Permit signature forgery
 - evidence subject swap
 - evidence chain swap
 - decision commitment tampering
 - Mandate version substitution
-- permit expiry
+- Permit expiry
 
-This gate protects the original exact-action/permit/evidence boundary.
+This remains the original exact-action/evidence/Permit security gate used by the proven payment flow.
 
-## 3. Adaptive-evidence fuzz gate
+## 3. Adaptive + distinct-Miner quorum fuzz gate
 
 Run:
 
@@ -91,81 +93,203 @@ Run:
 npm run security:fuzz:adaptive
 ```
 
-Validated structure:
+Current validated result:
 
 ```text
-18 mutation families
-100 cases per family
-1800/1800 adversarial cases contained
-100/100 valid controls
-0 unauthorized authorizations
-0 uncaught errors
+Mutation families:             31
+Cases per family:              100
+Adversarial contained:         3100/3100
+Valid controls:                100/100
+Unauthorized authorizations:  0
+Uncaught errors:               0
 ```
 
-Families cover:
+The v1.2 adaptive suite attacks both vertical multi-Intent evidence and horizontal same-Intent provider diversity.
+
+Families include:
 
 - risk-tier downgrade
+- distinct-Miner quorum downgrade
+- positive-vote threshold downgrade
+- positive-confidence-floor downgrade
+- disabling high-confidence negative veto
+- expanding the bounded attempt limit
+- duplicate-Miner / fake-provider-diversity counting
+- insufficient positive quorum
+- below-confidence positive votes
+- high-confidence negative veto suppression
+- lower-confidence explicit negative suppression
 - missing `FRAUD_DETECTION`
 - missing `ONCHAIN_TX_LOOKUP`
 - missing `WALLET_BALANCE_CHECK`
-- negative fraud signal
 - negative secondary signal
-- fraud confidence below floor
 - stale required evidence
 - missing signal hash
-- aggregate evidence-budget overrun
-- Evidence Bundle signal-hash tampering
-- Evidence Bundle raw-response-hash tampering
+- x402 wrong network
+- x402 asset substitution
+- x402 per-request over-cap
+- Evidence Bundle signal tampering
+- quorum-summary tampering
+- Miner-identity substitution
+- quorum-attempt collision/tampering
 - evidence subject substitution
-- substitution of a different valid bundle after permit mint
-- permit signature forgery
-- permit expiry
+- substitution of another internally valid bundle after Permit mint
+- Permit signature forgery
+- Permit expiry
 - action semantic mutation
 - un-delegated Intent
+- raw-response-hash tampering
 
-The bundle-tamper families explicitly require both bundle verification failure and policy non-authorization where applicable.
+### Important quorum invariants
+
+The harness verifies that:
+
+- repeated responses from one Miner do not become multiple independent providers;
+- a positive fraud vote only counts if it meets the tier confidence floor;
+- HIGH risk cannot be downgraded from 3 distinct providers / 2 positive votes;
+- an explicit known-negative signal cannot be averaged away;
+- an attacker cannot alter the committed quorum summary while keeping authorization valid;
+- changing a serving Miner identity invalidates the committed evidence context.
+
+## 4. General action authorization fuzz gate
+
+Run:
+
+```bash
+npm run security:fuzz:general
+```
+
+Current validated result:
+
+```text
+Mutation families:        31
+Cases per family:         100
+Adversarial contained:    3100/3100
+Valid controls:           100/100
+Unauthorized executions: 0
+Uncaught errors:          0
+```
+
+This is a separate gate for `proofgate.action.v2`, `mandate.v2`, `decision.v2`, `permit.v2` and the trusted Action Adapter execution path.
+
+Families include:
+
+- valid target substitution
+- valid parameter substitution
+- stale action hash after semantic mutation
+- policy substitution
+- Mandate agent substitution
+- Mandate target-scope substitution
+- Mandate action-type substitution
+- revoked Mandate substitution
+- Mandate expiry while Permit is still alive
+- self-consistent wrong-agent decision forgery
+- forged `ALLOW` inconsistent with decision checks
+- stale decision hash after check mutation
+- evidence-commitment substitution
+- Permit signature forgery
+- Permit action-binding tampering
+- Permit decision-binding tampering
+- Permit evidence-binding tampering
+- Permit expiry
+- disabled execution kill switch
+- unavailable kill-switch state
+- Permit replay
+- replay after ambiguous external effect
+- missing required Intent coverage from trusted adapter
+- adapter claiming unrequested Intent coverage
+- missing required evidence commitment
+- missing trusted evidence checks
+- undelegated action attempting to reach evidence acquisition
+- undelegated required Intent attempting to reach evidence acquisition
+- adapter freeze-contract mismatch
+- unregistered adapter
+- non-finite/malformed action parameter rejection
+
+### Generic boundary invariants
+
+The general harness specifically proves the tested path fails closed when:
+
+- the agent/action is outside standing authority;
+- current Mandate authority disappears after Permit mint;
+- an adapter cannot account for every required evidence class;
+- the evidence commitment is missing/substituted;
+- the execution kill switch cannot be trusted;
+- Permit replay is attempted;
+- an external effect becomes ambiguous after the Permit has already been consumed.
+
+## Combined current deterministic result
+
+On the validated v1.2 code snapshot:
+
+```text
+Original fuzz:              1100/1100
+Adaptive + quorum fuzz:     3100/3100
+General authorization fuzz: 3100/3100
+
+Total adversarial cases:    7300/7300
+
+Valid controls:
+  original: 100/100
+  adaptive: 100/100
+  general:  100/100
+
+Unauthorized executions:      0
+Unauthorized authorizations:  0
+Uncaught fuzz errors:          0
+```
+
+The normal deterministic suite additionally passed:
+
+```text
+43/43 test files
+225/225 tests
+```
 
 ## Additional direct regression coverage
 
-Some important invariants are clearer as direct deterministic tests than as randomized mutation families. The normal test suite also covers:
+Some invariants are clearer as focused deterministic tests rather than fuzz mutation families. The normal suite covers, among other things:
 
-- paid adaptive evidence with the wrong x402 network is rejected;
-- paid adaptive evidence with the wrong asset is rejected;
-- per-request evidence payment above the global Telegraph cap is rejected;
-- malformed signal/raw-response hashes remain invalid even if an attacker recomputes the outer bundle hash;
-- secondary `UNKNOWN` / `UNAVAILABLE` status cannot create authority;
-- a different internally valid Evidence Bundle is rejected after permit mint;
-- the high-level trusted SDK returns no permit on incomplete acquisition;
-- bundle-aware permits remain single-use;
-- Receipt v3 tampering fails verification.
+- x402 challenge-swap/TOCTOU prevention;
+- wrong paid-evidence network/asset rejection;
+- per-request evidence payment cap;
+- malformed signal/raw-response hashes even after outer bundle rehash;
+- `UNKNOWN` / `UNAVAILABLE` secondary status becoming `HOLD`;
+- valid alternate Evidence Bundle rejected after Permit mint;
+- bundle-aware single-use Permit behavior;
+- Proof Receipt v3 tamper rejection;
+- generic exact target/agent/action/policy Mandate enforcement;
+- authority rejected before trusted evidence acquisition;
+- missing/custom adapter Intent coverage rejected;
+- execution-time Mandate expiry rejection;
+- kill switch disabled/unavailable rejection;
+- ambiguous generic effect consumes authority and cannot be blindly retried;
+- wrong-agent self-consistent decision cannot mint a Permit.
 
 ## What these harnesses prove
 
-They prove that the tested authorization invariants fail closed under the covered deterministic mutations and that valid controls continue to work.
+They prove that the **tested authorization invariants** fail closed under the covered deterministic mutations while valid controls continue to execute/authorize correctly.
 
-The key criterion is:
+The central security criterion is:
 
-> **Unauthorized or incorrectly bound input must never reach executable authority or the protected external action.**
+> **Unauthorized, incorrectly bound or insufficiently evidenced input must never reach executable authority or the protected external callback.**
 
 ## What they do not prove
 
-They are not a substitute for:
+These harnesses are not a substitute for:
 
-- live Telegraph availability testing;
+- live Telegraph availability/reliability testing;
+- a successful real multi-Miner quorum artifact;
 - live x402 facilitator reliability testing;
 - independent smart-contract audit;
 - independent production application audit;
 - production key-management review;
 - PostgreSQL infrastructure/failover review;
-- full distributed-systems chaos testing.
+- full distributed-systems chaos testing;
+- security review/sandboxing of arbitrary third-party Action Adapters.
 
-The repository includes older authorized assessment artifacts under `audit-artifacts/`. Those artifacts apply to the revision they identify and must not be presented as an independent audit of later v1.1 commits.
+The repository contains older authorized assessment artifacts. Those reports apply to the exact revisions they identify and must not be represented as an independent audit of v1.2.
 
 ## Current release validation
 
-See `docs/V1_1_VALIDATION.md` for the exact hardened snapshot and CI results combining:
-
-- vendor reproducibility checks;
-- TypeScript + full Vitest suite;
-- both fuzz gates;
-- production dependency audit.
+See `docs/V1_2_VALIDATION.md` for the exact v1.2 release snapshot, GitHub CI run, vendor reproducibility result, deterministic tests, all three fuzz gates and production dependency audit.
