@@ -43,6 +43,12 @@ import {
   type X402SettlementResult
 } from "./x402-policy.js";
 import {
+  extractExactEvmAuthorization,
+  reconcileExactEvmSettlement,
+  type X402ReconciliationInput,
+  type X402ReconciliationProof
+} from "./x402-reconciliation.js";
+import {
   createIntentVerificationPlan
 } from "./verification-planner.js";
 import {
@@ -57,6 +63,9 @@ export interface LiveIntentClientOptions {
   engineUrl?: string;
   evidenceDirectory?: string;
   fetchImpl?: typeof fetch;
+  settlementReconciler?: (
+    input: X402ReconciliationInput
+  ) => Promise<X402ReconciliationProof | null>;
 }
 
 export interface LiveIntentAcquisitionResult
@@ -660,6 +669,9 @@ export function createLiveIntentAcquirer(
     path.join("data", "evidence", "adaptive");
 
   const fetchImpl = options.fetchImpl ?? fetch;
+  const settlementReconciler =
+    options.settlementReconciler ??
+    reconcileExactEvmSettlement;
 
   const account = privateKeyToAccount(options.privateKey);
   const signer = toClientEvmSigner(account);
@@ -788,6 +800,7 @@ export function createLiveIntentAcquirer(
 
     let actualLane: X402PaymentLane | null = null;
     let paymentPayloadCreated = false;
+    let createdPaymentPayload: unknown = null;
 
     client.onBeforePaymentCreation(
       async ({
@@ -827,9 +840,12 @@ export function createLiveIntentAcquirer(
       }
     );
 
-    client.onAfterPaymentCreation(async () => {
-      paymentPayloadCreated = true;
-    });
+    client.onAfterPaymentCreation(
+      async ({ paymentPayload }) => {
+        paymentPayloadCreated = true;
+        createdPaymentPayload = paymentPayload;
+      }
+    );
 
     const paidFetch =
       wrapFetchWithPayment(boundFetch, client);
@@ -856,12 +872,48 @@ export function createLiveIntentAcquirer(
       );
     }
 
-    const settlement =
+    const paymentResponseHeader =
+      response.headers.get("payment-response") ??
+      response.headers.get("x-payment-response") ??
+      null;
+
+    let settlement =
       classifyPaymentResponseHeader(
-        response.headers.get("payment-response") ??
-        response.headers.get("x-payment-response") ??
-        null
+        paymentResponseHeader
       );
+
+    if (
+      !settlement.success &&
+      settlement.code === "payment_response_missing"
+    ) {
+      if (!createdPaymentPayload) {
+        throw new Error(
+          "adaptive_x402_reconciliation_payload_missing"
+        );
+      }
+
+      const authorization =
+        extractExactEvmAuthorization({
+          paymentPayload: createdPaymentPayload,
+          lane: actualLane,
+          expectedPayer: account.address
+        });
+
+      const reconciled =
+        await settlementReconciler({
+          paymentPayload: createdPaymentPayload,
+          lane: actualLane,
+          expectedPayer: account.address
+        });
+
+      if (!reconciled) {
+        throw new Error(
+          `adaptive_x402_settlement_ambiguous:payment_response_missing_and_authorization_not_observed:${authorization.nonce}`
+        );
+      }
+
+      settlement = reconciled.settlement;
+    }
 
     if (!settlement.success) {
       throw new Error(
