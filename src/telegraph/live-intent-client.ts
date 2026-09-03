@@ -328,10 +328,14 @@ function resolveRoutePlan(input: {
         );
       }
 
-      const encodedMiner =
-        encodeURIComponent(directTarget.miner.slug);
+      // Telegraph's own MCP client documents subnet_id as the numeric
+      // integration ID for direct inference. The x402 gate can issue a 402
+      // before resolving the path target, so using the human slug here can
+      // appear valid at preflight yet fail with a paid 404 afterwards.
+      const encodedMinerId =
+        encodeURIComponent(directTarget.miner.id);
       const engineEndpoint =
-        `/v1/ask/${encodedMiner}`;
+        `/v1/ask/${encodedMinerId}`;
 
       return {
         mode: "TELEGRAPH_DIRECT_CORROBORATION",
