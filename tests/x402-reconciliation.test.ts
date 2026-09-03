@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  extractExactEvmAuthorization
+  extractExactEvmAuthorization,
+  reserveUnsettledExactEvmAuthorization
 } from "../src/telegraph/x402-reconciliation.js";
 import type {
   X402PaymentLane
@@ -55,6 +56,28 @@ describe("x402 EIP-3009 reconciliation binding", () => {
     expect(authorization.to).toBe(PAY_TO);
     expect(authorization.value).toBe("10000");
     expect(authorization.nonce).toBe(NONCE);
+  });
+
+  it("reserves the full exact signed authorization when settlement remains unobserved without claiming an on-chain transfer", () => {
+    const proof =
+      reserveUnsettledExactEvmAuthorization({
+        paymentPayload: payload(),
+        lane,
+        expectedPayer: PAYER
+      });
+
+    expect(proof.settlement.success).toBe(true);
+    expect(proof.settlement.code).toBe(
+      "payment_ambiguous_reserved"
+    );
+    expect(proof.settlement.settlementObserved).toBe(false);
+    expect(proof.settlement.transaction).toBeNull();
+    expect(proof.settlement.transferVerified).toBe(false);
+    expect(proof.settlement.reservedAmountRaw).toBe("10000");
+    expect(proof.settlement.authorizationNonce).toBe(NONCE);
+    expect(proof.settlement.proofSource).toBe(
+      "SIGNED_AUTHORIZATION_RESERVED_UNSETTLED"
+    );
   });
 
   it("rejects a recipient substitution before any on-chain reconciliation", () => {
