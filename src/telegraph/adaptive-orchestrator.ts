@@ -34,6 +34,40 @@ export interface IntentAcquisitionResult {
   paymentAsset?: string | null;
 }
 
+export type RetryableEvidenceAcquisitionCode =
+  | "evidence_subject_not_asserted"
+  | "evidence_chain_not_asserted";
+
+export class RetryableEvidenceAcquisitionError extends Error {
+  readonly code: RetryableEvidenceAcquisitionCode;
+  readonly detail: string;
+  readonly paymentAmountRaw: string;
+  readonly artifactPath?: string;
+  readonly minerId?: string;
+
+  constructor(input: {
+    code: RetryableEvidenceAcquisitionCode;
+    detail: string;
+    paymentAmountRaw?: string;
+    artifactPath?: string;
+    minerId?: string;
+  }) {
+    super(
+      `${input.code}:${input.detail}` +
+      (input.artifactPath
+        ? `;artifact:${input.artifactPath}`
+        : "")
+    );
+    this.name = "RetryableEvidenceAcquisitionError";
+    this.code = input.code;
+    this.detail = input.detail;
+    this.paymentAmountRaw =
+      input.paymentAmountRaw ?? "0";
+    this.artifactPath = input.artifactPath;
+    this.minerId = input.minerId;
+  }
+}
+
 export type IntentAcquirer = (
   context: IntentAcquisitionContext
 ) => Promise<IntentAcquisitionResult>;
@@ -96,6 +130,7 @@ export async function collectAdaptiveEvidence(
 
   for (const requirement of plan.requirements) {
     let satisfied = false;
+    let lastRetryableError: string | undefined;
 
     for (
       let attemptNumber = 1;
@@ -157,6 +192,66 @@ export async function collectAdaptiveEvidence(
             deadline.toISOString()
         });
       } catch (error: unknown) {
+        if (
+          error instanceof RetryableEvidenceAcquisitionError
+        ) {
+          let retryPayment: bigint;
+
+          try {
+            retryPayment = unsigned(
+              error.paymentAmountRaw,
+              "retryable_evidence_payment_amount"
+            );
+          } catch {
+            return {
+              status: "HOLD",
+              code:
+                "adaptive_evidence_acquisition_failed",
+              bundle: currentBundle(),
+              completedIntents,
+              failedIntent:
+                requirement.intent,
+              error:
+                `retryable_evidence_payment_invalid:${error.message}`
+            };
+          }
+
+          if (retryPayment > remaining) {
+            return {
+              status: "HOLD",
+              code:
+                "adaptive_evidence_budget_exceeded",
+              bundle: currentBundle(),
+              completedIntents,
+              failedIntent:
+                requirement.intent,
+              error:
+                `retryable evidence payment ${retryPayment} exceeds remaining evidence budget ${remaining}`
+            };
+          }
+
+          // Safe automatic continuation is deliberately limited to free
+          // unusable responses. A completed paid response is not ambiguous,
+          // but automatically buying another response would be a new machine
+          // side effect. Stop instead of silently spending again.
+          if (retryPayment > 0n) {
+            return {
+              status: "HOLD",
+              code:
+                "adaptive_evidence_acquisition_failed",
+              bundle: currentBundle(),
+              completedIntents,
+              failedIntent:
+                requirement.intent,
+              error:
+                `paid_unusable_evidence_not_retried:${error.message}`
+            };
+          }
+
+          lastRetryableError = error.message;
+          continue;
+        }
+
         return {
           status: "HOLD",
           code:
@@ -266,7 +361,9 @@ export async function collectAdaptiveEvidence(
         failedIntent:
           requirement.intent,
         error:
-          `distinct_miner_quorum_not_met:${requirement.intent}`
+          lastRetryableError
+            ? `distinct_miner_quorum_not_met:${requirement.intent};last_unusable_evidence:${lastRetryableError}`
+            : `distinct_miner_quorum_not_met:${requirement.intent}`
       };
     }
   }
