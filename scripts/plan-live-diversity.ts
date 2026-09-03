@@ -35,8 +35,30 @@ function loadMiners(): TelegraphMinerRecord[] {
   return parsed as TelegraphMinerRecord[];
 }
 
+function parseUsdc(value: string): string {
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/.test(value)) {
+    throw new Error(
+      "AMOUNT_USDC must be a positive decimal with at most 6 decimal places"
+    );
+  }
+
+  const [whole, fraction = ""] = value.split(".");
+  const raw =
+    BigInt(whole) * 1_000_000n +
+    BigInt((fraction + "000000").slice(0, 6));
+
+  if (raw <= 0n || raw > 10_000_000n) {
+    throw new Error(
+      "Adaptive demo amount must be > 0 and <= 10 USDC"
+    );
+  }
+
+  return raw.toString();
+}
+
+const amountArg = process.argv[2] ?? "7";
 const requestedIntent =
-  (process.argv[2] ?? "FRAUD_DETECTION") as AdaptiveEvidenceIntent;
+  (process.argv[3] ?? "FRAUD_DETECTION") as AdaptiveEvidenceIntent;
 if (!ALLOWED_INTENTS.has(requestedIntent)) {
   throw new Error(
     `Unsupported intent ${requestedIntent}. Use FRAUD_DETECTION, ONCHAIN_TX_LOOKUP, or WALLET_BALANCE_CHECK.`
@@ -44,7 +66,7 @@ if (!ALLOWED_INTENTS.has(requestedIntent)) {
 }
 
 const excludedMinerIds = process.argv
-  .slice(3)
+  .slice(4)
   .flatMap((value) => value.split(","))
   .map((value) => value.trim())
   .filter(Boolean);
@@ -53,9 +75,10 @@ const action = createActionContract({
   type: "payment",
   chainId: BASE_SEPOLIA_CHAIN_ID,
   token: BASE_SEPOLIA_USDC,
-  amountRaw: "7000000",
+  amountRaw: parseUsdc(amountArg),
   destination: CANONICAL_VENDOR,
-  reason: "Live provider-diversity planning only",
+  reason:
+    `Adaptive authorization demo: ${amountArg} USDC`,
   policyId: "payments.adaptive.v1",
   policyVersion: 1
 });
@@ -72,6 +95,7 @@ console.log("");
 console.log("PROOFGATE LIVE DIVERSITY PLAN");
 console.log("=============================");
 console.log("Mode: READ-ONLY / ZERO X402 SPEND");
+console.log("Amount:", `${amountArg} USDC`);
 console.log("Intent:", plan.intent);
 console.log("Action hash:", action.actionHash);
 console.log(
@@ -118,5 +142,5 @@ if (plan.skipped.length > 0) {
 console.log("");
 console.log("No Telegraph request was sent and no USDC was spent.");
 console.log(
-  "Selection uses only live registry metadata, official rank when present, the frozen action hash, and prior-Miner exclusions. It never uses Miner verdicts."
+  "Selection uses only live registry metadata, official rank when present, the exact frozen action hash, and prior-Miner exclusions. It never uses Miner verdicts."
 );
