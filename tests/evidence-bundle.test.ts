@@ -15,7 +15,8 @@ import {
 } from "../src/telegraph/evidence-bundle.js";
 import {
   adaptiveAction,
-  adaptiveEvidence
+  adaptiveEvidence,
+  adaptiveQuorumInputs
 } from "./helpers/adaptive-fixtures.js";
 
 function rehash(bundle: EvidenceBundle): void {
@@ -32,17 +33,9 @@ describe("adaptive EvidenceBundle", () => {
   it("creates a deterministic tamper-evident bundle", () => {
     const action = adaptiveAction("3000000");
     const plan = createAdaptiveEvidencePlan(action);
-    const inputs = plan.requirements.map(
-      (requirement) => ({
-        evidence:
-          adaptiveEvidence(
-            action,
-            requirement.intent
-          ),
-        paymentAmountRaw: "10000",
-        paymentNetwork: "eip155:84532",
-        paymentAsset: BASE_SEPOLIA_USDC
-      })
+    const inputs = adaptiveQuorumInputs(
+      action,
+      plan
     );
 
     const first = createEvidenceBundle(
@@ -70,29 +63,128 @@ describe("adaptive EvidenceBundle", () => {
       second.bundleHash
     );
     expect(first.totalEvidenceSpendRaw).toBe(
-      "20000"
+      "30000"
     );
     expect(verifyEvidenceBundle(first)).toBe(true);
   });
 
-  it("rejects duplicate Intent evidence", () => {
+  it("allows repeated Intent evidence on distinct attempts and commits provider diversity", () => {
     const action = adaptiveAction("3000000");
     const plan = createAdaptiveEvidencePlan(action);
-    const evidence = adaptiveEvidence(
+    const bundle = createEvidenceBundle(
       action,
-      "FRAUD_DETECTION"
+      plan,
+      adaptiveQuorumInputs(action, plan)
     );
+
+    const fraud = bundle.items.filter(
+      (item) => item.intent === "FRAUD_DETECTION"
+    );
+    expect(fraud).toHaveLength(2);
+    expect(fraud.map((item) => item.attempt)).toEqual([
+      1,
+      2
+    ]);
+    expect(
+      bundle.quorums.find(
+        (item) => item.intent === "FRAUD_DETECTION"
+      )?.distinctMinerIds
+    ).toHaveLength(2);
+  });
+
+  it("rejects duplicate attempt identities for the same Intent", () => {
+    const action = adaptiveAction("3000000");
+    const plan = createAdaptiveEvidencePlan(action);
 
     expect(() =>
       createEvidenceBundle(
         action,
         plan,
         [
-          { evidence },
-          { evidence }
+          {
+            evidence: adaptiveEvidence(
+              action,
+              "FRAUD_DETECTION",
+              {
+                miner: {
+                  id: "miner-a",
+                  name: "Miner A",
+                  slug: "miner-a"
+                }
+              }
+            ),
+            attempt: 1
+          },
+          {
+            evidence: adaptiveEvidence(
+              action,
+              "FRAUD_DETECTION",
+              {
+                miner: {
+                  id: "miner-b",
+                  name: "Miner B",
+                  slug: "miner-b"
+                }
+              }
+            ),
+            attempt: 1
+          }
         ]
       )
-    ).toThrow(/duplicate_evidence_intent/);
+    ).toThrow(/duplicate_evidence_attempt/);
+  });
+
+  it("does not convert repeated results from one Miner into independent votes", () => {
+    const action = adaptiveAction("3000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const bundle = createEvidenceBundle(
+      action,
+      plan,
+      [
+        {
+          evidence: adaptiveEvidence(
+            action,
+            "FRAUD_DETECTION",
+            {
+              miner: {
+                id: "same-miner",
+                name: "Same Miner",
+                slug: "same-miner"
+              }
+            }
+          ),
+          attempt: 1
+        },
+        {
+          evidence: adaptiveEvidence(
+            action,
+            "FRAUD_DETECTION",
+            {
+              miner: {
+                id: "same-miner",
+                name: "Same Miner",
+                slug: "same-miner"
+              }
+            }
+          ),
+          attempt: 2
+        }
+      ]
+    );
+
+    const fraud = bundle.quorums.find(
+      (item) => item.intent === "FRAUD_DETECTION"
+    );
+    expect(fraud?.distinctMinerIds).toEqual([
+      "same-miner"
+    ]);
+    expect(fraud?.positiveMinerIds).toEqual([
+      "same-miner"
+    ]);
+    expect(fraud?.status).toBe(
+      "INSUFFICIENT_DIVERSITY"
+    );
+    expect(verifyEvidenceBundle(bundle)).toBe(true);
   });
 
   it("rejects exact subject and chain substitution", () => {
@@ -135,7 +227,7 @@ describe("adaptive EvidenceBundle", () => {
     ).toThrow("evidence_bundle_chain_mismatch");
   });
 
-  it("detects item and total-spend tampering", () => {
+  it("detects item, quorum and total-spend tampering", () => {
     const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
     const bundle = createEvidenceBundle(
@@ -160,6 +252,13 @@ describe("adaptive EvidenceBundle", () => {
     expect(
       verifyEvidenceBundle(itemTamper)
     ).toBe(false);
+
+    const quorumTamper = structuredClone(bundle);
+    quorumTamper.quorums[0].distinctMinerIds = [
+      "fake-miner"
+    ];
+    rehash(quorumTamper);
+    expect(verifyEvidenceBundle(quorumTamper)).toBe(false);
 
     const spendTamper = structuredClone(bundle);
     spendTamper.totalEvidenceSpendRaw = "1";
