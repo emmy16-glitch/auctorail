@@ -44,6 +44,7 @@ export type X402LaneDecision =
 
 export type X402SettlementCode =
   | "payment_settled"
+  | "payment_ambiguous_reserved"
   | "payment_response_missing"
   | "payment_response_malformed"
   | "facilitator_insufficient_credits"
@@ -51,11 +52,19 @@ export type X402SettlementCode =
   | "payment_settlement_failed";
 
 export interface X402SettlementResult {
+  /**
+   * `true` means the acquisition may safely continue under the recorded
+   * payment state. For `payment_ambiguous_reserved`, this does NOT mean an
+   * on-chain settlement was observed; the full signed authorization amount is
+   * instead pessimistically reserved against the evidence budget and the same
+   * authorization must never be retried.
+   */
   success: boolean;
   code: X402SettlementCode;
   retryable: boolean;
   transaction: string | null;
   errorReason: string | null;
+  settlementObserved?: boolean;
 }
 
 function decodeBase64Json(value: string): unknown {
@@ -200,7 +209,8 @@ export function classifyPaymentResponseHeader(
       code: "payment_response_missing",
       retryable: false,
       transaction: null,
-      errorReason: null
+      errorReason: null,
+      settlementObserved: false
     };
   }
 
@@ -214,7 +224,8 @@ export function classifyPaymentResponseHeader(
       code: "payment_response_malformed",
       retryable: false,
       transaction: null,
-      errorReason: null
+      errorReason: null,
+      settlementObserved: false
     };
   }
 
@@ -224,7 +235,8 @@ export function classifyPaymentResponseHeader(
       code: "payment_response_malformed",
       retryable: false,
       transaction: null,
-      errorReason: null
+      errorReason: null,
+      settlementObserved: false
     };
   }
 
@@ -242,7 +254,8 @@ export function classifyPaymentResponseHeader(
       code: "payment_settled",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: true
     };
   }
 
@@ -254,7 +267,8 @@ export function classifyPaymentResponseHeader(
       code: "facilitator_insufficient_credits",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: false
     };
   }
 
@@ -264,7 +278,8 @@ export function classifyPaymentResponseHeader(
       code: "facilitator_forbidden",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: false
     };
   }
 
@@ -273,6 +288,7 @@ export function classifyPaymentResponseHeader(
     code: "payment_settlement_failed",
     retryable: false,
     transaction,
-    errorReason
+    errorReason,
+    settlementObserved: false
   };
 }
