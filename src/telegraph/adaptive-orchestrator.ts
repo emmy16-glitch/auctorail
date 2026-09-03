@@ -36,7 +36,8 @@ export interface IntentAcquisitionResult {
 
 export type RetryableEvidenceAcquisitionCode =
   | "evidence_subject_not_asserted"
-  | "evidence_chain_not_asserted";
+  | "evidence_chain_not_asserted"
+  | "routed_intent_mismatch";
 
 export class RetryableEvidenceAcquisitionError extends Error {
   readonly code: RetryableEvidenceAcquisitionCode;
@@ -257,7 +258,7 @@ export async function collectAdaptiveEvidence(
 
           // The user authorized this bounded acquisition session up to the
           // deterministic plan budget. A response with proven settlement but
-          // missing subject/chain assertion is unusable as authorization
+          // unusable binding or the wrong routed Intent is never authorization
           // evidence, yet its cost is real. Account for that cost, quarantine
           // the response, consume this route attempt, and continue only while
           // the same precommitted deadline/attempt/spend limits still allow it.
