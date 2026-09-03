@@ -53,6 +53,10 @@ describe("adaptive evidence orchestrator", () => {
     expect(result.bundle.totalEvidenceSpendRaw).toBe(
       "50000"
     );
+    expect(result.actualEvidenceSpendRaw).toBe(
+      "50000"
+    );
+    expect(result.rejectedAttempts).toEqual([]);
     expect(
       result.bundle.quorums.find(
         (item) => item.intent === "FRAUD_DETECTION"
@@ -123,36 +127,127 @@ describe("adaptive evidence orchestrator", () => {
         (item) => item.intent === "FRAUD_DETECTION"
       )?.distinctMinerIds
     ).toHaveLength(3);
+    expect(result.actualEvidenceSpendRaw).toBe("0");
+    expect(result.rejectedAttempts).toHaveLength(1);
+    expect(result.rejectedAttempts[0]?.minerId).toBe(
+      "schema-poor-miner"
+    );
   });
 
-  it("does not automatically buy another response after paid unusable evidence", async () => {
+  it("accounts for a settled paid unusable response and continues within the precommitted budget", async () => {
     const action = adaptiveAction("3000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const priorSeen: string[][] = [];
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async ({
+        requirement,
+        attemptNumber = 1,
+        priorMinerIds = []
+      }) => {
+        priorSeen.push([...priorMinerIds]);
+
+        if (
+          requirement.intent === "FRAUD_DETECTION" &&
+          attemptNumber === 1
+        ) {
+          throw new RetryableEvidenceAcquisitionError({
+            code: "evidence_chain_not_asserted",
+            detail: "paid Miner omitted chain",
+            paymentAmountRaw: "10000",
+            artifactPath: "data/evidence/adaptive/rejected/paid.json",
+            minerId: "paid-schema-poor-miner"
+          });
+        }
+
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent,
+            {
+              miner: {
+                id: `${requirement.intent}-miner-${attemptNumber}`,
+                name: `${requirement.intent} Miner ${attemptNumber}`,
+                slug: `${requirement.intent.toLowerCase()}-miner-${attemptNumber}`
+              }
+            }
+          ),
+          paymentAmountRaw: "10000"
+        };
+      }
+    );
+
+    expect(result.status).toBe("COMPLETE");
+    expect(result.actualEvidenceSpendRaw).toBe("40000");
+    expect(result.bundle.totalEvidenceSpendRaw).toBe("30000");
+    expect(result.rejectedAttempts).toEqual([
+      expect.objectContaining({
+        intent: "FRAUD_DETECTION",
+        attempt: 1,
+        paymentAmountRaw: "10000",
+        minerId: "paid-schema-poor-miner"
+      })
+    ]);
+    expect(priorSeen[1]).toContain(
+      "paid-schema-poor-miner"
+    );
+
+    const fraudItems = result.bundle.items.filter(
+      (item) => item.intent === "FRAUD_DETECTION"
+    );
+    expect(fraudItems.map((item) => item.attempt)).toEqual([
+      2,
+      3
+    ]);
+  });
+
+  it("never lets rejected paid attempts exceed the deterministic acquisition budget", async () => {
+    const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
     let calls = 0;
 
     const result = await collectAdaptiveEvidence(
       action,
       plan,
-      async () => {
+      async ({ requirement, attemptNumber = 1 }) => {
         calls++;
-        throw new RetryableEvidenceAcquisitionError({
-          code: "evidence_chain_not_asserted",
-          detail: "paid Miner omitted chain",
-          paymentAmountRaw: "10000",
-          artifactPath: "data/evidence/adaptive/rejected/paid.json",
-          minerId: "paid-schema-poor-miner"
-        });
+
+        if (attemptNumber === 1) {
+          throw new RetryableEvidenceAcquisitionError({
+            code: "evidence_chain_not_asserted",
+            detail: "paid Miner omitted chain",
+            paymentAmountRaw: "10000",
+            minerId: "paid-schema-poor-miner"
+          });
+        }
+
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent,
+            {
+              miner: {
+                id: "second-miner",
+                name: "Second Miner",
+                slug: "second-miner"
+              }
+            }
+          ),
+          paymentAmountRaw: "10000"
+        };
       }
     );
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
     expect(result.status).toBe("HOLD");
     expect(result.code).toBe(
-      "adaptive_evidence_acquisition_failed"
+      "adaptive_evidence_budget_exceeded"
     );
-    expect(result.error).toContain(
-      "paid_unusable_evidence_not_retried"
-    );
+    expect(result.actualEvidenceSpendRaw).toBe("10000");
+    expect(result.rejectedAttempts).toHaveLength(1);
+    expect(result.bundle.items).toHaveLength(0);
   });
 
   it("does not count repeated routing to the same Miner as independent diversity", async () => {
