@@ -10,7 +10,8 @@ import {
   createLiveIntentAcquirer
 } from "../src/telegraph/live-intent-client.js";
 import {
-  extractExactEvmAuthorization
+  extractExactEvmAuthorization,
+  reserveUnsettledExactEvmAuthorization
 } from "../src/telegraph/x402-reconciliation.js";
 import {
   adaptiveAction
@@ -113,6 +114,31 @@ function hasPaymentSignature(
   );
 }
 
+function directResponse(action: ReturnType<typeof adaptiveAction>, slug: string) {
+  return new Response(
+    JSON.stringify({
+      intent: "FRAUD_DETECTION",
+      miner_used: slug,
+      miner_name: slug,
+      signal_hash: `0x${"a".repeat(64)}`,
+      timestamp: new Date().toISOString(),
+      result: {
+        subject: action.payload.destination,
+        chainId: action.payload.chainId,
+        verdict: "ALLOW",
+        confidence: 0.91,
+        applicability: "APPLICABLE"
+      }
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      }
+    }
+  );
+}
+
 describe("live x402 settlement reconciliation", () => {
   it("accepts a missing PAYMENT-RESPONSE only after exact EIP-3009 authorization reconciliation succeeds", async () => {
     const action = adaptiveAction("7000000");
@@ -151,28 +177,7 @@ describe("live x402 settlement reconciliation", () => {
         });
       }
 
-      return new Response(
-        JSON.stringify({
-          intent: "FRAUD_DETECTION",
-          miner_used: direct.slug,
-          miner_name: direct.name,
-          signal_hash: `0x${"a".repeat(64)}`,
-          timestamp: new Date().toISOString(),
-          result: {
-            subject: action.payload.destination,
-            chainId: action.payload.chainId,
-            verdict: "ALLOW",
-            confidence: 0.91,
-            applicability: "APPLICABLE"
-          }
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        }
-      );
+      return directResponse(action, direct.slug);
     };
 
     try {
@@ -198,11 +203,14 @@ describe("live x402 settlement reconciliation", () => {
               retryable: false,
               transaction: `0x${"f".repeat(64)}`,
               errorReason: null,
+              settlementObserved: true,
               proofSource:
                 "BASE_SEPOLIA_AUTHORIZATION_USED_AND_TRANSFER",
               authorizationNonce:
                 authorization.nonce,
-              transferVerified: true
+              transferVerified: true,
+              reservedAmountRaw:
+                authorization.value
             }
           };
         }
@@ -237,6 +245,101 @@ describe("live x402 settlement reconciliation", () => {
       expect(saved.payment.settlement.proofSource).toBe(
         "BASE_SEPOLIA_AUTHORIZATION_USED_AND_TRANSFER"
       );
+      expect(saved.request.routeMode).toBe(
+        "TELEGRAPH_DIRECT_CORROBORATION"
+      );
+    } finally {
+      fs.rmSync(directory, {
+        recursive: true,
+        force: true
+      });
+    }
+  });
+
+  it("continues with exact-bound direct evidence when settlement remains unobserved by reserving the full signed authorization amount", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const prior = fraudMiner({
+      id: "91001",
+      slug: "prior-auto-miner",
+      rank: 2
+    });
+    const direct = fraudMiner({
+      id: "9002",
+      slug: "direct-miner",
+      rank: 1
+    });
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "proofgate-x402-reserved-")
+    );
+
+    const fetchImpl = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const url = String(input);
+
+      if (!hasPaymentSignature(input, init)) {
+        return new Response("", {
+          status: 402,
+          headers: {
+            "payment-required":
+              paymentRequiredHeader(url)
+          }
+        });
+      }
+
+      return directResponse(action, direct.slug);
+    };
+
+    try {
+      const acquire = createLiveIntentAcquirer({
+        privateKey: PRIVATE_KEY,
+        miners: [prior, direct],
+        evidenceDirectory: directory,
+        fetchImpl: fetchImpl as typeof fetch,
+        settlementReconciler: async (input) =>
+          reserveUnsettledExactEvmAuthorization({
+            paymentPayload: input.paymentPayload,
+            lane: input.lane,
+            expectedPayer: input.expectedPayer
+          })
+      });
+
+      const result = await acquire({
+        action,
+        plan,
+        requirement: plan.requirements[0],
+        attemptNumber: 2,
+        priorMinerIds: ["91001"],
+        remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+        deadlineAt:
+          new Date(Date.now() + 30_000).toISOString()
+      });
+
+      expect(result.evidence.miner.id).toBe("9002");
+      expect(result.paymentAmountRaw).toBe("10000");
+      expect(result.settlement?.success).toBe(true);
+      expect(result.settlement?.code).toBe(
+        "payment_ambiguous_reserved"
+      );
+      expect(result.settlement?.transaction).toBeNull();
+      expect(result.settlement?.settlementObserved).toBe(false);
+
+      const saved = JSON.parse(
+        fs.readFileSync(
+          result.evidencePath,
+          "utf8"
+        )
+      );
+      expect(saved.payment.amountRaw).toBe("10000");
+      expect(saved.payment.settlement.code).toBe(
+        "payment_ambiguous_reserved"
+      );
+      expect(saved.payment.settlement.proofSource).toBe(
+        "SIGNED_AUTHORIZATION_RESERVED_UNSETTLED"
+      );
+      expect(saved.payment.settlement.transferVerified).toBe(false);
       expect(saved.request.routeMode).toBe(
         "TELEGRAPH_DIRECT_CORROBORATION"
       );
