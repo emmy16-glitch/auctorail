@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "ci": "npm run typecheck && npm test",
+    "ci": "npm run typecheck && npm test && npm run web:build",
     "audit:prod": "npm audit --omit=dev",
     "demo": "tsx scripts/demo-proof.ts",
     "proof:live": "tsx scripts/prove-telegraph.ts",
