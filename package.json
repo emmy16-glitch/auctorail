@@ -24,6 +24,7 @@
     "attack:lab": "tsx scripts/attack-lab.ts",
     "security:fuzz": "tsx scripts/final-fuzz.ts",
     "security:fuzz:adaptive": "tsx scripts/adaptive-fuzz.ts",
+    "security:fuzz:general": "tsx scripts/general-fuzz.ts",
     "gateway:serve": "tsx scripts/serve-authorization-gateway.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts"
