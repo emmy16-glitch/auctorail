@@ -20,6 +20,9 @@ import {
   type EvidenceBundle
 } from "../telegraph/evidence-bundle.js";
 import {
+  isExplicitNegativeEvidenceLabel
+} from "../telegraph/evidence-quorum.js";
+import {
   classifyMinerLabel,
   type CheckStatus,
   type DecisionRecord,
@@ -35,6 +38,7 @@ export const PAYMENTS_ADAPTIVE_V1 = {
   maxEvidenceAgeSeconds: 300,
   conflictRule: "EXPLICIT_NEGATIVE_BLOCKS" as const,
   missingEvidenceRule: "HOLD" as const,
+  providerDiversityRule: "DISTINCT_MINER_IDS" as const,
   failClosed: true
 };
 
@@ -69,27 +73,6 @@ function fresh(timestamp: string, now: Date): boolean {
     age >= 0 &&
     age <= PAYMENTS_ADAPTIVE_V1.maxEvidenceAgeSeconds * 1000
   );
-}
-
-function explicitNegative(label: string | null): boolean {
-  if (!label) return false;
-  const normalized = label.trim().toUpperCase();
-
-  return [
-    "BLOCK",
-    "DENY",
-    "DENIED",
-    "REJECT",
-    "REJECTED",
-    "MALICIOUS",
-    "SUSPICIOUS",
-    "FRAUD",
-    "FRAUDULENT",
-    "RISKY",
-    "HIGH_RISK",
-    "FAIL",
-    "FAILED"
-  ].includes(normalized);
 }
 
 function planMatchesAction(
@@ -133,7 +116,10 @@ function requirementChecks(
   bundle: EvidenceBundle,
   now: Date
 ): PolicyCheck[] {
-  const item = bundle.items.find(
+  const items = bundle.items.filter(
+    (candidate) => candidate.intent === requirement.intent
+  );
+  const summary = bundle.quorums.find(
     (candidate) => candidate.intent === requirement.intent
   );
   const prefix = requirement.intent.toLowerCase();
@@ -151,7 +137,34 @@ function requirementChecks(
     )
   );
 
-  if (!item) {
+  if (!summary) {
+    checks.push(
+      check(
+        `${prefix}_quorum`,
+        "HOLD",
+        `Required ${requirement.intent} quorum summary is missing.`,
+        "adaptive_quorum_missing"
+      )
+    );
+    return checks;
+  }
+
+  const ruleMatch =
+    canonicalize(summary.rule) ===
+    canonicalize(requirement.quorum);
+
+  checks.push(
+    check(
+      `${prefix}_quorum_rule`,
+      ruleMatch ? "PASS" : "BLOCK",
+      ruleMatch
+        ? "Evidence quorum rule exactly matches the consequence-derived plan."
+        : "Evidence quorum rule was changed from the consequence-derived plan.",
+      ruleMatch ? undefined : "adaptive_quorum_rule_mismatch"
+    )
+  );
+
+  if (items.length === 0) {
     checks.push(
       check(
         `${prefix}_evidence`,
@@ -167,125 +180,184 @@ function requirementChecks(
     check(
       `${prefix}_evidence`,
       "PASS",
-      `Required ${requirement.intent} evidence is present from Telegraph-routed Miner ${item.miner.slug}.`
+      `${items.length} routed ${requirement.intent} attempt(s) are committed in the Evidence Bundle.`
     )
   );
 
-  const subjectPass = addressesEqual(item.subject, bundle.subject);
-  const chainPass = item.chainId === bundle.chainId;
+  const distinctPass =
+    summary.distinctMinerIds.length >=
+    requirement.quorum.minimumDistinctMiners;
+  checks.push(
+    check(
+      `${prefix}_distinct_miners`,
+      distinctPass ? "PASS" : "HOLD",
+      distinctPass
+        ? `${summary.distinctMinerIds.length} distinct Miner identities satisfy the required provider diversity of ${requirement.quorum.minimumDistinctMiners}.`
+        : `Only ${summary.distinctMinerIds.length} distinct Miner identities were obtained; ${requirement.quorum.minimumDistinctMiners} are required. Duplicate routes never count as independent providers.`,
+      distinctPass ? undefined : "adaptive_quorum_insufficient_diversity"
+    )
+  );
+
+  const positivePass =
+    summary.positiveMinerIds.length >=
+    requirement.quorum.minimumPositiveResults;
+  checks.push(
+    check(
+      `${prefix}_positive_quorum`,
+      positivePass ? "PASS" : "HOLD",
+      positivePass
+        ? `${summary.positiveMinerIds.length} confidence-qualified positive Miner result(s) satisfy the required quorum of ${requirement.quorum.minimumPositiveResults}.`
+        : `${summary.positiveMinerIds.length} confidence-qualified positive Miner result(s) are insufficient; ${requirement.quorum.minimumPositiveResults} are required.`,
+      positivePass ? undefined : "adaptive_quorum_insufficient_positives"
+    )
+  );
+
+  const attemptPass =
+    summary.observedAttempts <= requirement.quorum.maxAttempts;
+  checks.push(
+    check(
+      `${prefix}_attempt_limit`,
+      attemptPass ? "PASS" : "BLOCK",
+      attemptPass
+        ? `${summary.observedAttempts} attempt(s) stay within the bounded routing limit ${requirement.quorum.maxAttempts}.`
+        : `Evidence attempts exceed the bounded routing limit ${requirement.quorum.maxAttempts}.`,
+      attemptPass ? undefined : "adaptive_quorum_attempt_limit_exceeded"
+    )
+  );
+
+  if (summary.vetoMinerIds.length > 0) {
+    checks.push(
+      check(
+        `${prefix}_negative_veto`,
+        "BLOCK",
+        `High-confidence negative evidence from Miner(s) ${summary.vetoMinerIds.join(", ")} vetoes authorization.`,
+        "adaptive_quorum_negative_veto"
+      )
+    );
+  } else {
+    checks.push(
+      check(
+        `${prefix}_negative_veto`,
+        "PASS",
+        "No high-confidence negative quorum veto is present."
+      )
+    );
+  }
+
+  const subjectPass = items.every(
+    (item) => addressesEqual(item.subject, bundle.subject)
+  );
+  const chainPass = items.every(
+    (item) => item.chainId === bundle.chainId
+  );
 
   checks.push(
     check(
       `${prefix}_subject`,
       subjectPass ? "PASS" : "BLOCK",
       subjectPass
-        ? "Evidence is bound to the exact action subject."
-        : "Evidence subject does not match the exact action subject.",
+        ? "Every routed evidence item is bound to the exact action subject."
+        : "At least one routed evidence item targets a different subject.",
       subjectPass ? undefined : "adaptive_evidence_subject_mismatch"
     ),
     check(
       `${prefix}_chain`,
       chainPass ? "PASS" : "BLOCK",
       chainPass
-        ? "Evidence is bound to the exact action chain."
-        : "Evidence chain does not match the exact action chain.",
+        ? "Every routed evidence item is bound to the exact action chain."
+        : "At least one routed evidence item targets a different chain.",
       chainPass ? undefined : "adaptive_evidence_chain_mismatch"
     )
   );
 
-  const signalPass = !requirement.requireSignalHash || Boolean(item.signalHash);
+  const signalPass =
+    !requirement.requireSignalHash ||
+    items.every((item) => Boolean(item.signalHash));
   checks.push(
     check(
       `${prefix}_signal_hash`,
       signalPass ? "PASS" : "HOLD",
       signalPass
-        ? "Required Telegraph signal hash is present."
-        : "Required Telegraph signal hash is missing.",
+        ? "Every required routed result includes a Telegraph signal hash."
+        : "At least one required routed result is missing its Telegraph signal hash.",
       signalPass ? undefined : "adaptive_signal_hash_missing"
     )
   );
 
   const applicable =
-    !requirement.requireApplicable || item.applicability === "APPLICABLE";
+    !requirement.requireApplicable ||
+    items.every((item) => item.applicability === "APPLICABLE");
   checks.push(
     check(
       `${prefix}_applicability`,
       applicable ? "PASS" : "HOLD",
       applicable
-        ? "Evidence is applicable to the exact target."
-        : `Evidence applicability is ${item.applicability}.`,
+        ? "Every required routed result is applicable to the exact target."
+        : "At least one required routed result is not applicable to the exact target.",
       applicable ? undefined : "adaptive_evidence_not_applicable"
     )
   );
 
-  if (requirement.minimumConfidence !== undefined) {
-    const confidencePass =
-      item.confidence !== null &&
-      item.confidence >= requirement.minimumConfidence;
-
-    checks.push(
-      check(
-        `${prefix}_confidence`,
-        confidencePass ? "PASS" : "HOLD",
-        confidencePass
-          ? `Confidence ${item.confidence} meets required floor ${requirement.minimumConfidence}.`
-          : `Confidence ${item.confidence ?? "missing"} is below required floor ${requirement.minimumConfidence}.`,
-        confidencePass ? undefined : "adaptive_confidence_below_floor"
-      )
-    );
-  }
-
-  const freshPass = fresh(item.receivedAt, now);
+  const freshPass = items.every(
+    (item) => fresh(item.receivedAt, now)
+  );
   checks.push(
     check(
       `${prefix}_freshness`,
       freshPass ? "PASS" : "HOLD",
       freshPass
-        ? "Evidence is fresh."
-        : "Evidence is stale or has an invalid timestamp.",
+        ? "All routed evidence used by the quorum is fresh."
+        : "At least one routed evidence item is stale or has an invalid timestamp.",
       freshPass ? undefined : "adaptive_evidence_stale"
     )
   );
 
-  if (explicitNegative(item.label)) {
+  const explicitNegatives = items.filter(
+    (item) => isExplicitNegativeEvidenceLabel(item.label)
+  );
+
+  if (explicitNegatives.length > 0) {
     checks.push(
       check(
         `${prefix}_conflict`,
         "BLOCK",
-        `Routed evidence returned explicit negative label ${item.label}; negative evidence cannot be averaged away.`,
+        `Explicit negative evidence from Miner(s) ${[
+          ...new Set(explicitNegatives.map((item) => item.miner.id))
+        ].join(", ")} cannot be averaged away by a majority.`,
         "adaptive_explicit_negative"
       )
     );
   } else if (requirement.intent === "FRAUD_DETECTION") {
-    const status = classifyMinerLabel(item.label);
     checks.push(
       check(
         `${prefix}_verdict`,
-        status,
-        status === "PASS"
-          ? `Fraud-detection verdict ${item.label} is acceptable.`
-          : `Fraud-detection verdict ${item.label ?? "missing"} does not establish a positive result.`,
-        status === "PASS" ? undefined : "adaptive_fraud_verdict_not_positive"
-      )
-    );
-  } else if (item.label === null) {
-    checks.push(
-      check(
-        `${prefix}_conflict`,
-        "PASS",
-        "Informational evidence has no explicit status label and no negative conflict."
+        summary.status === "SATISFIED" ? "PASS" : "HOLD",
+        summary.status === "SATISFIED"
+          ? "Fraud-detection provider diversity and confidence-qualified positive quorum are satisfied."
+          : `Fraud-detection quorum status is ${summary.status}.`,
+        summary.status === "SATISFIED"
+          ? undefined
+          : "adaptive_fraud_quorum_not_satisfied"
       )
     );
   } else {
-    const status = classifyMinerLabel(item.label);
+    const labeled = items.filter(
+      (item) => item.label !== null
+    );
+    const uncertain = labeled.filter(
+      (item) => classifyMinerLabel(item.label) !== "PASS"
+    );
+
     checks.push(
       check(
         `${prefix}_conflict`,
-        status === "PASS" ? "PASS" : "HOLD",
-        status === "PASS"
-          ? `Secondary evidence label ${item.label} is explicitly acceptable.`
-          : `Secondary evidence label ${item.label} is uncertain and cannot establish authority.`,
-        status === "PASS" ? undefined : "adaptive_secondary_result_uncertain"
+        uncertain.length === 0 ? "PASS" : "HOLD",
+        uncertain.length === 0
+          ? "Secondary evidence contains no negative or uncertain status labels."
+          : `Secondary evidence from Miner(s) ${uncertain.map((item) => item.miner.id).join(", ")} is uncertain and cannot establish authority.`,
+        uncertain.length === 0
+          ? undefined
+          : "adaptive_secondary_result_uncertain"
       )
     );
   }
@@ -371,6 +443,7 @@ export function evaluatePaymentsAdaptiveV1(
   const planValid =
     plan.schemaVersion === "proofgate.adaptive-evidence-plan.v1" &&
     plan.routeMode === "TELEGRAPH_INTENT_ROUTE" &&
+    plan.providerDiversityRule === "DISTINCT_MINER_IDS" &&
     planMatchesAction(plan, action);
 
   checks.push(
@@ -378,7 +451,7 @@ export function evaluatePaymentsAdaptiveV1(
       "adaptive_evidence_plan",
       planValid ? "PASS" : "BLOCK",
       planValid
-        ? `Risk tier ${plan.riskTier}, required Intents, confidence floors and evidence budget were deterministically derived from the exact action.`
+        ? `Risk tier ${plan.riskTier}, required Intents, Miner quorum, confidence floors and evidence budget were deterministically derived from the exact action.`
         : "Adaptive evidence plan differs from the deterministic plan required for this exact action.",
       planValid ? undefined : "adaptive_plan_downgrade_or_mismatch"
     )
@@ -400,7 +473,7 @@ export function evaluatePaymentsAdaptiveV1(
         "adaptive_evidence_bundle",
         bundleValid ? "PASS" : "BLOCK",
         bundleValid
-          ? `Evidence bundle ${bundle.bundleHash} is intact and bound to the exact action/plan.`
+          ? `Evidence bundle ${bundle.bundleHash} is intact and bound to the exact action/plan/quorum.`
           : "Evidence bundle integrity or action/plan binding failed.",
         bundleValid ? undefined : "adaptive_bundle_integrity_failed"
       )
@@ -442,6 +515,26 @@ export function evaluatePaymentsAdaptiveV1(
           ? "Evidence bundle contains only Intents required by the deterministic plan."
           : `Evidence bundle contains unrequested Intents: ${extras.join(", ")}.`,
         extras.length === 0 ? undefined : "adaptive_unrequested_evidence"
+      )
+    );
+
+    const quorumShapePass =
+      bundle.quorums.length === plan.requirements.length &&
+      plan.requirements.every(
+        (requirement) =>
+          bundle.quorums.some(
+            (summary) => summary.intent === requirement.intent
+          )
+      );
+
+    checks.push(
+      check(
+        "adaptive_quorum_shape",
+        quorumShapePass ? "PASS" : "BLOCK",
+        quorumShapePass
+          ? "Evidence Bundle contains exactly one quorum summary for every required Intent."
+          : "Evidence Bundle quorum summaries do not match the required Intent set.",
+        quorumShapePass ? undefined : "adaptive_quorum_shape_mismatch"
       )
     );
 
@@ -490,7 +583,8 @@ export function evaluatePaymentsAdaptiveV1(
       version: PAYMENTS_ADAPTIVE_V1.version,
       actionHash: action.actionHash,
       planHash: hashAdaptiveEvidencePlan(plan),
-      bundleHash: bundle?.bundleHash ?? null
+      bundleHash: bundle?.bundleHash ?? null,
+      quorums: bundle?.quorums ?? null
     })
   );
 
