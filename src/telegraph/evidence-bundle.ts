@@ -12,6 +12,11 @@ import type {
   ActionRiskTier
 } from "./adaptive-evidence-plan.js";
 import {
+  summarizeEvidenceQuorum,
+  validEvidenceQuorumRule,
+  type EvidenceQuorumSummary
+} from "./evidence-quorum.js";
+import {
   TELEGRAPH_X402_POLICY
 } from "./x402-policy.js";
 
@@ -23,6 +28,7 @@ export interface AdaptiveEvidencePayment {
 
 export interface AdaptiveEvidenceItem {
   intent: AdaptiveEvidenceIntent;
+  attempt: number;
   routeMode: "TELEGRAPH_INTENT_ROUTE";
   miner: {
     id: string;
@@ -44,7 +50,7 @@ export interface AdaptiveEvidenceItem {
 }
 
 export interface EvidenceBundleBody {
-  schemaVersion: "proofgate.evidence-bundle.v1";
+  schemaVersion: "proofgate.evidence-bundle.v2";
   actionId: string;
   actionHash: string;
   subject: string;
@@ -55,6 +61,7 @@ export interface EvidenceBundleBody {
   maxEvidenceSpendRaw: string;
   totalEvidenceSpendRaw: string;
   items: AdaptiveEvidenceItem[];
+  quorums: EvidenceQuorumSummary[];
   createdAt: string;
 }
 
@@ -65,6 +72,7 @@ export interface EvidenceBundle
 
 export interface EvidenceBundleItemInput {
   evidence: TelegraphEvidenceRecord;
+  attempt?: number;
   paymentAmountRaw?: string;
   paymentNetwork?: string | null;
   paymentAsset?: string | null;
@@ -108,6 +116,7 @@ function validTimestamp(value: string): boolean {
 
 function validEvidenceItem(item: AdaptiveEvidenceItem): boolean {
   if (!ADAPTIVE_INTENTS.has(item.intent)) return false;
+  if (!Number.isInteger(item.attempt) || item.attempt < 1) return false;
   if (item.routeMode !== "TELEGRAPH_INTENT_ROUTE") return false;
   if (
     !item.miner.id.trim() ||
@@ -184,7 +193,8 @@ export function hashAdaptiveEvidencePlan(
 
 function toItem(
   plan: AdaptiveEvidencePlan,
-  input: EvidenceBundleItemInput
+  input: EvidenceBundleItemInput,
+  attempt: number
 ): AdaptiveEvidenceItem {
   const evidence = input.evidence;
 
@@ -206,6 +216,10 @@ function toItem(
     throw new Error("evidence_bundle_chain_mismatch");
   }
 
+  if (!Number.isInteger(attempt) || attempt < 1) {
+    throw new Error("evidence_attempt_invalid");
+  }
+
   const amountRaw =
     input.paymentAmountRaw ?? "0";
 
@@ -217,6 +231,7 @@ function toItem(
   return {
     intent:
       evidence.intent as AdaptiveEvidenceIntent,
+    attempt,
     routeMode:
       "TELEGRAPH_INTENT_ROUTE",
     miner: {
@@ -274,24 +289,29 @@ export function createEvidenceBundle(
     throw new Error("adaptive_plan_action_mismatch");
   }
 
-  requireUnsignedInteger(
+  const maxEvidenceSpend = requireUnsignedInteger(
     plan.maxEvidenceSpendRaw,
     "max_evidence_spend"
   );
 
-  const items = inputs.map(
-    (input) => toItem(plan, input)
-  );
+  const nextAttempt = new Map<string, number>();
+  const items = inputs.map((input) => {
+    const intent = input.evidence.intent;
+    const generated = (nextAttempt.get(intent) ?? 0) + 1;
+    const attempt = input.attempt ?? generated;
+    nextAttempt.set(intent, Math.max(generated, attempt));
+    return toItem(plan, input, attempt);
+  });
 
-  const seen = new Set<string>();
-
+  const seenAttempts = new Set<string>();
   for (const item of items) {
-    if (seen.has(item.intent)) {
+    const key = `${item.intent}:${item.attempt}`;
+    if (seenAttempts.has(key)) {
       throw new Error(
-        `duplicate_evidence_intent:${item.intent}`
+        `duplicate_evidence_attempt:${key}`
       );
     }
-    seen.add(item.intent);
+    seenAttempts.add(key);
   }
 
   const requirementOrder = new Map(
@@ -300,26 +320,50 @@ export function createEvidenceBundle(
     )
   );
 
-  items.sort(
-    (a, b) =>
+  items.sort((a, b) => {
+    const intentOrder =
       (requirementOrder.get(a.intent) ?? 999) -
-      (requirementOrder.get(b.intent) ?? 999)
+      (requirementOrder.get(b.intent) ?? 999);
+    if (intentOrder !== 0) return intentOrder;
+    if (a.attempt !== b.attempt) return a.attempt - b.attempt;
+    return a.miner.id.localeCompare(b.miner.id);
+  });
+
+  const totalEvidenceSpend = items.reduce(
+    (total, item) =>
+      total +
+      requireUnsignedInteger(
+        item.payment.amountRaw,
+        "evidence_payment_amount"
+      ),
+    0n
   );
 
-  const totalEvidenceSpendRaw =
-    items.reduce(
-      (total, item) =>
-        total +
-        requireUnsignedInteger(
-          item.payment.amountRaw,
-          "evidence_payment_amount"
-        ),
-      0n
-    ).toString();
+  if (totalEvidenceSpend > maxEvidenceSpend) {
+    throw new Error("evidence_bundle_budget_exceeded");
+  }
+
+  const quorums = plan.requirements.map(
+    (requirement) =>
+      summarizeEvidenceQuorum(
+        requirement.intent,
+        requirement.quorum,
+        items
+      )
+  );
+
+  if (
+    quorums.some(
+      (summary) =>
+        summary.status === "ATTEMPT_LIMIT_EXCEEDED"
+    )
+  ) {
+    throw new Error("evidence_quorum_attempt_limit_exceeded");
+  }
 
   const body: EvidenceBundleBody = {
     schemaVersion:
-      "proofgate.evidence-bundle.v1",
+      "proofgate.evidence-bundle.v2",
     actionId:
       action.id,
     actionHash:
@@ -336,8 +380,10 @@ export function createEvidenceBundle(
       hashAdaptiveEvidencePlan(plan),
     maxEvidenceSpendRaw:
       plan.maxEvidenceSpendRaw,
-    totalEvidenceSpendRaw,
+    totalEvidenceSpendRaw:
+      totalEvidenceSpend.toString(),
     items,
+    quorums,
     createdAt:
       (options?.now ?? new Date()).toISOString()
   };
@@ -363,9 +409,10 @@ export function isEvidenceBundle(
 
   return (
     candidate.schemaVersion ===
-      "proofgate.evidence-bundle.v1" &&
+      "proofgate.evidence-bundle.v2" &&
     typeof candidate.bundleHash === "string" &&
-    Array.isArray(candidate.items)
+    Array.isArray(candidate.items) &&
+    Array.isArray(candidate.quorums)
   );
 }
 
@@ -378,7 +425,12 @@ export function verifyEvidenceBundle(
       ...body
     } = bundle;
 
-    if (!isSha256Hex(bundleHash) || !isSha256Hex(bundle.actionHash) || !isSha256Hex(bundle.planHash)) {
+    if (
+      bundle.schemaVersion !== "proofgate.evidence-bundle.v2" ||
+      !isSha256Hex(bundleHash) ||
+      !isSha256Hex(bundle.actionHash) ||
+      !isSha256Hex(bundle.planHash)
+    ) {
       return false;
     }
 
@@ -395,7 +447,7 @@ export function verifyEvidenceBundle(
       return false;
     }
 
-    requireUnsignedInteger(
+    const maxEvidenceSpend = requireUnsignedInteger(
       bundle.maxEvidenceSpendRaw,
       "max_evidence_spend"
     );
@@ -412,29 +464,67 @@ export function verifyEvidenceBundle(
 
     if (
       total.toString() !==
-      bundle.totalEvidenceSpendRaw
+      bundle.totalEvidenceSpendRaw ||
+      total > maxEvidenceSpend
     ) {
       return false;
     }
 
-    const intents =
-      bundle.items.map((item) => item.intent);
-
     if (
-      new Set(intents).size !==
-      intents.length
+      !bundle.items.every(
+        (item) =>
+          validEvidenceItem(item) &&
+          addressesEqual(
+            item.subject,
+            bundle.subject
+          ) &&
+          item.chainId === bundle.chainId
+      )
     ) {
       return false;
+    }
+
+    const attemptKeys = bundle.items.map(
+      (item) => `${item.intent}:${item.attempt}`
+    );
+    if (new Set(attemptKeys).size !== attemptKeys.length) {
+      return false;
+    }
+
+    const quorumIntents = bundle.quorums.map(
+      (summary) => summary.intent
+    );
+    if (new Set(quorumIntents).size !== quorumIntents.length) {
+      return false;
+    }
+
+    for (const summary of bundle.quorums) {
+      if (
+        !ADAPTIVE_INTENTS.has(
+          summary.intent as AdaptiveEvidenceIntent
+        ) ||
+        !validEvidenceQuorumRule(summary.rule)
+      ) {
+        return false;
+      }
+
+      const recomputed = summarizeEvidenceQuorum(
+        summary.intent,
+        summary.rule,
+        bundle.items
+      );
+
+      if (
+        canonicalize(recomputed) !==
+        canonicalize(summary) ||
+        recomputed.status === "ATTEMPT_LIMIT_EXCEEDED"
+      ) {
+        return false;
+      }
     }
 
     return bundle.items.every(
-      (item) =>
-        validEvidenceItem(item) &&
-        addressesEqual(
-          item.subject,
-          bundle.subject
-        ) &&
-        item.chainId === bundle.chainId
+      (item) => quorumIntents.includes(item.intent)
     );
   } catch {
     return false;
@@ -499,9 +589,12 @@ export function evidenceCommitmentForHash(
         evidence.riskTier,
       totalEvidenceSpendRaw:
         evidence.totalEvidenceSpendRaw,
+      quorums:
+        evidence.quorums,
       items:
         evidence.items.map((item) => ({
           intent: item.intent,
+          attempt: item.attempt,
           miner: item.miner,
           subject: item.subject,
           chainId: item.chainId,
