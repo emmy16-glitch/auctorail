@@ -48,7 +48,7 @@ const server = createServer(async (request, response) => {
     const reason = typeof input.reason === "string" && input.reason.trim() ? input.reason.trim().slice(0, 500) : "Unspecified payment";
     const reference = typeof input.reference === "string" ? input.reference.slice(0, 200) : "";
     const privateKey = process.env.TELEGRAPH_EVM_PRIVATE_KEY as `0x${string}` | undefined;
-    if (!privateKey) return json(response, 503, { error: "telegraph_credentials_unavailable", decision: "HOLD", executionAuthorized: false, permit: null });
+    if (!privateKey) return json(response, 503, { error: "telegraph_credentials_unavailable", decision: "HOLD", reason: "telegraph_credentials_unavailable", executionAuthorized: false, permit: null });
     const now = new Date();
     const action = createActionContract({ type: "payment", chainId: BASE_SEPOLIA_CHAIN_ID, token: BASE_SEPOLIA_USDC, amountRaw, destination: VENDOR, reason, policyId: "payments.adaptive.v1", policyVersion: 1 });
     const plan = createAdaptiveEvidencePlan(action);

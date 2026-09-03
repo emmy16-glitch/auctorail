@@ -35,12 +35,18 @@ function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ limit, amount, reason, reference })
       });
-      const result = await response.json() as DecisionRecord;
-      if (!response.ok) throw new Error((result as unknown as { error?: string }).error ?? "authorization_failed");
+      const result = await response.json() as DecisionRecord & { error?: string };
+      if (!response.ok) {
+        if (result.decision === "HOLD") {
+          setDecision(result);
+          return;
+        }
+        throw new Error(result.error ?? "authorization_failed");
+      }
       setDecision(result);
     } catch (error) {
       setDecision({
-        decision: "BLOCK",
+        decision: "HOLD",
         reason: error instanceof Error ? error.message : "authorization_failed",
         policyId: "payments.strict.v1",
         policyVersion: 1,
@@ -59,7 +65,9 @@ function App() {
   const statusCopy = status === "ALLOW"
     ? "This action has enough verified evidence to receive permission."
     : status === "HOLD"
-      ? "ProofGate could not verify enough independent evidence."
+      ? decision?.reason === "telegraph_credentials_unavailable"
+        ? "The trusted Telegraph verifier is not configured yet. No permission was issued."
+        : "ProofGate could not verify enough independent evidence."
       : status === "BLOCK"
         ? decision?.reason === "mandate_amount_violation"
           ? "The proposed payment exceeds the delegated limit."
@@ -103,4 +111,3 @@ function App() {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
-
