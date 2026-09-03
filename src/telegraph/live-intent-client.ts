@@ -19,9 +19,9 @@ import {
   type TelegraphEvidenceRecord
 } from "../evidence/telegraph.js";
 import {
-  selectDirectCorroborationTarget,
-  type DirectCorroborationTarget
-} from "./direct-corroboration.js";
+  planDirectDiversity,
+  type DirectDiversityCandidate
+} from "./diversity-planner.js";
 import {
   buildTelegraphEngineAskBody
 } from "./engine-ask.js";
@@ -83,13 +83,13 @@ type RoutePlan =
       mode: "TELEGRAPH_DIRECT_CORROBORATION";
       url: string;
       body: {
-        method: "GET" | "POST";
+        method: DirectDiversityCandidate["method"];
         endpoint: string;
         payload: Record<string, unknown>;
       };
       engineEndpoint: string;
       expectedMiner: TelegraphMinerRecord;
-      directTarget: DirectCorroborationTarget;
+      directTarget: DirectDiversityCandidate;
     };
 
 function isObject(
@@ -298,15 +298,27 @@ function resolveRoutePlan(input: {
     input.context.requirement.quorum.minimumDistinctMiners > 1;
 
   if (needsIndependentProviders && prior.length > 0) {
-    const directTarget =
-      selectDirectCorroborationTarget({
-        miners: input.miners,
-        action: input.context.action,
-        intent: input.context.requirement.intent,
-        excludedMinerIds: prior
-      });
+    const diversity = planDirectDiversity({
+      action: input.context.action,
+      intent: input.context.requirement.intent,
+      miners: input.miners,
+      excludeMinerIds: prior,
+      count: 1
+    });
+    const directTarget = diversity.selected[0];
 
     if (directTarget) {
+      const expectedMiner = input.miners.find(
+        (miner) =>
+          String(miner.id) === directTarget.miner.id
+      );
+
+      if (!expectedMiner) {
+        throw new Error(
+          `direct_route_selected_miner_missing:${directTarget.miner.id}`
+        );
+      }
+
       const encodedMiner =
         encodeURIComponent(directTarget.miner.slug);
       const engineEndpoint =
@@ -316,12 +328,12 @@ function resolveRoutePlan(input: {
         mode: "TELEGRAPH_DIRECT_CORROBORATION",
         url: `${input.engineUrl}${engineEndpoint}`,
         body: {
-          method: directTarget.endpoint.method,
-          endpoint: directTarget.endpoint.path,
+          method: directTarget.method,
+          endpoint: directTarget.endpoint,
           payload: directTarget.payload
         },
         engineEndpoint,
-        expectedMiner: directTarget.miner,
+        expectedMiner,
         directTarget
       };
     }
@@ -354,10 +366,11 @@ function routeRequestRecord(
     ...(route.directTarget
       ? {
           directCorroboration: {
-            minerId: String(route.directTarget.miner.id),
+            minerId: route.directTarget.miner.id,
             minerSlug: route.directTarget.miner.slug,
-            minerEndpoint: route.directTarget.endpoint.path,
-            minerMethod: route.directTarget.endpoint.method,
+            minerEndpoint: route.directTarget.endpoint,
+            minerMethod: route.directTarget.method,
+            officialRank: route.directTarget.officialRank,
             selectionHash: route.directTarget.selectionHash
           }
         }
