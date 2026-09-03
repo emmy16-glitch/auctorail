@@ -115,6 +115,9 @@ if (plan.selected.length === 0) {
     );
     console.log(`   slug: ${candidate.miner.slug}`);
     console.log(
+      `   evidence binding: ${candidate.outputBindingMode}`
+    );
+    console.log(
       `   official rank: ${candidate.officialRank ?? "unranked"}`
     );
     console.log(
@@ -142,5 +145,5 @@ if (plan.skipped.length > 0) {
 console.log("");
 console.log("No Telegraph request was sent and no USDC was spent.");
 console.log(
-  "Selection uses only live registry metadata, official rank when present, the exact frozen action hash, and prior-Miner exclusions. It never uses Miner verdicts."
+  "Selection first requires a declared output path capable of ProofGate exact binding, then uses official rank when present, the exact frozen action hash, and prior-Miner exclusions. It never uses Miner verdicts."
 );
