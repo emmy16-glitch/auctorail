@@ -36,6 +36,10 @@ type ExtendedMinerRecord = TelegraphMinerRecord & {
   scores?: MinerScore[];
 };
 
+export type DirectOutputBindingMode =
+  | "STRUCTURED_EXACT"
+  | "DECLARED_TEXT";
+
 export interface DirectDiversityCandidate {
   miner: {
     id: string;
@@ -45,6 +49,7 @@ export interface DirectDiversityCandidate {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   endpoint: string;
   payload: Record<string, unknown>;
+  outputBindingMode: DirectOutputBindingMode;
   officialRank: number | null;
   selectionHash: string;
 }
@@ -89,6 +94,24 @@ const METHODS = new Set([
   "PUT",
   "PATCH",
   "DELETE"
+]);
+
+const SUBJECT_OUTPUT_FIELDS = new Set([
+  "subject",
+  "address",
+  "target",
+  "destination",
+  "wallet",
+  "wallet_address",
+  "entity_address"
+]);
+
+const CHAIN_OUTPUT_FIELDS = new Set([
+  "chainId",
+  "chain_id",
+  "network",
+  "network_id",
+  "chain"
 ]);
 
 function normalizeMethod(value: string | undefined): DirectDiversityCandidate["method"] | null {
@@ -146,6 +169,51 @@ function schemaProperties(schema: InputSchema | undefined): Record<string, unkno
   return schema?.properties && typeof schema.properties === "object"
     ? schema.properties
     : {};
+}
+
+function outputBindingMode(
+  miner: ExtendedMinerRecord
+): DirectOutputBindingMode | null {
+  const properties =
+    miner.output_schema?.properties &&
+    typeof miner.output_schema.properties === "object"
+      ? Object.keys(miner.output_schema.properties)
+      : [];
+  const declared = new Set(properties);
+
+  const hasSubject = properties.some(
+    (field) => SUBJECT_OUTPUT_FIELDS.has(field)
+  );
+  const hasChain = properties.some(
+    (field) => CHAIN_OUTPUT_FIELDS.has(field)
+  );
+
+  if (hasSubject && hasChain) {
+    return "STRUCTURED_EXACT";
+  }
+
+  const mappedText = [
+    miner.signal_mapping?.label_field,
+    miner.signal_mapping?.reason_field
+  ].filter((field): field is string => Boolean(field));
+
+  const textCandidates = new Set([
+    ...mappedText,
+    "signal",
+    "answer",
+    "summary",
+    "reasoning"
+  ]);
+
+  if (
+    [...textCandidates].some(
+      (field) => declared.has(field)
+    )
+  ) {
+    return "DECLARED_TEXT";
+  }
+
+  return null;
 }
 
 function enumValues(value: unknown): unknown[] {
@@ -282,6 +350,12 @@ function selectionHash(
     .digest("hex");
 }
 
+function bindingPriority(
+  mode: DirectOutputBindingMode
+): number {
+  return mode === "STRUCTURED_EXACT" ? 0 : 1;
+}
+
 export function planDirectDiversity(input: {
   action: ActionContract;
   intent: AdaptiveEvidenceIntent;
@@ -320,6 +394,16 @@ export function planDirectDiversity(input: {
       continue;
     }
 
+    const bindingMode = outputBindingMode(miner);
+    if (!bindingMode) {
+      skipped.push({
+        minerId: id,
+        slug: miner.slug,
+        reason: "no declared output path capable of exact subject/chain binding"
+      });
+      continue;
+    }
+
     const { payload, unresolvedRequired } = buildPayload(
       miner,
       input.action,
@@ -343,6 +427,7 @@ export function planDirectDiversity(input: {
       method,
       endpoint: endpoint.path,
       payload,
+      outputBindingMode: bindingMode,
       officialRank: officialRank(miner, input.intent),
       selectionHash: selectionHash(
         input.action.actionHash,
@@ -353,6 +438,11 @@ export function planDirectDiversity(input: {
   }
 
   candidates.sort((a, b) => {
+    const binding =
+      bindingPriority(a.outputBindingMode) -
+      bindingPriority(b.outputBindingMode);
+    if (binding !== 0) return binding;
+
     const ar = a.officialRank ?? Number.MAX_SAFE_INTEGER;
     const br = b.officialRank ?? Number.MAX_SAFE_INTEGER;
     return (
