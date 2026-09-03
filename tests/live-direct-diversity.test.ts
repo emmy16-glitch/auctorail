@@ -65,7 +65,7 @@ function fraudMiner(input: {
 }
 
 describe("live direct provider diversity", () => {
-  it("keeps attempt one on auto-route then directly corroborates with an unused ranked Miner", async () => {
+  it("keeps attempt one on auto-route then directly corroborates with an unused ranked Miner by numeric subnet id", async () => {
     const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const autoMiner = fraudMiner({
@@ -171,6 +171,9 @@ describe("live direct provider diversity", () => {
     expect(calls[0].body).toHaveProperty("query");
 
     expect(calls[1].url).toContain(
+      `/v1/ask/${expected.miner.id}`
+    );
+    expect(calls[1].url).not.toContain(
       `/v1/ask/${expected.miner.slug}`
     );
     expect(calls[1].body).toEqual({
