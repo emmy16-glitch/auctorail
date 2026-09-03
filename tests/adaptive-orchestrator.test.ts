@@ -4,7 +4,8 @@ import {
   createAdaptiveEvidencePlan
 } from "../src/telegraph/adaptive-evidence-plan.js";
 import {
-  collectAdaptiveEvidence
+  collectAdaptiveEvidence,
+  RetryableEvidenceAcquisitionError
 } from "../src/telegraph/adaptive-orchestrator.js";
 import {
   adaptiveAction,
@@ -57,6 +58,101 @@ describe("adaptive evidence orchestrator", () => {
         (item) => item.intent === "FRAUD_DETECTION"
       )?.distinctMinerIds
     ).toHaveLength(3);
+  });
+
+  it("continues after free schema-poor evidence without counting it as a quorum vote", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const seen: string[] = [];
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async ({ requirement, attemptNumber = 1 }) => {
+        seen.push(
+          `${requirement.intent}:${attemptNumber}`
+        );
+
+        if (
+          requirement.intent === "FRAUD_DETECTION" &&
+          attemptNumber === 1
+        ) {
+          throw new RetryableEvidenceAcquisitionError({
+            code: "evidence_chain_not_asserted",
+            detail: "test Miner named the subject but omitted chain",
+            paymentAmountRaw: "0",
+            artifactPath: "data/evidence/adaptive/rejected/test.json",
+            minerId: "schema-poor-miner"
+          });
+        }
+
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent,
+            {
+              miner: {
+                id: `${requirement.intent}-miner-${attemptNumber}`,
+                name: `${requirement.intent} Miner ${attemptNumber}`,
+                slug: `${requirement.intent.toLowerCase()}-miner-${attemptNumber}`
+              }
+            }
+          )
+        };
+      }
+    );
+
+    expect(result.status).toBe("COMPLETE");
+    expect(seen.slice(0, 4)).toEqual([
+      "FRAUD_DETECTION:1",
+      "FRAUD_DETECTION:2",
+      "FRAUD_DETECTION:3",
+      "FRAUD_DETECTION:4"
+    ]);
+
+    const fraudItems = result.bundle.items.filter(
+      (item) => item.intent === "FRAUD_DETECTION"
+    );
+    expect(fraudItems.map((item) => item.attempt)).toEqual([
+      2,
+      3,
+      4
+    ]);
+    expect(
+      result.bundle.quorums.find(
+        (item) => item.intent === "FRAUD_DETECTION"
+      )?.distinctMinerIds
+    ).toHaveLength(3);
+  });
+
+  it("does not automatically buy another response after paid unusable evidence", async () => {
+    const action = adaptiveAction("3000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    let calls = 0;
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async () => {
+        calls++;
+        throw new RetryableEvidenceAcquisitionError({
+          code: "evidence_chain_not_asserted",
+          detail: "paid Miner omitted chain",
+          paymentAmountRaw: "10000",
+          artifactPath: "data/evidence/adaptive/rejected/paid.json",
+          minerId: "paid-schema-poor-miner"
+        });
+      }
+    );
+
+    expect(calls).toBe(1);
+    expect(result.status).toBe("HOLD");
+    expect(result.code).toBe(
+      "adaptive_evidence_acquisition_failed"
+    );
+    expect(result.error).toContain(
+      "paid_unusable_evidence_not_retried"
+    );
   });
 
   it("does not count repeated routing to the same Miner as independent diversity", async () => {
