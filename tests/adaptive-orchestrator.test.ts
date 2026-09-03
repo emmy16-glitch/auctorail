@@ -12,7 +12,7 @@ import {
 } from "./helpers/adaptive-fixtures.js";
 
 describe("adaptive evidence orchestrator", () => {
-  it("collects exactly the Intents required by the risk tier", async () => {
+  it("collects the routed attempts required by the high-risk quorum", async () => {
     const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const seen: string[] = [];
@@ -20,12 +20,21 @@ describe("adaptive evidence orchestrator", () => {
     const result = await collectAdaptiveEvidence(
       action,
       plan,
-      async ({ requirement }) => {
-        seen.push(requirement.intent);
+      async ({ requirement, attemptNumber = 1 }) => {
+        seen.push(
+          `${requirement.intent}:${attemptNumber}`
+        );
         return {
           evidence: adaptiveEvidence(
             action,
-            requirement.intent
+            requirement.intent,
+            {
+              miner: {
+                id: `${requirement.intent}-miner-${attemptNumber}`,
+                name: `${requirement.intent} Miner ${attemptNumber}`,
+                slug: `${requirement.intent.toLowerCase()}-miner-${attemptNumber}`
+              }
+            }
           ),
           paymentAmountRaw: "10000"
         };
@@ -34,13 +43,97 @@ describe("adaptive evidence orchestrator", () => {
 
     expect(result.status).toBe("COMPLETE");
     expect(seen).toEqual([
-      "FRAUD_DETECTION",
-      "ONCHAIN_TX_LOOKUP",
-      "WALLET_BALANCE_CHECK"
+      "FRAUD_DETECTION:1",
+      "FRAUD_DETECTION:2",
+      "FRAUD_DETECTION:3",
+      "ONCHAIN_TX_LOOKUP:1",
+      "WALLET_BALANCE_CHECK:1"
     ]);
     expect(result.bundle.totalEvidenceSpendRaw).toBe(
-      "30000"
+      "50000"
     );
+    expect(
+      result.bundle.quorums.find(
+        (item) => item.intent === "FRAUD_DETECTION"
+      )?.distinctMinerIds
+    ).toHaveLength(3);
+  });
+
+  it("does not count repeated routing to the same Miner as independent diversity", async () => {
+    const action = adaptiveAction("3000000");
+    const plan = createAdaptiveEvidencePlan(action);
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async ({ requirement }) => ({
+        evidence: adaptiveEvidence(
+          action,
+          requirement.intent,
+          {
+            miner: {
+              id: "same-miner",
+              name: "Same Miner",
+              slug: "same-miner"
+            }
+          }
+        )
+      })
+    );
+
+    expect(result.status).toBe("HOLD");
+    expect(result.code).toBe(
+      "adaptive_evidence_quorum_unsatisfied"
+    );
+    expect(result.failedIntent).toBe(
+      "FRAUD_DETECTION"
+    );
+    const fraud = result.bundle.quorums.find(
+      (item) => item.intent === "FRAUD_DETECTION"
+    );
+    expect(fraud?.distinctMinerIds).toEqual([
+      "same-miner"
+    ]);
+    expect(fraud?.duplicateMinerAttempts).toBe(3);
+  });
+
+  it("stops immediately on a high-confidence negative veto", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    let calls = 0;
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async ({ requirement, attemptNumber = 1 }) => {
+        calls++;
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent,
+            {
+              miner: {
+                id: `veto-miner-${attemptNumber}`,
+                name: `Veto Miner ${attemptNumber}`,
+                slug: `veto-miner-${attemptNumber}`
+              },
+              ...(attemptNumber === 2
+                ? {
+                    label: "MALICIOUS",
+                    confidence: 0.97
+                  }
+                : {})
+            }
+          )
+        };
+      }
+    );
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.code).toBe(
+      "adaptive_evidence_negative_veto"
+    );
+    expect(calls).toBe(2);
   });
 
   it("fails closed before accepting an over-budget evidence result", async () => {
