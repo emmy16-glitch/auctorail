@@ -973,7 +973,8 @@ export function createLiveIntentAcquirer(
         throw new RetryableEvidenceAcquisitionError({
           code: "direct_route_http_unavailable",
           detail,
-          paymentAmountRaw: actualLane.amount,
+          paymentAmountRaw:
+            (actualLane as X402PaymentLane).amount,
           artifactPath: rejectionPath,
           minerId: String(route.expectedMiner.id)
         });
