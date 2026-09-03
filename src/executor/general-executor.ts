@@ -13,6 +13,9 @@ import type {
   PermitVerifier
 } from "../permit/signer.js";
 import type {
+  ExecutionKillSwitch
+} from "../security/execution-kill-switch.js";
+import type {
   PermitConsumptionStore
 } from "./permit-store.js";
 
@@ -37,10 +40,35 @@ export async function executeGeneralAction<T>(input: {
   permit: GeneralPermit;
   verifier: PermitVerifier;
   store: PermitConsumptionStore;
+  killSwitch: ExecutionKillSwitch;
   executionId: string;
   execute: (action: GeneralActionEnvelope) => Promise<T>;
   now?: Date;
 }): Promise<GeneralExecutionResult<T>> {
+  // The operational kill switch is checked before permit claiming or any
+  // protected callback. Failure to read it fails closed.
+  let disabled: boolean;
+  try {
+    disabled = await input.killSwitch.isDisabled();
+  } catch (error: unknown) {
+    return {
+      status: "BLOCKED",
+      code: "general_execution_kill_switch_unavailable",
+      executionId: input.executionId,
+      error: error instanceof Error
+        ? error.message
+        : String(error)
+    };
+  }
+
+  if (disabled) {
+    return {
+      status: "BLOCKED",
+      code: "general_execution_disabled",
+      executionId: input.executionId
+    };
+  }
+
   const verification = verifyGeneralPermit({
     mandate: input.mandate,
     action: input.action,
