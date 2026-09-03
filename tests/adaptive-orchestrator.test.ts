@@ -203,7 +203,7 @@ describe("adaptive evidence orchestrator", () => {
     ]);
   });
 
-  it("never lets rejected paid attempts exceed the deterministic acquisition budget", async () => {
+  it("rejects a paid unusable response that alone exceeds the remaining deterministic acquisition budget", async () => {
     const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
     let calls = 0;
@@ -211,42 +211,24 @@ describe("adaptive evidence orchestrator", () => {
     const result = await collectAdaptiveEvidence(
       action,
       plan,
-      async ({ requirement, attemptNumber = 1 }) => {
+      async () => {
         calls++;
-
-        if (attemptNumber === 1) {
-          throw new RetryableEvidenceAcquisitionError({
-            code: "evidence_chain_not_asserted",
-            detail: "paid Miner omitted chain",
-            paymentAmountRaw: "10000",
-            minerId: "paid-schema-poor-miner"
-          });
-        }
-
-        return {
-          evidence: adaptiveEvidence(
-            action,
-            requirement.intent,
-            {
-              miner: {
-                id: "second-miner",
-                name: "Second Miner",
-                slug: "second-miner"
-              }
-            }
-          ),
-          paymentAmountRaw: "10000"
-        };
+        throw new RetryableEvidenceAcquisitionError({
+          code: "evidence_chain_not_asserted",
+          detail: "paid Miner omitted chain",
+          paymentAmountRaw: "15001",
+          minerId: "over-budget-schema-poor-miner"
+        });
       }
     );
 
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
     expect(result.status).toBe("HOLD");
     expect(result.code).toBe(
       "adaptive_evidence_budget_exceeded"
     );
-    expect(result.actualEvidenceSpendRaw).toBe("10000");
-    expect(result.rejectedAttempts).toHaveLength(1);
+    expect(result.actualEvidenceSpendRaw).toBe("0");
+    expect(result.rejectedAttempts).toHaveLength(0);
     expect(result.bundle.items).toHaveLength(0);
   });
 
