@@ -114,6 +114,30 @@ const CHAIN_OUTPUT_FIELDS = new Set([
   "chain"
 ]);
 
+const SUBJECT_INPUT_FIELDS = new Set([
+  "subject",
+  "address",
+  "target",
+  "destination",
+  "wallet",
+  "wallet_address",
+  "entity_address"
+]);
+
+const CHAIN_INPUT_FIELDS = new Set([
+  "chainId",
+  "chain_id",
+  "network",
+  "network_id",
+  "chain"
+]);
+
+const QUERY_INPUT_FIELDS = new Set([
+  "query",
+  "question",
+  "prompt"
+]);
+
 function normalizeMethod(value: string | undefined): DirectDiversityCandidate["method"] | null {
   const normalized = String(value ?? "").toUpperCase();
   return METHODS.has(normalized)
@@ -171,8 +195,33 @@ function schemaProperties(schema: InputSchema | undefined): Record<string, unkno
     : {};
 }
 
+function endpointDeclaredFields(
+  endpoint: DirectEndpoint
+): Set<string> {
+  const description = String(endpoint.description ?? "");
+  const fields = new Set<string>();
+
+  const paramsMatch = description.match(/\bParams:\s*([\s\S]*?)(?:\n|$)/i);
+  if (paramsMatch?.[1]) {
+    const params = paramsMatch[1];
+    for (const match of params.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+      fields.add(match[1]);
+    }
+  }
+
+  const bodyMatch = description.match(/\bJSON body:\s*\{([\s\S]*?)\}/i);
+  if (bodyMatch?.[1]) {
+    for (const match of bodyMatch[1].matchAll(/["']([A-Za-z_][A-Za-z0-9_]*)["']\s*:/g)) {
+      fields.add(match[1]);
+    }
+  }
+
+  return fields;
+}
+
 function outputBindingMode(
-  miner: ExtendedMinerRecord
+  miner: ExtendedMinerRecord,
+  payload: Record<string, unknown>
 ): DirectOutputBindingMode | null {
   const properties =
     miner.output_schema?.properties &&
@@ -188,7 +237,25 @@ function outputBindingMode(
     (field) => CHAIN_OUTPUT_FIELDS.has(field)
   );
 
-  if (hasSubject && hasChain) {
+  const requestFields = Object.keys(payload);
+  const requestHasSubject = requestFields.some(
+    (field) => SUBJECT_INPUT_FIELDS.has(field)
+  );
+  const requestHasChain = requestFields.some(
+    (field) => CHAIN_INPUT_FIELDS.has(field)
+  );
+  const requestHasExactQuery = requestFields.some(
+    (field) => QUERY_INPUT_FIELDS.has(field)
+  );
+  const requestCanBindExactly =
+    requestHasExactQuery ||
+    (requestHasSubject && requestHasChain);
+
+  if (
+    hasSubject &&
+    hasChain &&
+    requestCanBindExactly
+  ) {
     return "STRUCTURED_EXACT";
   }
 
@@ -206,6 +273,7 @@ function outputBindingMode(
   ]);
 
   if (
+    requestCanBindExactly &&
     [...textCandidates].some(
       (field) => declared.has(field)
     )
@@ -293,17 +361,26 @@ function resolveField(
 
 function buildPayload(
   miner: ExtendedMinerRecord,
+  endpoint: DirectEndpoint,
   action: ActionContract,
   intent: AdaptiveEvidenceIntent
 ): { payload: Record<string, unknown>; unresolvedRequired: string[] } {
   const verification = createIntentVerificationPlan(action, intent);
   const properties = schemaProperties(miner.input_schema);
+  const explicitEndpointFields = endpointDeclaredFields(endpoint);
   const required = Array.isArray(miner.input_schema?.required)
     ? miner.input_schema!.required!
     : [];
   const payload: Record<string, unknown> = {};
 
   for (const [field, schemaProperty] of Object.entries(properties)) {
+    if (
+      explicitEndpointFields.size > 0 &&
+      !explicitEndpointFields.has(field)
+    ) {
+      continue;
+    }
+
     const value = resolveField(
       field,
       schemaProperty,
@@ -314,11 +391,22 @@ function buildPayload(
   }
 
   // Some Telegraph Miners omit an input schema but still accept query.
-  if (Object.keys(properties).length === 0) {
+  if (
+    Object.keys(properties).length === 0 &&
+    (
+      explicitEndpointFields.size === 0 ||
+      explicitEndpointFields.has("query")
+    )
+  ) {
     payload.query = verification.query;
   }
 
-  const unresolvedRequired = required.filter(
+  const applicableRequired =
+    explicitEndpointFields.size > 0
+      ? required.filter((field) => explicitEndpointFields.has(field))
+      : required;
+
+  const unresolvedRequired = applicableRequired.filter(
     (field) => !(field in payload)
   );
 
@@ -394,18 +482,9 @@ export function planDirectDiversity(input: {
       continue;
     }
 
-    const bindingMode = outputBindingMode(miner);
-    if (!bindingMode) {
-      skipped.push({
-        minerId: id,
-        slug: miner.slug,
-        reason: "no declared output path capable of exact subject/chain binding"
-      });
-      continue;
-    }
-
     const { payload, unresolvedRequired } = buildPayload(
       miner,
+      endpoint,
       input.action,
       input.intent
     );
@@ -414,6 +493,16 @@ export function planDirectDiversity(input: {
         minerId: id,
         slug: miner.slug,
         reason: `unresolved required fields: ${unresolvedRequired.join(",")}`
+      });
+      continue;
+    }
+
+    const bindingMode = outputBindingMode(miner, payload);
+    if (!bindingMode) {
+      skipped.push({
+        minerId: id,
+        slug: miner.slug,
+        reason: "chosen endpoint cannot bind exact subject/chain through its declared request/output contract"
       });
       continue;
     }
