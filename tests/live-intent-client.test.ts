@@ -268,15 +268,16 @@ describe("live Telegraph Intent client", () => {
   it("guides later auto-route attempts toward a different capable Miner without forcing one", async () => {
     const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
-    let sentBody: Record<string, unknown> | null = null;
+    let sentQuery = "";
 
     const fetchImpl = async (
       _input: RequestInfo | URL,
       init?: RequestInit
     ) => {
-      sentBody = JSON.parse(
+      const parsed = JSON.parse(
         String(init?.body ?? "{}")
-      );
+      ) as Record<string, unknown>;
+      sentQuery = String(parsed.query ?? "");
 
       return new Response(
         JSON.stringify({
@@ -315,12 +316,11 @@ describe("live Telegraph Intent client", () => {
         new Date(Date.now() + 30_000).toISOString()
     });
 
-    const query = String(sentBody?.query ?? "");
-    expect(query).toContain(
+    expect(sentQuery).toContain(
       "independent corroboration attempt 2"
     );
-    expect(query).toContain("42, 77");
-    expect(query).toContain(
+    expect(sentQuery).toContain("42, 77");
+    expect(sentQuery).toContain(
       "prefer a different Miner"
     );
   });
