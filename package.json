@@ -14,6 +14,7 @@
     "audit:prod": "npm audit --omit=dev",
     "proof:live": "tsx scripts/prove-telegraph.ts",
     "proof:adaptive": "tsx scripts/prove-adaptive.ts",
+    "proof:diversity:plan": "tsx scripts/plan-live-diversity.ts",
     "policy": "tsx scripts/show-policy-decision.ts",
     "wallet:check": "node scripts/check-wallet.mjs",
     "vendor:compile": "node scripts/compile-vendor.mjs",
