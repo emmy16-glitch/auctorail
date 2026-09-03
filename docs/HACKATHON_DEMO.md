@@ -1,305 +1,525 @@
 # ProofGate Hackathon Demo Runbook
 
-This is the final presentation path for the Telegraph Protocol Application Track.
+This is the judge-facing presentation path for the Telegraph Protocol **Application Track**.
 
-The core message is:
+## One-line thesis
 
-> An autonomous agent may decide to act, but ProofGate requires delegated authority plus sufficient independent evidence before that exact action can execute.
+> **AI agents can decide what they want to do. ProofGate decides how much breadth and independence of external intelligence the consequence deserves, then turns sufficient evidence plus delegated authority into one-use permission for one exact action.**
 
-## Canonical demo action
+```text
+MANDATE → PROPOSE → FREEZE → CONSEQUENCE
+        → TELEGRAPH INTENTS + MINER DIVERSITY
+        → EVIDENCE COMMITMENT
+        → ALLOW / HOLD / BLOCK
+        → ONE-USE PERMIT
+        → CONTROLLED EXECUTION
+```
 
-- action: ERC-20 payment
-- network: Base Sepolia (`84532`)
-- asset: Base Sepolia USDC
-- amount: **1 USDC** (`1000000` minor units)
-- destination: `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
-- destination contract: `ProofGateVendor`
+## The three proof layers — keep them separate
 
-Do not change the canonical vendor merely to obtain a favorable result.
+### A. v1.0 — real end-to-end execution
 
-## Canonical live result already captured
+Already completed and publicly verifiable:
 
-The complete end-to-end flow succeeded on **2026-09-02**.
-
-- Telegraph Miner: `Refut On-Chain Risk` (`95822412`)
-- Telegraph intent: `FRAUD_DETECTION`
-- Telegraph verdict: `ALLOW`
-- confidence: `0.7`
-- signal hash: `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c`
-- policy: `payments.attested-vendor.v1`
-- action hash: `0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4`
-- permit: `a1b4e53c-0e0e-4504-b0b0-a05ec80093bb`
-- execution: `EXECUTED`
-- transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
-- block: `46301208`
-- receipt hash: `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
+- Base Sepolia (`84532`)
+- 1 Base Sepolia USDC
+- vendor `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
+- genuine Telegraph Miner `Refut On-Chain Risk` (`95822412`)
+- Intent `FRAUD_DETECTION`
+- verdict `ALLOW`, confidence `0.7`
+- signal hash `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c`
+- transaction `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
+- block `46301208`
+- receipt hash `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
 
 Basescan:
 
 https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 
-Primary public artifacts:
+This proves ProofGate can combine real Telegraph evidence + delegated authority + a one-use Permit to control a real external effect.
 
-- `docs/LIVE_EXECUTION.md`
-- `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
-- `data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
-- `data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
+### B. v1.2 — adaptive multi-Intent + multi-Miner authorization
 
-Use these artifacts for the final presentation rather than spending another USDC merely to reproduce the same proof.
+This is the standout Telegraph layer.
 
-## Before recording or presenting
+ProofGate now scales two dimensions of intelligence with consequence:
 
-Confirm:
+- **vertical diversity** — more kinds of intelligence;
+- **horizontal diversity** — more independent Miners for the same critical Intent.
+
+### C. v1.2 — general authorization core
+
+Payments are the first concrete real adapter, not the architectural limit.
+
+The generic v1.2 core provides:
+
+- `proofgate.action.v2`
+- `proofgate.mandate.v2`
+- `proofgate.decision.v2`
+- `proofgate.permit.v2`
+- trusted `ActionAdapterRegistry`
+- execution-time Mandate revalidation
+- fail-closed kill switch
+- atomic replay protection
+- `AMBIGUOUS` handling for uncertain external effects
+
+Do not claim example GitHub/cloud/database adapters are already production integrations. The adapter framework is implemented and tested; developers still supply trusted integration-specific code.
+
+## Before recording
+
+Use the exact revision being presented:
 
 ```bash
 npm ci
 npm run ci
 npm run audit:prod
-npm run vendor:compile
+npm run attack:lab
+npm run security:fuzz
+npm run security:fuzz:adaptive
+npm run security:fuzz:general
+npm run vendor:verify
 ```
 
-If PostgreSQL integration is part of the presentation environment, also run:
+Never show `.env`, wallet keys, seed/recovery material, Permit-signing keys or database credentials.
 
-```bash
-npm run test:postgres
-```
-
-with a dedicated test database configured through `PROOFGATE_DATABASE_URL`.
-
-Never expose `.env`, private keys, Telegraph credentials, wallet recovery material, signing keys or database credentials on screen.
-
-## Stage 1 — unsafe baseline
-
-Show the conceptual baseline:
+## Stage 1 — show the unsafe baseline
 
 ```text
-Agent decides → wallet executes
+Typical autonomous system:
+Agent decides → tool executes
 ```
 
-Then introduce ProofGate:
+Then show:
 
 ```text
-MANDATE → PROPOSE → PROVE → POLICY → PERMIT → EXECUTE → RECEIPT
+ProofGate:
+Agent proposes
+      ↓
+Principal Mandate
+      ↓
+Exact frozen action
+      ↓
+Consequence-derived evidence requirements
+      ↓
+Telegraph intelligence + provider diversity
+      ↓
+Deterministic ALLOW / HOLD / BLOCK
+      ↓
+One-use Permit
+      ↓
+Controlled executor
 ```
 
-Explain that the component deciding what to do is not allowed to create its own permission.
+Say:
 
-## Stage 2 — delegated authority
+> **The component deciding what it wants to do is not allowed to create its own permission.**
 
-Show that the agent operates under a bounded Mandate rather than unlimited wallet authority.
+## Stage 2 — prove it is not a mock
 
-Relevant constraints:
-
-- correct agent
-- payment action only
-- Base Sepolia only
-- Base Sepolia USDC only
-- canonical vendor only
-- bounded amount
-- required `FRAUD_DETECTION` evidence
-- explicit policy/version
-- lifecycle and expiry limits
-- optional cumulative authority in the production-oriented path
-
-Key line:
-
-> The agent is autonomous inside the Mandate, but it cannot expand the Mandate.
-
-## Stage 3 — exact Action Contract
-
-The payment action is canonicalized and hashed before proof is requested.
-
-Useful visual:
-
-```text
-1 USDC → canonical vendor → actionHash A
-10 USDC → canonical vendor → actionHash B
-1 USDC → different recipient → actionHash C
-```
-
-Changing a protected semantic field changes the authorization target.
-
-## Stage 4 — Telegraph proof
-
-For a recorded presentation, show the committed canonical evidence artifact and its provenance.
-
-The successful proof was obtained with:
-
-```bash
-npm run proof:live -- \
-  0xB38d0405DF1b15961aEf29C7c45f2ED285822c14 \
-  --capability-route \
-  --attested-vendor-policy
-```
-
-The live path validated:
-
-- exact destination
-- Base Sepolia chain
-- `FRAUD_DETECTION`
-- serving Miner identity
-- Miner result
-- confidence threshold
-- applicability
-- signal hash
-- evidence freshness
-- approved x402 network/asset/amount lane
-- dynamic x402 payment recipient
-- exact vendor runtime attestation
-
-A failed or insufficient proof must produce `HOLD` or `BLOCK`; policy must not be weakened to force a demo result.
-
-## Stage 5 — deterministic decision
+Open `docs/LIVE_EXECUTION.md` and the Basescan transaction.
 
 Explain:
 
-- `ALLOW`: all required checks pass; a permit may be issued
-- `HOLD`: enough current proof cannot be established; no permit
-- `BLOCK`: a known authorization/security rule failed; no permit
+1. the agent proposed 1 USDC;
+2. ProofGate froze and hashed the exact action;
+3. genuine Telegraph `FRAUD_DETECTION` evidence was purchased through x402;
+4. ProofGate independently verified the vendor runtime;
+5. deterministic policy returned `ALLOW`;
+6. a one-use Permit was created;
+7. the controlled executor submitted exactly that payment;
+8. a tamper-evident Proof Receipt was produced.
 
-The Miner does not issue the permit. ProofGate policy does.
+Do **not** resend the historical transaction for theater.
 
-The canonical result was:
+## Stage 3 — the amount changes the evidence graph
 
-```text
-PROOFGATE: ALLOW
-Reason: composite_attested_vendor_checks_passed
-```
+Show only the protected amount changing.
 
-## Stage 6 — attack demonstrations
-
-Run the offline defensive harness:
-
-```bash
-npm run attack:lab
-```
-
-Focus on three easy-to-understand cases.
-
-### Amount mutation
+### 1 USDC — LOW
 
 ```text
-Authorized: 1 USDC → canonical vendor
-Attempted: 10 USDC → canonical vendor
-Expected: BLOCK before protected execution
+FRAUD_DETECTION
+    ↓
+1 distinct Miner
+1 positive required
+confidence >= 0.70
+
+Evidence budget: 0.015 USDC
+Deadline: 15 s
 ```
 
-### Recipient mutation
+### 4 USDC — MEDIUM
 
 ```text
-Authorized: 1 USDC → canonical vendor
-Attempted: 1 USDC → different address
-Expected: BLOCK before protected execution
+FRAUD_DETECTION
+   ├─ Miner A
+   └─ Miner B
+2 distinct / 2 positive required
+confidence >= 0.75
+max 4 bounded fraud attempts
+
++ ONCHAIN_TX_LOOKUP
+
+Evidence budget: 0.050 USDC
+Deadline: 35 s
 ```
 
-### Replay
+### 7 USDC — HIGH
 
-Attempt to reuse an already consumed permit.
+```text
+FRAUD_DETECTION
+   ├─ Miner A
+   ├─ Miner B
+   └─ Miner C
+3 distinct Miners
+2 positive votes required
+confidence >= 0.80
+max 5 bounded fraud attempts
+
++ ONCHAIN_TX_LOOKUP
++ WALLET_BALANCE_CHECK
+
+Evidence budget: 0.070 USDC
+Deadline: 60 s
+```
+
+Say:
+
+> **The amount does not merely change a number. It changes both how many kinds of intelligence ProofGate needs and how independently the most important claim must be corroborated.**
+
+## Stage 4 — duplicate routing is not fake consensus
+
+Show this synthetic defensive scenario:
+
+```text
+FRAUD_DETECTION
+attempt 1 → Miner A → ALLOW
+attempt 2 → Miner A → ALLOW
+attempt 3 → Miner B → ALLOW
+
+Requests:         3
+Distinct Miners:  2
+Required:         3
+
+Result: HOLD
+```
+
+Say:
+
+> **Three responses are not three independent opinions if Telegraph served the same provider twice. ProofGate counts distinct Miner identity, not request count.**
+
+This is important: ProofGate does not fabricate provider independence.
+
+## Stage 5 — quorum is not naive majority voting
+
+Synthetic defensive scenario:
+
+```text
+Miner A → ALLOW     0.93
+Miner B → ALLOW     0.86
+Miner C → MALICIOUS 0.97
+```
+
+Result:
+
+```text
+BLOCK
+```
+
+MEDIUM/HIGH collection has a `0.90` high-confidence negative early veto. Final policy is stricter: **any explicit known-negative result remains BLOCK**, even if it is below that early-veto threshold.
+
+Say:
+
+> **A dangerous signal cannot be averaged away just because two other providers were optimistic.**
+
+## Stage 6 — the agent cannot downgrade its own security
+
+Attack:
+
+```text
+Actual action: 7 USDC
+Agent submits: LOW
+Agent requests: only one FRAUD_DETECTION response
+Agent lowers quorum/confidence/budget rules
+```
+
+ProofGate recomputes the complete expected plan from the exact frozen action.
 
 Expected:
 
 ```text
-permit_already_consumed
+BLOCK / adaptive_plan_downgrade_or_mismatch
 ```
 
-Key line:
+The agent cannot choose its authoritative risk tier, quorum size, confidence floor, attempt ceiling or evidence budget.
 
-> Even after an agent earns permission once, that permission is not a reusable wallet credential.
-
-## Stage 7 — show the real protected execution
-
-Do not resend the canonical payment just for presentation.
-
-Show the committed receipt and the successful Base Sepolia transaction instead:
-
-```text
-Final decision: ALLOW
-Execution: EXECUTED
-Execution code: executed
-Transaction: 0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
-```
-
-Then open the Basescan transaction and show the **1 USDC** transfer from the ProofGate burner wallet to the canonical vendor.
-
-If a separate fresh live execution is intentionally performed, obtain fresh evidence first and treat `AMBIGUOUS` as a reconciliation state rather than automatically broadcasting another payment.
-
-## Stage 8 — Proof Receipt
-
-End with:
-
-`data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
-
-Explain that the receipt answers:
-
-```text
-Who delegated authority?
-What exact action was proposed?
-What evidence was obtained?
-Which policy checks ran?
-What decision was made?
-Which permit authorized it?
-What transaction happened?
-Can the receipt still verify?
-```
-
-## Suggested 3-minute presentation
-
-### 0:00–0:25 — problem
-
-"AI agents can be confident and still be wrong. ProofGate separates deciding from permission to act."
-
-### 0:25–0:55 — architecture
+## Stage 7 — provider-neutral Telegraph routing
 
 Show:
 
 ```text
-MANDATE → PROPOSE → PROVE → POLICY → PERMIT → EXECUTE → RECEIPT
+Not:
+"ProofGate always trusts Miner X."
+
+Instead:
+"ProofGate requires FRAUD_DETECTION for this exact subject."
 ```
 
-Explain that Telegraph is independent evidence, not authority.
+Telegraph routes the request. ProofGate records and verifies the actual Miner returned.
 
-### 0:55–1:30 — real proof
+For same-Intent quorum, ProofGate makes bounded additional requests. Repeated provider identity does not count as additional independence.
 
-Show the committed Telegraph evidence, signal hash, runtime attestation and deterministic `ALLOW`.
+Refresh current coverage before a live run:
 
-### 1:30–2:05 — attacks
+```bash
+bash scripts/discover-telegraph.sh
+```
 
-Demonstrate amount mutation, recipient mutation and replay being contained.
+If sufficient evidence/provider diversity cannot be established within the configured attempt, spend and deadline bounds, the result is `HOLD`.
 
-### 2:05–2:40 — real execution
+## Stage 8 — Evidence Bundle and verification economics
 
-Show the successful Basescan transaction and the 1-USDC transfer.
+For the adaptive payment path, show the Evidence Bundle containing:
 
-### 2:40–3:00 — receipt and close
+```text
+Exact action hash
+Risk tier
+Plan hash
 
-Show the Proof Receipt and finish with:
+FRAUD_DETECTION attempt 1
+  Miner ID
+  label/confidence
+  signal hash
+  x402 evidence cost
 
-> Telegraph provides the evidence. ProofGate turns sufficient evidence plus delegated authority into permission for one exact action.
+FRAUD_DETECTION attempt 2
+  ...
+
+FRAUD_DETECTION attempt 3
+  ...
+
+ONCHAIN_TX_LOOKUP
+  ...
+
+WALLET_BALANCE_CHECK
+  ...
+
+Canonical quorum summaries
+Total evidence spend
+Bundle hash
+```
+
+Explain:
+
+- bundle hash protects **integrity** after construction;
+- trusted live acquisition establishes **Telegraph provenance** before construction;
+- the one-use Permit commits the exact evidence decision;
+- changing a Miner identity/vote/quorum summary later invalidates the authorization chain.
+
+Then ask the product question:
+
+> **How much independent intelligence should an autonomous system be willing to purchase before it is allowed to take this consequence?**
+
+The evidence budget is bounded. A more consequential action may justify more verification spend, but ProofGate never gives the evidence collector an unlimited wallet.
+
+## Stage 9 — show ProofGate is no longer payment-only architecture
+
+Open:
+
+- `src/core/general-action.ts`
+- `src/core/general-mandate.ts`
+- `src/permit/general-permit.ts`
+- `src/sdk/action-adapter.ts`
+- `src/executor/general-executor.ts`
+
+Show a simple custom adapter example from `docs/DEVELOPER_INTEGRATION.md`:
+
+```text
+coding-agent proposes github.merge
+        ↓
+proofgate.action.v2
+        ↓
+principal Mandate permits exact repo/target
+        ↓
+required evidence: CI_STATUS + SECURITY_SCAN
+        ↓
+trusted adapter commits/verifies evidence
+        ↓
+proofgate.decision.v2
+        ↓
+proofgate.permit.v2
+        ↓
+kill switch + current Mandate + atomic Permit claim
+        ↓
+trusted adapter.execute()
+```
+
+Say:
+
+> **The payment is our first real demonstrated adapter. The authorization runtime itself is now action-general. Other developers register trusted adapters for the consequential tools their agents use.**
+
+Be explicit that the GitHub example is an SDK example, not a live GitHub integration claim.
+
+## Stage 10 — show adapter bypass protections
+
+Explain four small details judges may not expect:
+
+```text
+Undelegated action
+→ BLOCK before paid evidence acquisition
+
+Missing required evidence-Intent coverage
+→ HOLD, no Permit
+
+Mandate expires after Permit mint but before execution
+→ BLOCK at execution-time revalidation
+
+External effect throws after Permit claim
+→ AMBIGUOUS; Permit remains consumed; no blind retry
+```
+
+Also show the fail-closed execution kill switch:
+
+```text
+kill switch disabled?  BLOCK
+kill switch unreadable? BLOCK
+```
+
+This proves the generic architecture is an enforcement boundary, not only a data structure.
+
+## Stage 11 — adversarial proof
+
+Run:
+
+```bash
+npm run attack:lab
+npm run security:fuzz
+npm run security:fuzz:adaptive
+npm run security:fuzz:general
+```
+
+Current validated pre-documentation code snapshot:
+
+```text
+Vitest
+43/43 test files
+225/225 tests
+
+Original exact-action fuzz
+1100/1100 contained
+100/100 valid controls
+0 unauthorized executions
+
+Adaptive + Miner-quorum fuzz
+3100/3100 contained
+100/100 valid controls
+0 unauthorized authorizations
+
+General authorization fuzz
+3100/3100 contained
+100/100 valid controls
+0 unauthorized executions
+
+Total deterministic adversarial cases: 7300/7300
+Uncaught fuzz errors: 0
+Production npm audit: 0 vulnerabilities
+```
+
+Every fuzz harness is offline: zero Telegraph calls, zero x402 payments and zero blockchain writes.
+
+Do not call this an independent production audit. It is a deterministic security validation suite for the implemented invariants.
+
+## Optional Stage 12 — live adaptive/quorum attempt
+
+Only do this intentionally because it can purchase real testnet evidence.
+
+```bash
+bash scripts/discover-telegraph.sh
+npm run proof:adaptive -- 7
+```
+
+The HIGH path can make multiple real Telegraph/x402 evidence requests while trying to satisfy the three-distinct-Miner fraud quorum plus the additional Intents. Every request remains subject to per-request, aggregate spend, attempt and deadline limits.
+
+`proof:adaptive` remains **check-only for the protected vendor payment**. It does not broadcast the 7-USDC vendor payment.
+
+Until a real successful multi-Miner artifact is captured, never present synthetic fuzz/test fixtures as live Telegraph quorum evidence.
+
+## Suggested 3-minute video
+
+### 0:00–0:20 — thesis
+
+> "AI agents can be confident and still be wrong. More importantly, confidence is not authority."
+
+### 0:20–0:40 — real proof
+
+Show the genuine v1.0 Telegraph evidence, Basescan transaction and receipt.
+
+### 0:40–1:20 — consequence-adaptive evidence
+
+Animate/show:
+
+```text
+1 USDC → 1 Miner / 1 Intent
+4 USDC → 2 independent fraud Miners + tx intelligence
+7 USDC → 3 independent fraud Miners + 2-of-3 positive quorum + 3 Intents
+```
+
+### 1:20–1:45 — anti-fake-consensus
+
+Show duplicate Miner not counting, then high-confidence negative veto / explicit negative BLOCK.
+
+### 1:45–2:05 — cryptographic/economic binding
+
+Show Evidence Bundle, quorum summary, x402 evidence budget and one-use Permit.
+
+### 2:05–2:30 — general authorization platform
+
+Show `github.merge` adapter example and explain payment is the first proven adapter, not the architectural limit.
+
+### 2:30–2:50 — security proof
+
+Show:
+
+```text
+7300 / 7300 adversarial cases contained
+225 / 225 tests
+0 unauthorized executions / authorizations
+0 production dependency vulnerabilities
+```
+
+### 2:50–3:00 — close
+
+> **Telegraph tells autonomous software what the outside world says. ProofGate decides how much breadth and independence of intelligence the consequence deserves, and turns sufficient evidence plus delegated authority into one-use permission for one exact action.**
 
 ## Claims to make carefully
 
 Safe claims:
 
-- the vendor deployment is real and tracked
-- the canonical 1-USDC Base Sepolia execution is real and publicly verifiable
-- the canonical Telegraph proof used a genuine Miner/x402 response
-- the offline Attack Lab uses synthetic fixtures and no external spending
-- ProofGate binds permission to an exact Action Contract
-- replay protection exists in local and PostgreSQL-backed forms
-- the codebase implements production-oriented Ed25519 signing, durable transaction-intent controls and cumulative-spend authority
+- the v1.0 Base Sepolia USDC transaction is real and publicly verifiable;
+- the v1.0 Telegraph fraud evidence was genuine and purchased through x402;
+- v1.2 implements deterministic risk-derived same-Intent distinct-Miner quorum;
+- v1.2 implements provider-neutral multi-Intent Evidence Bundles;
+- duplicate Miner responses do not count as independent providers;
+- v1.2 implements a general action/Mandate/decision/Permit/executor core;
+- other developers can register trusted action adapters;
+- all current deterministic test/fuzz gates pass on the validated code snapshot;
+- production-oriented Ed25519/PostgreSQL controls exist and are tested separately from the historical live tx.
 
-Do not claim:
+Do **not** claim unless a corresponding real artifact/integration exists:
 
-- that the canonical live transaction exercised the PostgreSQL/Ed25519 production-oriented path; it used the local/demo compatibility path
-- that the earlier security assessment covers commits made after its assessed revision
-- that ProofGate has undergone an independent production security audit
-- that an ambiguous blockchain response means the transaction failed
-- that a favorable Miner verdict alone means ProofGate authorized execution
+- a successful real three-Miner Telegraph quorum has already been captured;
+- the historical v1.0 transaction used quorum/adaptive routing;
+- the historical transaction used Ed25519/PostgreSQL production paths;
+- the example GitHub/cloud/database adapters are live production integrations;
+- arbitrary third-party adapters are sandboxed/safe;
+- ProofGate has undergone an independent production audit;
+- a Miner `ALLOW` directly authorizes execution.
 
-## Final submission freeze
+## Final freeze process
 
-1. run final validation against the exact submission revision;
-2. save only non-secret evidence intended for public audit;
-3. confirm CI is green;
-4. record the final commit SHA in submission notes;
-5. avoid architectural changes after the final demo recording unless fixing a verified defect.
+1. finish v1.2 code/docs on `v1.2-general-quorum`;
+2. require GitHub CI green on the exact final SHA;
+3. run local Termux verification;
+4. optionally capture live quorum evidence only as a deliberate paid test;
+5. rerun every gate after any committed live artifact;
+6. create a new immutable v1.2 tag; never move v1.0/v1.1 tags.

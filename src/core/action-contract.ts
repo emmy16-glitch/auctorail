@@ -9,7 +9,8 @@ export const BASE_SEPOLIA_USDC =
 
 export const PAYMENT_POLICY_IDS = [
   "payments.strict.v1",
-  "payments.attested-vendor.v1"
+  "payments.attested-vendor.v1",
+  "payments.adaptive.v1"
 ] as const;
 
 export type PaymentPolicyId =
@@ -34,7 +35,7 @@ const PaymentActionInputSchema = z.object({
       } catch {
         return false;
       }
-    }, "Only Base Sepolia USDC is supported by payments.strict.v1"),
+    }, "Only Base Sepolia USDC is supported by ProofGate payment policies"),
 
   amountRaw: z
     .string()
