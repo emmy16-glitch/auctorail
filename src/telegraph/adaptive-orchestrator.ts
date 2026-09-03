@@ -37,7 +37,8 @@ export interface IntentAcquisitionResult {
 export type RetryableEvidenceAcquisitionCode =
   | "evidence_subject_not_asserted"
   | "evidence_chain_not_asserted"
-  | "routed_intent_mismatch";
+  | "routed_intent_mismatch"
+  | "direct_route_http_unavailable";
 
 export class RetryableEvidenceAcquisitionError extends Error {
   readonly code: RetryableEvidenceAcquisitionCode;
@@ -258,11 +259,13 @@ export async function collectAdaptiveEvidence(
 
           // The user authorized this bounded acquisition session up to the
           // deterministic plan budget. A response with proven settlement but
-          // unusable binding or the wrong routed Intent is never authorization
-          // evidence, yet its cost is real. Account for that cost, quarantine
-          // the response, consume this route attempt, and continue only while
-          // the same precommitted deadline/attempt/spend limits still allow it.
-          // Transport ambiguity never reaches this branch and still stops.
+          // unusable binding, the wrong routed Intent, or a proven-paid direct
+          // route that is unavailable at the dispatcher/upstream boundary is
+          // never authorization evidence, yet its cost is real. Account for
+          // that cost, quarantine the response, consume this route attempt,
+          // and continue only while the same precommitted deadline/attempt/
+          // spend limits still allow it. Transport ambiguity never reaches
+          // this branch and still stops.
           spent += retryPayment;
           rejectedAttempts.push({
             intent: requirement.intent,
