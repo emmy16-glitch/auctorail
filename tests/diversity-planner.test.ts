@@ -30,6 +30,7 @@ function fraudMiner(input: {
   slug: string;
   rank?: number;
   endpoint?: string;
+  description?: string;
   required?: string[];
   outputMode?: "structured" | "text" | "none";
 }) {
@@ -45,13 +46,16 @@ function fraudMiner(input: {
       {
         path: input.endpoint ?? "/anomaly/check",
         method: "GET",
-        description: "FRAUD_DETECTION fraud anomaly risk assessment"
+        description:
+          input.description ??
+          "FRAUD_DETECTION fraud anomaly risk assessment"
       }
     ],
     input_schema: {
       properties: {
         query: { type: "string" },
         address: { type: "string" },
+        wallet: { type: "string" },
         chain: {
           type: "string",
           enum: ["ethereum", "base", "polygon"]
@@ -156,6 +160,57 @@ describe("direct diversity planner", () => {
     );
   });
 
+  it("does not infer exact chain binding for a wallet-only endpoint from a Miner-wide schema", () => {
+    const plan = planDirectDiversity({
+      action: action(),
+      intent: "FRAUD_DETECTION",
+      miners: [
+        fraudMiner({
+          id: "wallet-only",
+          slug: "wallet-only",
+          endpoint: "/assess-wallet",
+          description:
+            "FRAUD_DETECTION for a specific address. Params: wallet (required, EVM address).",
+          outputMode: "structured"
+        })
+      ],
+      count: 1
+    });
+
+    expect(plan.selected).toHaveLength(0);
+    expect(plan.skipped[0].reason).toContain(
+      "chosen endpoint cannot bind exact subject/chain"
+    );
+  });
+
+  it("allows declared-text binding when the chosen endpoint explicitly accepts the exact query", () => {
+    const proposed = action();
+    const plan = planDirectDiversity({
+      action: proposed,
+      intent: "FRAUD_DETECTION",
+      miners: [
+        fraudMiner({
+          id: "query-text",
+          slug: "query-text",
+          endpoint: "/risk-check",
+          description:
+            "FRAUD_DETECTION assessment. Params: wallet (required), query (optional).",
+          outputMode: "text"
+        })
+      ],
+      count: 1
+    });
+
+    expect(plan.selected).toHaveLength(1);
+    expect(plan.selected[0].outputBindingMode).toBe("DECLARED_TEXT");
+    expect(plan.selected[0].payload.wallet).toBe(
+      proposed.payload.destination
+    );
+    expect(String(plan.selected[0].payload.query)).toContain(
+      "Base Sepolia"
+    );
+  });
+
   it("excludes already-served Miners and is deterministic for the same frozen action", () => {
     const proposed = action();
     const miners = [
@@ -219,7 +274,7 @@ describe("direct diversity planner", () => {
 
     expect(plan.selected).toHaveLength(0);
     expect(plan.skipped[0].reason).toContain(
-      "no declared output path capable of exact subject/chain binding"
+      "chosen endpoint cannot bind exact subject/chain"
     );
   });
 });
