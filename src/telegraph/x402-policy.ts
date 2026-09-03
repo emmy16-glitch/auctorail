@@ -44,6 +44,7 @@ export type X402LaneDecision =
 
 export type X402SettlementCode =
   | "payment_settled"
+  | "payment_ambiguous_reserved"
   | "payment_response_missing"
   | "payment_response_malformed"
   | "facilitator_insufficient_credits"
@@ -51,11 +52,19 @@ export type X402SettlementCode =
   | "payment_settlement_failed";
 
 export interface X402SettlementResult {
+  /**
+   * `true` means the acquisition may safely continue under the recorded
+   * payment state. For `payment_ambiguous_reserved`, this does NOT mean an
+   * on-chain settlement was observed; the full signed authorization amount is
+   * instead pessimistically reserved against the evidence budget and the same
+   * authorization must never be retried.
+   */
   success: boolean;
   code: X402SettlementCode;
   retryable: boolean;
   transaction: string | null;
   errorReason: string | null;
+  settlementObserved?: boolean;
 }
 
 function decodeBase64Json(value: string): unknown {
@@ -80,6 +89,37 @@ function isNonZeroAddress(value: string): boolean {
 
 function addressesEqual(a: string, b: string): boolean {
   return isAddressLike(a) && isAddressLike(b) && a.toLowerCase() === b.toLowerCase();
+}
+
+function parseSettlementPayload(value: string): Record<string, unknown> | null {
+  const trimmed = value.trim();
+  const candidates = [trimmed];
+
+  try {
+    const decoded = Buffer.from(trimmed, "base64").toString("utf8").trim();
+    if (decoded && decoded !== trimmed) {
+      candidates.push(decoded);
+    }
+  } catch {
+    // Raw JSON and raw transaction hashes remain valid candidates.
+  }
+
+  for (const candidate of candidates) {
+    if (/^0x[0-9a-fA-F]{64}$/.test(candidate)) {
+      return { transaction: candidate };
+    }
+
+    try {
+      const parsed = JSON.parse(candidate);
+      if (isPlainObject(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Try the next representation.
+    }
+  }
+
+  return null;
 }
 
 export function parsePaymentRequiredHeader(header: string): X402PaymentRequired {
@@ -200,49 +240,50 @@ export function classifyPaymentResponseHeader(
       code: "payment_response_missing",
       retryable: false,
       transaction: null,
-      errorReason: null
+      errorReason: null,
+      settlementObserved: false
     };
   }
 
-  let raw: unknown;
+  const raw = parseSettlementPayload(header);
 
-  try {
-    raw = decodeBase64Json(header);
-  } catch {
+  if (!raw) {
     return {
       success: false,
       code: "payment_response_malformed",
       retryable: false,
       transaction: null,
-      errorReason: null
+      errorReason: null,
+      settlementObserved: false
     };
   }
 
-  if (!isPlainObject(raw)) {
-    return {
-      success: false,
-      code: "payment_response_malformed",
-      retryable: false,
-      transaction: null,
-      errorReason: null
-    };
-  }
+  const transactionCandidate =
+    raw.transaction ?? raw.tx ?? raw.signature;
+  const transaction =
+    typeof transactionCandidate === "string" &&
+    transactionCandidate.length > 0
+      ? transactionCandidate
+      : null;
+  const errorCandidate = raw.errorReason ?? raw.error;
+  const errorReason =
+    typeof errorCandidate === "string"
+      ? errorCandidate
+      : null;
 
-  const success = raw.success === true;
-  const transaction = typeof raw.transaction === "string" && raw.transaction.length > 0
-    ? raw.transaction
-    : null;
-  const errorReason = typeof raw.errorReason === "string"
-    ? raw.errorReason
-    : null;
-
-  if (success) {
+  // Standard x402 responses explicitly set success=true. Telegraph's own
+  // example/usecase clients also accept settlement audit headers that contain
+  // only a transaction/tx/signature field, in raw JSON or base64-wrapped JSON.
+  // An explicit success=false still wins and is never upgraded merely because
+  // a transaction-like field is present.
+  if (raw.success === true || (raw.success !== false && transaction)) {
     return {
       success: true,
       code: "payment_settled",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: true
     };
   }
 
@@ -254,7 +295,8 @@ export function classifyPaymentResponseHeader(
       code: "facilitator_insufficient_credits",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: false
     };
   }
 
@@ -264,7 +306,8 @@ export function classifyPaymentResponseHeader(
       code: "facilitator_forbidden",
       retryable: false,
       transaction,
-      errorReason
+      errorReason,
+      settlementObserved: false
     };
   }
 
@@ -273,6 +316,7 @@ export function classifyPaymentResponseHeader(
     code: "payment_settlement_failed",
     retryable: false,
     transaction,
-    errorReason
+    errorReason,
+    settlementObserved: false
   };
 }

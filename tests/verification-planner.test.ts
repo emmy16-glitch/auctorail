@@ -7,6 +7,7 @@ import {
 } from "../src/core/action-contract.js";
 import {
   PAYMENT_FRAUD_INTENT,
+  createIntentVerificationPlan,
   createPaymentVerificationPlan
 } from "../src/telegraph/verification-planner.js";
 
@@ -47,15 +48,49 @@ describe("Telegraph verification planner", () => {
     expect(plan.query).toContain(String(proposed.payload.chainId));
   });
 
-  it("asks routed Telegraph for measurable machine-bindable evidence", () => {
+  it("asks routed Telegraph for an unambiguous fraud Intent and machine-bindable evidence", () => {
     const plan = createPaymentVerificationPlan(action());
 
-    expect(plan.query).toContain("live on-chain measurements");
-    expect(plan.query).toContain("generic LLM-only speculation");
+    expect(plan.query).toContain(
+      "Required Telegraph Intent: FRAUD_DETECTION"
+    );
+    expect(plan.query).toContain(
+      "not a transaction lookup or wallet-balance query"
+    );
+    expect(plan.query).toContain(
+      "Do not substitute ONCHAIN_TX_LOOKUP or WALLET_BALANCE_CHECK"
+    );
+    expect(plan.query).toContain("live verifiable measurements");
     expect(plan.query).toContain("schema-declared signal field");
     expect(plan.query).toContain("numeric confidence");
     expect(plan.query).toContain("Base Sepolia testnet");
     expect(plan.query).toContain("Do not substitute Base mainnet");
+  });
+
+  it("separates all three adaptive Intents for the Engine classifier", () => {
+    const proposed = action();
+    const fraud = createIntentVerificationPlan(
+      proposed,
+      "FRAUD_DETECTION"
+    );
+    const tx = createIntentVerificationPlan(
+      proposed,
+      "ONCHAIN_TX_LOOKUP"
+    );
+    const balance = createIntentVerificationPlan(
+      proposed,
+      "WALLET_BALANCE_CHECK"
+    );
+
+    expect(fraud.query).toContain(
+      "route this request as FRAUD_DETECTION only"
+    );
+    expect(tx.query).toContain(
+      "route this request as ONCHAIN_TX_LOOKUP only"
+    );
+    expect(balance.query).toContain(
+      "route this request as WALLET_BALANCE_CHECK only"
+    );
   });
 
   it("requires explicit evidence bindings and a Telegraph signal hash", () => {

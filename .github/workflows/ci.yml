@@ -25,11 +25,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compile and verify vendor artifact
-        run: npm run vendor:compile && git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
+      - name: Verify tracked vendor artifact
+        run: npm run vendor:verify
+
+      - name: Recompile and verify vendor reproducibility
+        run: |
+          npm run vendor:compile
+          npm run vendor:verify
+          git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
 
       - name: Typecheck and test
         run: npm run ci
+
+      - name: Run deterministic v1 fuzz harness
+        run: npm run security:fuzz
+
+      - name: Run adaptive and quorum fuzz harness
+        run: npm run security:fuzz:adaptive
+
+      - name: Run generic authorization fuzz harness
+        run: npm run security:fuzz:general
 
       - name: Audit production dependencies
         run: npm run audit:prod

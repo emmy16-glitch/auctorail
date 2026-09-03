@@ -128,4 +128,39 @@ describe("ProofGate x402 payment policy", () => {
     expect(result.success).toBe(true);
     expect(result.code).toBe("payment_settled");
   });
+
+  it("recognizes Telegraph transaction-only settlement JSON", () => {
+    const tx = "0x" + "2".repeat(64);
+    const result = classifyPaymentResponseHeader(
+      JSON.stringify({ transaction: tx })
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.code).toBe("payment_settled");
+    expect(result.transaction).toBe(tx);
+  });
+
+  it("recognizes Telegraph base64-wrapped tx settlement payload", () => {
+    const tx = "0x" + "3".repeat(64);
+    const result = classifyPaymentResponseHeader(
+      encode({ tx })
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.code).toBe("payment_settled");
+    expect(result.transaction).toBe(tx);
+  });
+
+  it("never upgrades an explicit failed settlement merely because a transaction field exists", () => {
+    const result = classifyPaymentResponseHeader(
+      JSON.stringify({
+        success: false,
+        transaction: "0x" + "4".repeat(64),
+        errorReason: "settlement rejected"
+      })
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe("payment_settlement_failed");
+  });
 });

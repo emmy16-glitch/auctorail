@@ -16,8 +16,11 @@ import {
   type MandateContract,
   type MandateViolationCode
 } from "../core/mandate-contract.js";
-import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
 import type { DecisionRecord } from "../policy/payments-strict-v1.js";
+import {
+  authorizationEvidenceMatchesAction,
+  type AuthorizationEvidence
+} from "../telegraph/evidence-bundle.js";
 import { createDecisionHash } from "./decision-hash.js";
 import {
   assertProductionSigner,
@@ -103,12 +106,11 @@ function safeSignatureEqual(supplied: string, expected: string): boolean {
 
 function evidenceMatchesAction(
   action: ActionContract,
-  evidence: TelegraphEvidenceRecord
+  evidence: AuthorizationEvidence
 ): boolean {
-  return (
-    /^0x[0-9a-fA-F]{40}$/.test(evidence.subject) &&
-    evidence.subject.toLowerCase() === action.payload.destination.toLowerCase() &&
-    evidence.chainId === action.payload.chainId
+  return authorizationEvidenceMatchesAction(
+    evidence,
+    action
   );
 }
 
@@ -182,7 +184,7 @@ function firstMandateFailure(
 export function mintPermit(
   mandate: MandateContract,
   action: ActionContract,
-  evidence: TelegraphEvidenceRecord,
+  evidence: AuthorizationEvidence,
   decision: DecisionRecord,
   signerOrSecret: PermitSigner | string,
   options?: {
@@ -281,7 +283,7 @@ export function verifyPermit(
   mandate: MandateContract,
   permit: Permit,
   action: ActionContract,
-  evidence: TelegraphEvidenceRecord,
+  evidence: AuthorizationEvidence,
   decision: DecisionRecord,
   verifierOrSecret: PermitVerifier | string,
   options?: {

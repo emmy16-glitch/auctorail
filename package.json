@@ -1,7 +1,7 @@
 {
   "name": "proof-gate",
   "version": "1.0.0",
-  "description": "Agent confidence is not permission to act.",
+  "description": "Risk-adaptive authorization firewall for autonomous agents using Telegraph intelligence.",
   "type": "module",
   "main": "index.js",
   "directories": {
@@ -12,14 +12,22 @@
     "typecheck": "tsc --noEmit",
     "ci": "npm run typecheck && npm test",
     "audit:prod": "npm audit --omit=dev",
+    "demo": "tsx scripts/demo-proof.ts",
     "proof:live": "tsx scripts/prove-telegraph.ts",
+    "proof:adaptive": "tsx scripts/prove-adaptive.ts",
+    "proof:diversity:plan": "tsx scripts/plan-live-diversity.ts",
     "policy": "tsx scripts/show-policy-decision.ts",
     "wallet:check": "node scripts/check-wallet.mjs",
     "vendor:compile": "node scripts/compile-vendor.mjs",
+    "vendor:verify": "node scripts/verify-vendor-artifact.mjs",
     "vendor:deploy": "tsx scripts/deploy-vendor.ts",
     "signal:verify": "tsx scripts/verify-telegraph-signal.ts",
     "execute:approved": "tsx scripts/execute-approved-payment.ts",
     "attack:lab": "tsx scripts/attack-lab.ts",
+    "security:fuzz": "tsx scripts/final-fuzz.ts",
+    "security:fuzz:adaptive": "tsx scripts/adaptive-fuzz.ts",
+    "security:fuzz:general": "tsx scripts/general-fuzz.ts",
+    "gateway:serve": "tsx scripts/serve-authorization-gateway.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts",
     "web:dev": "vite --host 0.0.0.0",
@@ -27,7 +35,13 @@
     "web:preview": "vite preview --host 0.0.0.0",
     "web:api": "tsx web/api.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "telegraph",
+    "ai-agents",
+    "authorization",
+    "x402",
+    "security"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
