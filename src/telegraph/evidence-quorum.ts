@@ -1,6 +1,7 @@
 export interface EvidenceQuorumRule {
   minimumDistinctMiners: number;
   minimumPositiveResults: number;
+  minimumPositiveConfidence: number | null;
   maxAttempts: number;
   negativeVetoConfidence: number | null;
 }
@@ -27,6 +28,7 @@ export interface EvidenceQuorumSummary {
   observedAttempts: number;
   distinctMinerIds: string[];
   positiveMinerIds: string[];
+  belowConfidencePositiveMinerIds: string[];
   negativeMinerIds: string[];
   uncertainMinerIds: string[];
   vetoMinerIds: string[];
@@ -70,6 +72,17 @@ function normalizedLabel(label: string | null): string | null {
   return value.length > 0 ? value : null;
 }
 
+function validConfidence(value: number | null): boolean {
+  return (
+    value === null ||
+    (
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= 1
+    )
+  );
+}
+
 export function isPositiveEvidenceLabel(
   label: string | null
 ): boolean {
@@ -93,17 +106,11 @@ export function validEvidenceQuorumRule(
     Number.isInteger(rule.minimumPositiveResults) &&
     rule.minimumPositiveResults >= 0 &&
     rule.minimumPositiveResults <= rule.minimumDistinctMiners &&
+    validConfidence(rule.minimumPositiveConfidence) &&
     Number.isInteger(rule.maxAttempts) &&
     rule.maxAttempts >= rule.minimumDistinctMiners &&
     rule.maxAttempts <= 20 &&
-    (
-      rule.negativeVetoConfidence === null ||
-      (
-        Number.isFinite(rule.negativeVetoConfidence) &&
-        rule.negativeVetoConfidence >= 0 &&
-        rule.negativeVetoConfidence <= 1
-      )
-    )
+    validConfidence(rule.negativeVetoConfidence)
   );
 }
 
@@ -129,6 +136,7 @@ export function summarizeEvidenceQuorum(
     {
       positive: boolean;
       negative: boolean;
+      maxPositiveConfidence: number | null;
       maxNegativeConfidence: number | null;
     }
   >();
@@ -142,6 +150,7 @@ export function summarizeEvidenceQuorum(
     const current = byMiner.get(minerId) ?? {
       positive: false,
       negative: false,
+      maxPositiveConfidence: null,
       maxNegativeConfidence: null
     };
 
@@ -161,6 +170,18 @@ export function summarizeEvidenceQuorum(
       }
     } else if (isPositiveEvidenceLabel(item.label)) {
       current.positive = true;
+      if (
+        item.confidence !== null &&
+        Number.isFinite(item.confidence)
+      ) {
+        current.maxPositiveConfidence =
+          current.maxPositiveConfidence === null
+            ? item.confidence
+            : Math.max(
+                current.maxPositiveConfidence,
+                item.confidence
+              );
+      }
     }
 
     byMiner.set(minerId, current);
@@ -168,6 +189,7 @@ export function summarizeEvidenceQuorum(
 
   const distinctMinerIds = [...byMiner.keys()].sort();
   const positiveMinerIds: string[] = [];
+  const belowConfidencePositiveMinerIds: string[] = [];
   const negativeMinerIds: string[] = [];
   const uncertainMinerIds: string[] = [];
   const vetoMinerIds: string[] = [];
@@ -190,7 +212,19 @@ export function summarizeEvidenceQuorum(
     }
 
     if (state.positive) {
-      positiveMinerIds.push(minerId);
+      const confidencePass =
+        rule.minimumPositiveConfidence === null ||
+        (
+          state.maxPositiveConfidence !== null &&
+          state.maxPositiveConfidence >=
+            rule.minimumPositiveConfidence
+        );
+
+      if (confidencePass) {
+        positiveMinerIds.push(minerId);
+      } else {
+        belowConfidencePositiveMinerIds.push(minerId);
+      }
       continue;
     }
 
@@ -225,6 +259,7 @@ export function summarizeEvidenceQuorum(
     observedAttempts: matching.length,
     distinctMinerIds,
     positiveMinerIds,
+    belowConfidencePositiveMinerIds,
     negativeMinerIds,
     uncertainMinerIds,
     vetoMinerIds,
