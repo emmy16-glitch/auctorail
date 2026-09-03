@@ -295,8 +295,16 @@ function outputBindingMode(
 
 function enumValues(value: unknown): unknown[] {
   if (!value || typeof value !== "object") return [];
-  const candidate = value as { enum?: unknown[] };
-  return Array.isArray(candidate.enum) ? candidate.enum : [];
+  const candidate = value as {
+    enum?: unknown[];
+    const?: unknown;
+  };
+  if (Array.isArray(candidate.enum)) {
+    return candidate.enum;
+  }
+  return candidate.const !== undefined
+    ? [candidate.const]
+    : [];
 }
 
 function resolveChainValue(
@@ -305,35 +313,50 @@ function resolveChainValue(
   chainId: number
 ): unknown | undefined {
   const values = enumValues(schemaProperty);
-  const lower = values
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.toLowerCase());
 
   if (field === "chainId" || field === "chain_id") {
-    return chainId;
+    if (values.length === 0) return chainId;
+    return values.find(
+      (value) =>
+        value === chainId ||
+        (typeof value === "string" && value.trim() === String(chainId))
+    );
   }
 
   if (field === "network_id") {
-    return `eip155:${chainId}`;
+    const expected = `eip155:${chainId}`;
+    if (values.length === 0) return expected;
+    return values.find(
+      (value) =>
+        typeof value === "string" &&
+        value.trim().toLowerCase() === expected
+    );
   }
 
   if (field === "chain" || field === "network") {
     if (chainId !== 84532) return undefined;
-    const preferred = [
+
+    const exactBaseSepoliaAliases = new Set([
       "base-sepolia",
       "base_sepolia",
       "base sepolia",
-      "base"
-    ];
-    const match = preferred.find((item) => lower.includes(item));
-    if (match) {
-      return values.find(
-        (value) =>
-          typeof value === "string" &&
-          value.toLowerCase() === match
-      );
+      "base-sepolia-testnet",
+      "base sepolia testnet",
+      "eip155:84532",
+      "84532"
+    ]);
+
+    if (values.length === 0) {
+      return "base-sepolia";
     }
-    return values.length === 0 ? "base-sepolia" : undefined;
+
+    return values.find(
+      (value) =>
+        typeof value === "string" &&
+        exactBaseSepoliaAliases.has(
+          value.trim().toLowerCase()
+        )
+    );
   }
 
   return undefined;
@@ -373,7 +396,11 @@ function buildPayload(
   endpoint: DirectEndpoint,
   action: ActionContract,
   intent: AdaptiveEvidenceIntent
-): { payload: Record<string, unknown>; unresolvedRequired: string[] } {
+): {
+  payload: Record<string, unknown>;
+  unresolvedRequired: string[];
+  unresolvedExactChainFields: string[];
+} {
   const verification = createIntentVerificationPlan(action, intent);
   const properties = schemaProperties(miner.input_schema);
   const explicitEndpointFields = endpointDeclaredFields(endpoint);
@@ -381,6 +408,7 @@ function buildPayload(
     ? miner.input_schema!.required!
     : [];
   const payload: Record<string, unknown> = {};
+  const unresolvedExactChainFields: string[] = [];
 
   for (const [field, schemaProperty] of Object.entries(properties)) {
     if (
@@ -396,7 +424,21 @@ function buildPayload(
       action,
       verification.query
     );
-    if (value !== undefined) payload[field] = value;
+
+    if (value !== undefined) {
+      payload[field] = value;
+      continue;
+    }
+
+    // If an endpoint exposes an explicit chain/network input, ProofGate must
+    // be able to express the frozen chain exactly through that field. A
+    // mainnet-only value such as "base" is not equivalent to Base Sepolia
+    // chainId 84532, and silently omitting the field could make the upstream
+    // fall back to the wrong network even when the natural-language query
+    // names the correct chain.
+    if (CHAIN_INPUT_FIELDS.has(field)) {
+      unresolvedExactChainFields.push(field);
+    }
   }
 
   // Some Telegraph Miners omit an input schema but still accept query.
@@ -419,7 +461,13 @@ function buildPayload(
     (field) => !(field in payload)
   );
 
-  return { payload, unresolvedRequired };
+  return {
+    payload,
+    unresolvedRequired,
+    unresolvedExactChainFields: [
+      ...new Set(unresolvedExactChainFields)
+    ]
+  };
 }
 
 function officialRank(
@@ -497,12 +545,28 @@ export function planDirectDiversity(input: {
       continue;
     }
 
-    const { payload, unresolvedRequired } = buildPayload(
+    const {
+      payload,
+      unresolvedRequired,
+      unresolvedExactChainFields
+    } = buildPayload(
       miner,
       endpoint,
       input.action,
       input.intent
     );
+
+    if (unresolvedExactChainFields.length > 0) {
+      skipped.push({
+        minerId: id,
+        slug: miner.slug,
+        reason:
+          `cannot express exact chainId ${input.action.payload.chainId} ` +
+          `through declared field(s): ${unresolvedExactChainFields.join(",")}`
+      });
+      continue;
+    }
+
     if (unresolvedRequired.length > 0) {
       skipped.push({
         minerId: id,
