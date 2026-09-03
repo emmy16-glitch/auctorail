@@ -23,9 +23,13 @@ import type {
   PermitSigner,
   PermitVerifier
 } from "../permit/signer.js";
+import type {
+  ExecutionKillSwitch
+} from "../security/execution-kill-switch.js";
 
 export interface TrustedAdapterEvaluation {
   evidenceCommitmentHash: string | null;
+  coveredIntents: string[];
   checks: GeneralAuthorizationCheck[];
 }
 
@@ -102,6 +106,77 @@ function unique(values: string[]): string[] {
   return [...new Set(
     values.map((value) => value.trim()).filter(Boolean)
   )].sort((a, b) => a.localeCompare(b));
+}
+
+function trustedCoverageChecks(
+  requiredIntents: string[],
+  trusted: TrustedAdapterEvaluation
+): GeneralAuthorizationCheck[] {
+  const covered = unique(trusted.coveredIntents);
+  const missing = requiredIntents.filter(
+    (intent) => !covered.includes(intent)
+  );
+  const extras = covered.filter(
+    (intent) => !requiredIntents.includes(intent)
+  );
+  const evidenceRequired = requiredIntents.length > 0;
+
+  return [
+    {
+      name: "trusted_required_intent_coverage",
+      status: missing.length === 0 ? "PASS" : "HOLD",
+      reason: missing.length === 0
+        ? "Trusted evidence evaluation covers every required Intent."
+        : `Trusted evidence evaluation is missing required Intents: ${missing.join(", ")}.`,
+      ...(missing.length === 0
+        ? {}
+        : { code: "general_required_intent_not_covered" })
+    },
+    {
+      name: "trusted_no_unrequested_intents",
+      status: extras.length === 0 ? "PASS" : "BLOCK",
+      reason: extras.length === 0
+        ? "Trusted evidence evaluation covers no unrequested Intents."
+        : `Trusted evidence evaluation claims unrequested Intents: ${extras.join(", ")}.`,
+      ...(extras.length === 0
+        ? {}
+        : { code: "general_unrequested_intent_covered" })
+    },
+    {
+      name: "trusted_evidence_commitment",
+      status:
+        !evidenceRequired || trusted.evidenceCommitmentHash !== null
+          ? "PASS"
+          : "HOLD",
+      reason:
+        !evidenceRequired
+          ? "No external evidence commitment is required for this action."
+          : trusted.evidenceCommitmentHash !== null
+            ? "Trusted evidence is cryptographically committed into the authorization decision."
+            : "Required evidence exists without an evidence commitment hash.",
+      ...(
+        !evidenceRequired || trusted.evidenceCommitmentHash !== null
+          ? {}
+          : { code: "general_evidence_commitment_missing" }
+      )
+    },
+    {
+      name: "trusted_evaluation_checks",
+      status:
+        !evidenceRequired || trusted.checks.length > 0
+          ? "PASS"
+          : "HOLD",
+      reason:
+        !evidenceRequired || trusted.checks.length > 0
+          ? "Trusted adapter supplied the required evaluation checks."
+          : "Required evidence has no trusted evaluation checks.",
+      ...(
+        !evidenceRequired || trusted.checks.length > 0
+          ? {}
+          : { code: "general_trusted_evaluation_missing" }
+      )
+    }
+  ];
 }
 
 export async function authorizeRegisteredAction<P>(input: {
@@ -186,6 +261,7 @@ export async function authorizeRegisteredAction<P>(input: {
     preflightBlocked
       ? {
           evidenceCommitmentHash: null,
+          coveredIntents: [],
           checks: []
         }
       : await adapter.evaluateTrusted({
@@ -193,6 +269,10 @@ export async function authorizeRegisteredAction<P>(input: {
           requiredIntents,
           now
         });
+
+  const coverageChecks = preflightBlocked
+    ? []
+    : trustedCoverageChecks(requiredIntents, trusted);
 
   const decision = createGeneralAuthorizationDecision({
     mandate: input.mandate,
@@ -202,6 +282,7 @@ export async function authorizeRegisteredAction<P>(input: {
       trusted.evidenceCommitmentHash,
     checks: [
       ...preflightChecks,
+      ...coverageChecks,
       ...trusted.checks
     ],
     now
@@ -233,6 +314,7 @@ export async function executeRegisteredAction<R>(input: {
   authorization: RegisteredAuthorizationResult;
   verifier: PermitVerifier;
   store: PermitConsumptionStore;
+  killSwitch: ExecutionKillSwitch;
   executionId: string;
   now?: Date;
 }): Promise<GeneralExecutionResult<R>> {
@@ -266,6 +348,7 @@ export async function executeRegisteredAction<R>(input: {
     permit,
     verifier: input.verifier,
     store: input.store,
+    killSwitch: input.killSwitch,
     executionId: input.executionId,
     execute: (candidate) => adapter.execute(candidate),
     now: input.now
