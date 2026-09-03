@@ -8,13 +8,15 @@ import {
   type GeneralActionEnvelope
 } from "../core/general-action.js";
 import {
+  evaluateGeneralMandate,
   verifyGeneralMandateIntegrity,
   type GeneralMandate
 } from "../core/general-mandate.js";
-import type {
-  PermitSignatureMetadata,
-  PermitSigner,
-  PermitVerifier
+import {
+  assertProductionSigner,
+  type PermitSignatureMetadata,
+  type PermitSigner,
+  type PermitVerifier
 } from "./signer.js";
 
 export type GeneralDecisionStatus =
@@ -79,6 +81,18 @@ function decisionBody(
   return body;
 }
 
+function expectedDecision(
+  checks: GeneralAuthorizationCheck[]
+): GeneralDecisionStatus {
+  if (checks.some((check) => check.status === "BLOCK")) {
+    return "BLOCK";
+  }
+  if (checks.some((check) => check.status === "HOLD")) {
+    return "HOLD";
+  }
+  return "ALLOW";
+}
+
 export function createGeneralAuthorizationDecision(input: {
   mandate: GeneralMandate;
   action: GeneralActionEnvelope;
@@ -107,14 +121,18 @@ export function createGeneralAuthorizationDecision(input: {
   const held = input.checks.find(
     (check) => check.status === "HOLD"
   );
-  const decision: GeneralDecisionStatus =
-    blocked ? "BLOCK" : held ? "HOLD" : "ALLOW";
+  const decision = expectedDecision(input.checks);
   const reason =
     blocked?.code ??
     blocked?.name ??
     held?.code ??
     held?.name ??
     "all_authorization_checks_passed";
+
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    throw new Error("general_decision_time_invalid");
+  }
 
   const body: GeneralAuthorizationDecisionBody = {
     schemaVersion: "proofgate.decision.v2",
@@ -127,7 +145,7 @@ export function createGeneralAuthorizationDecision(input: {
     checks: input.checks,
     decision,
     reason,
-    decidedAt: (input.now ?? new Date()).toISOString()
+    decidedAt: now.toISOString()
   };
 
   return {
@@ -141,14 +159,20 @@ export function verifyGeneralDecision(
   mandate: GeneralMandate,
   action: GeneralActionEnvelope
 ): boolean {
+  const decidedAt = new Date(decision.decidedAt).getTime();
+
   return (
     verifyGeneralMandateIntegrity(mandate) &&
     verifyGeneralActionIntegrity(action) &&
     decision.schemaVersion === "proofgate.decision.v2" &&
     decision.mandateHash === mandate.mandateHash &&
     decision.actionHash === action.actionHash &&
+    decision.agentId === mandate.agentId &&
     decision.policyId === action.policyId &&
     decision.policyVersion === action.policyVersion &&
+    decision.checks.length > 0 &&
+    decision.decision === expectedDecision(decision.checks) &&
+    Number.isFinite(decidedAt) &&
     (decision.evidenceCommitmentHash === null ||
       sha256(decision.evidenceCommitmentHash)) &&
     hashCanonicalPayload(
@@ -165,6 +189,8 @@ export function mintGeneralPermit(input: {
   now?: Date;
   ttlSeconds?: number;
 }): GeneralPermit {
+  const now = input.now ?? new Date();
+
   if (
     !verifyGeneralDecision(
       input.decision,
@@ -173,6 +199,16 @@ export function mintGeneralPermit(input: {
     )
   ) {
     throw new Error("general_decision_integrity_failed");
+  }
+
+  const mandateNow = evaluateGeneralMandate(
+    input.mandate,
+    input.action,
+    input.decision.agentId,
+    now
+  );
+  if (!mandateNow.valid) {
+    throw new Error("general_mandate_invalid_at_permit_mint");
   }
 
   if (
@@ -184,6 +220,8 @@ export function mintGeneralPermit(input: {
     throw new Error("general_permit_requires_allow");
   }
 
+  assertProductionSigner(input.signer.metadata);
+
   const ttlSeconds = input.ttlSeconds ?? 30;
   if (
     !Number.isInteger(ttlSeconds) ||
@@ -193,7 +231,6 @@ export function mintGeneralPermit(input: {
     throw new Error("general_permit_ttl_invalid");
   }
 
-  const now = input.now ?? new Date();
   const payload: GeneralPermitPayload = {
     schemaVersion: "proofgate.permit.v2",
     permitId: randomUUID(),
@@ -228,12 +265,28 @@ export function verifyGeneralPermit(input: {
 }): { valid: boolean; code: string } {
   try {
     const { permit, mandate, action, decision } = input;
+    const nowDate = input.now ?? new Date();
+
     if (!verifyGeneralDecision(decision, mandate, action)) {
       return { valid: false, code: "general_decision_invalid" };
     }
     if (decision.decision !== "ALLOW") {
       return { valid: false, code: "general_decision_not_allow" };
     }
+
+    const mandateNow = evaluateGeneralMandate(
+      mandate,
+      action,
+      decision.agentId,
+      nowDate
+    );
+    if (!mandateNow.valid) {
+      return {
+        valid: false,
+        code: "general_mandate_execution_invalid"
+      };
+    }
+
     if (permit.payload.schemaVersion !== "proofgate.permit.v2") {
       return { valid: false, code: "general_permit_schema_invalid" };
     }
@@ -251,10 +304,11 @@ export function verifyGeneralPermit(input: {
 
     const issued = new Date(permit.payload.issuedAt).getTime();
     const expires = new Date(permit.payload.expiresAt).getTime();
-    const now = (input.now ?? new Date()).getTime();
+    const now = nowDate.getTime();
     if (
       !Number.isFinite(issued) ||
       !Number.isFinite(expires) ||
+      !Number.isFinite(now) ||
       expires <= issued ||
       now < issued ||
       now > expires
