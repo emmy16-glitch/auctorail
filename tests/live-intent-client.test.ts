@@ -7,6 +7,9 @@ import {
   createAdaptiveEvidencePlan
 } from "../src/telegraph/adaptive-evidence-plan.js";
 import {
+  RetryableEvidenceAcquisitionError
+} from "../src/telegraph/adaptive-orchestrator.js";
+import {
   createLiveIntentAcquirer
 } from "../src/telegraph/live-intent-client.js";
 import {
@@ -38,6 +41,29 @@ function miner(intents: string[]) {
         confidence: {},
         applicability: {}
       }
+    }
+  };
+}
+
+function answerOnlyMiner(intents: string[]) {
+  return {
+    id: 84,
+    name: "Schema Poor Miner",
+    slug: "schema-poor-miner",
+    activation_status: "active",
+    supported_intents: intents,
+    output_schema: {
+      properties: {
+        answer: {},
+        verdict: {},
+        confidence: {},
+        applicability: {}
+      }
+    },
+    signal_mapping: {
+      label_field: "verdict",
+      confidence_field: "confidence",
+      reason_field: "answer"
     }
   };
 }
@@ -149,6 +175,156 @@ describe("live Telegraph Intent client", () => {
     }
   });
 
+  it("quarantines a free schema-declared answer that names the subject but omits the chain", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "proofgate-live-rejected-")
+    );
+
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          intent: "FRAUD_DETECTION",
+          miner_used: "schema-poor-miner",
+          miner_name: "Schema Poor Miner",
+          signal_hash: `0x${"b".repeat(64)}`,
+          timestamp: "2026-09-03T07:15:00.000Z",
+          result: {
+            answer:
+              `The exact address ${action.payload.destination} appears safe.`,
+            verdict: "ALLOW",
+            confidence: 0.91,
+            applicability: "APPLICABLE"
+          }
+        }),
+        { status: 200 }
+      );
+
+    try {
+      const acquire = createLiveIntentAcquirer({
+        privateKey: PRIVATE_KEY,
+        miners: [answerOnlyMiner(["FRAUD_DETECTION"])],
+        evidenceDirectory: directory,
+        fetchImpl: fetchImpl as typeof fetch
+      });
+
+      let caught: unknown;
+      try {
+        await acquire({
+          action,
+          plan,
+          requirement: plan.requirements[0],
+          attemptNumber: 1,
+          priorMinerIds: [],
+          remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+          deadlineAt:
+            new Date(Date.now() + 30_000).toISOString()
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(
+        RetryableEvidenceAcquisitionError
+      );
+      expect(caught).toMatchObject({
+        code: "evidence_chain_not_asserted",
+        paymentAmountRaw: "0",
+        minerId: "84"
+      });
+
+      const rejectedDirectory =
+        path.join(directory, "rejected");
+      const files = fs.readdirSync(
+        rejectedDirectory
+      );
+      expect(files).toHaveLength(1);
+
+      const saved = JSON.parse(
+        fs.readFileSync(
+          path.join(
+            rejectedDirectory,
+            files[0]
+          ),
+          "utf8"
+        )
+      );
+      expect(saved.rejection.code).toBe(
+        "evidence_chain_not_asserted"
+      );
+      expect(saved.payment.amountRaw).toBe("0");
+      expect(saved.rawResponse.result.answer).toContain(
+        action.payload.destination
+      );
+    } finally {
+      fs.rmSync(directory, {
+        recursive: true,
+        force: true
+      });
+    }
+  });
+
+  it("guides later auto-route attempts toward a different capable Miner without forcing one", async () => {
+    const action = adaptiveAction("7000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    let sentBody: Record<string, unknown> | null = null;
+
+    const fetchImpl = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      sentBody = JSON.parse(
+        String(init?.body ?? "{}")
+      );
+
+      return new Response(
+        JSON.stringify({
+          intent: "FRAUD_DETECTION",
+          miner_used: "routed-test-miner",
+          miner_name: "Routed Test Miner",
+          signal_hash: `0x${"c".repeat(64)}`,
+          timestamp: "2026-09-03T07:16:00.000Z",
+          result: {
+            subject: action.payload.destination,
+            chainId: action.payload.chainId,
+            verdict: "ALLOW",
+            confidence: 0.9,
+            applicability: "APPLICABLE"
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const acquire = createLiveIntentAcquirer({
+      privateKey: PRIVATE_KEY,
+      miners: [miner(["FRAUD_DETECTION"])],
+      evidenceDirectory: os.tmpdir(),
+      fetchImpl: fetchImpl as typeof fetch
+    });
+
+    await acquire({
+      action,
+      plan,
+      requirement: plan.requirements[0],
+      attemptNumber: 2,
+      priorMinerIds: ["42", "77"],
+      remainingBudgetRaw: plan.maxEvidenceSpendRaw,
+      deadlineAt:
+        new Date(Date.now() + 30_000).toISOString()
+    });
+
+    const query = String(sentBody?.query ?? "");
+    expect(query).toContain(
+      "independent corroboration attempt 2"
+    );
+    expect(query).toContain("42, 77");
+    expect(query).toContain(
+      "prefer a different Miner"
+    );
+  });
+
   it("rejects a routed Miner that does not advertise the requested Intent", async () => {
     const action = adaptiveAction("1000000");
     const plan = createAdaptiveEvidencePlan(action);
@@ -253,8 +429,6 @@ describe("live Telegraph Intent client", () => {
       }
 
       if (!hasPaymentSignature(input, init)) {
-        // This is the challenge-swap shape the old implementation exposed:
-        // a second unpaid request could return a different, more expensive 402.
         unsignedChallengeCalls++;
         return new Response("", {
           status: 402,
