@@ -58,7 +58,7 @@ function fraudMiner(input: {
         wallet: { type: "string" },
         chain: {
           type: "string",
-          enum: ["ethereum", "base", "polygon"]
+          enum: ["ethereum", "base-sepolia", "polygon"]
         },
         impossible: { type: "string" }
       },
@@ -118,7 +118,7 @@ describe("direct diversity planner", () => {
     expect(plan.selected[0].payload.address).toBe(
       proposed.payload.destination
     );
-    expect(plan.selected[0].payload.chain).toBe("base");
+    expect(plan.selected[0].payload.chain).toBe("base-sepolia");
     expect(plan.selected[0].outputBindingMode).toBe(
       "STRUCTURED_EXACT"
     );
