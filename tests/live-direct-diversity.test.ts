@@ -40,7 +40,7 @@ function fraudMiner(input: {
         address: { type: "string" },
         chain: {
           type: "string",
-          enum: ["ethereum", "base", "polygon"]
+          enum: ["ethereum", "base-sepolia", "polygon"]
         }
       },
       required: ["address", "chain"]
