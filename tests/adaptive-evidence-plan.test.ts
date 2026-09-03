@@ -35,7 +35,7 @@ describe(
   "adaptive evidence planning",
   () => {
     it(
-      "uses one intent for low-risk payments",
+      "uses one fraud Miner for low-risk payments",
       () => {
         const candidate =
           action("1000000");
@@ -57,6 +57,13 @@ describe(
         ).toEqual([
           "FRAUD_DETECTION"
         ]);
+        expect(plan.requirements[0].quorum).toEqual({
+          minimumDistinctMiners: 1,
+          minimumPositiveResults: 1,
+          minimumPositiveConfidence: 0.70,
+          maxAttempts: 1,
+          negativeVetoConfidence: null
+        });
         expect(plan.actionHash)
           .toBe(candidate.actionHash);
         expect(plan.maxEvidenceSpendRaw)
@@ -65,7 +72,7 @@ describe(
     );
 
     it(
-      "escalates medium-risk payments to two intents",
+      "escalates medium-risk payments to two distinct fraud Miners plus transaction intelligence",
       () => {
         const plan =
           createAdaptiveEvidencePlan(
@@ -82,13 +89,20 @@ describe(
           "FRAUD_DETECTION",
           "ONCHAIN_TX_LOOKUP"
         ]);
+        expect(plan.requirements[0].quorum).toEqual({
+          minimumDistinctMiners: 2,
+          minimumPositiveResults: 2,
+          minimumPositiveConfidence: 0.75,
+          maxAttempts: 4,
+          negativeVetoConfidence: 0.90
+        });
         expect(plan.maxEvidenceSpendRaw)
-          .toBe("30000");
+          .toBe("50000");
       }
     );
 
     it(
-      "escalates high-risk payments to three intents",
+      "escalates high-risk payments to 2-of-3 fraud quorum plus two independent intents",
       () => {
         const plan =
           createAdaptiveEvidencePlan(
@@ -106,8 +120,17 @@ describe(
           "ONCHAIN_TX_LOOKUP",
           "WALLET_BALANCE_CHECK"
         ]);
+        expect(plan.requirements[0].quorum).toEqual({
+          minimumDistinctMiners: 3,
+          minimumPositiveResults: 2,
+          minimumPositiveConfidence: 0.80,
+          maxAttempts: 5,
+          negativeVetoConfidence: 0.90
+        });
         expect(plan.maxEvidenceSpendRaw)
-          .toBe("50000");
+          .toBe("70000");
+        expect(plan.providerDiversityRule)
+          .toBe("DISTINCT_MINER_IDS");
       }
     );
 
