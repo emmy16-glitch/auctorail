@@ -51,7 +51,7 @@ function miner(input: {
         address: { type: "string" },
         chain: {
           type: "string",
-          enum: ["eth", "base", "polygon"]
+          enum: ["eth", "base-sepolia", "polygon"]
         }
       }
     },
