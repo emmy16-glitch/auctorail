@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { DecisionRecord } from "../src/policy/payments-strict-v1";
 import "./styles.css";
@@ -19,6 +19,12 @@ function App() {
   const [reference, setReference] = useState("INV-1042");
   const [decision, setDecision] = useState<DecisionRecord | null>(null);
   const [running, setRunning] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("proofgate-theme") === "dark");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    window.localStorage.setItem("proofgate-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
 
   const withinLimit = Number(amount) <= Number(limit);
   const summary = useMemo(
@@ -78,7 +84,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="ProofGate home"><span className="brand-mark">⌁</span><span>ProofGate</span></a>
-        <nav><a className="active" href="#try">Try ProofGate</a><a href="#developer">Developers</a><a href="#about">About</a></nav>
+        <div className="header-actions"><nav><a className="active" href="#try">Try ProofGate</a><a href="#developer">Developers</a><a href="#about">About</a></nav><button className="theme-toggle" type="button" aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={darkMode} onClick={() => setDarkMode(value => !value)}><span className="theme-icon">{darkMode ? "☼" : "☾"}</span><span className="theme-label">{darkMode ? "Light" : "Dark"}</span></button></div>
       </header>
       <main id="try" className="page">
         <section className="hero" id="top">
