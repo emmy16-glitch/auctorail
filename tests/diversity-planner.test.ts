@@ -31,7 +31,10 @@ function fraudMiner(input: {
   rank?: number;
   endpoint?: string;
   required?: string[];
+  outputMode?: "structured" | "text" | "none";
 }) {
+  const outputMode = input.outputMode ?? "structured";
+
   return {
     id: input.id,
     slug: input.slug,
@@ -57,6 +60,34 @@ function fraudMiner(input: {
       },
       required: input.required ?? ["query", "address"]
     },
+    output_schema: {
+      properties:
+        outputMode === "structured"
+          ? {
+              address: { type: "string" },
+              chain: { type: "string" },
+              verdict: { type: "string" },
+              confidence: { type: "number" }
+            }
+          : outputMode === "text"
+            ? {
+                answer: { type: "string" },
+                verdict: { type: "string" },
+                confidence: { type: "number" }
+              }
+            : {
+                verdict: { type: "string" },
+                confidence: { type: "number" }
+              }
+    },
+    signal_mapping:
+      outputMode === "text"
+        ? {
+            label_field: "verdict",
+            confidence_field: "confidence",
+            reason_field: "answer"
+          }
+        : undefined,
     scores: input.rank
       ? [{ intent_id: "FRAUD_DETECTION", rank: input.rank, score: 0.9 }]
       : []
@@ -84,8 +115,44 @@ describe("direct diversity planner", () => {
       proposed.payload.destination
     );
     expect(plan.selected[0].payload.chain).toBe("base");
+    expect(plan.selected[0].outputBindingMode).toBe(
+      "STRUCTURED_EXACT"
+    );
     expect(String(plan.selected[0].payload.query)).toContain(
       "FRAUD_DETECTION"
+    );
+  });
+
+  it("prioritizes structured exact-binding output over a higher-ranked text-only candidate", () => {
+    const plan = planDirectDiversity({
+      action: action(),
+      intent: "FRAUD_DETECTION",
+      miners: [
+        fraudMiner({
+          id: "text",
+          slug: "rank-one-text",
+          rank: 1,
+          outputMode: "text"
+        }),
+        fraudMiner({
+          id: "structured",
+          slug: "rank-four-structured",
+          rank: 4,
+          outputMode: "structured"
+        })
+      ],
+      count: 2
+    });
+
+    expect(plan.selected.map((item) => item.miner.id)).toEqual([
+      "structured",
+      "text"
+    ]);
+    expect(plan.selected[0].outputBindingMode).toBe(
+      "STRUCTURED_EXACT"
+    );
+    expect(plan.selected[1].outputBindingMode).toBe(
+      "DECLARED_TEXT"
     );
   });
 
@@ -133,6 +200,26 @@ describe("direct diversity planner", () => {
     expect(plan.selected).toHaveLength(0);
     expect(plan.skipped[0].reason).toContain(
       "unresolved required fields: impossible"
+    );
+  });
+
+  it("skips a direct Miner whose declared output cannot bind subject and chain", () => {
+    const plan = planDirectDiversity({
+      action: action(),
+      intent: "FRAUD_DETECTION",
+      miners: [
+        fraudMiner({
+          id: "weak",
+          slug: "weak-output",
+          outputMode: "none"
+        })
+      ],
+      count: 1
+    });
+
+    expect(plan.selected).toHaveLength(0);
+    expect(plan.skipped[0].reason).toContain(
+      "no declared output path capable of exact subject/chain binding"
     );
   });
 });
