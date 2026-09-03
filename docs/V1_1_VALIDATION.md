@@ -6,23 +6,24 @@ This document records the strict validation performed after the v1.1 adaptive-ev
 
 Code SHA:
 
-`68ac50a1e607a7eb89a1fba909657ac00341b79c`
+`369f37d8e4f0aec020f58ae027d1e1810a6d5449`
 
 GitHub Actions run:
 
-`33675864125`
+`33676884023`
 
 Branch:
 
 `v1.1-adaptive-evidence`
 
-This snapshot includes the final code-level hardenings before this validation record was added, including:
+This snapshot includes the final code-level hardenings before this validation record was refreshed, including:
 
 - consequence-derived adaptive plans
 - provider-neutral Intent routing
 - live Telegraph/x402 acquisition boundary
 - canonical Evidence Bundles
 - evidence-payment provenance validation
+- x402 challenge-to-signature binding that prevents a second unvalidated challenge from being substituted between preflight and payment creation
 - adaptive conflict/uncertainty semantics
 - bundle-aware permits/execution
 - Proof Receipt v3
@@ -47,7 +48,7 @@ Subsequent documentation-only commits must still pass CI before a release/tag is
 
 ```text
 Test Files: 42 passed / 42
-Tests:      210 passed / 210
+Tests:      211 passed / 211
 ```
 
 Coverage includes the original v1 controls plus adaptive planning, Intent routing, Evidence Bundles, live-client guards, conflict semantics, x402 provenance, trusted SDK behavior, bundle-bound permits and Receipt v3.
@@ -55,10 +56,10 @@ Coverage includes the original v1 controls plus adaptive planning, Intent routin
 ### Original authorization fuzz gate
 
 ```text
-Mutation families:       11
-Cases per family:        100
-Adversarial contained:   1100 / 1100
-Valid controls:          100 / 100
+Mutation families:        11
+Cases per family:         100
+Adversarial contained:    1100 / 1100
+Valid controls:           100 / 100
 Unauthorized executions: 0
 Uncaught errors:          0
 Telegraph requests:       0
@@ -83,10 +84,10 @@ Families include:
 ### Adaptive authorization fuzz gate
 
 ```text
-Mutation families:            18
-Cases per family:             100
-Adversarial contained:        1800 / 1800
-Valid controls:               100 / 100
+Mutation families:             18
+Cases per family:              100
+Adversarial contained:         1800 / 1800
+Valid controls:                100 / 100
 Unauthorized authorizations:  0
 Uncaught errors:               0
 Telegraph requests:            0
@@ -130,6 +131,20 @@ The deterministic test suite also covers security cases outside the 18 fuzz-fami
 - alternate Evidence Bundle is first proven internally valid, then rejected after permit mint because the decision commitment binds the original bundle
 - trusted high-level SDK does not mint a permit on incomplete evidence acquisition
 - HTTP evaluation gateway does not return executable authority
+- the validated x402 preflight challenge is reused by the payment wrapper rather than replaced by a second unpaid network challenge
+- the exact x402 requirements selected for signing are independently revalidated against ProofGate's scheme/network/asset/per-request/remaining-budget policy
+- the challenge-swap regression test proves the paid path cannot introduce a second unvalidated 402 between ProofGate's preflight check and payment-signature creation
+
+## x402 TOCTOU hardening
+
+The deeper review identified a time-of-check/time-of-use risk in the original adaptive live client design: ProofGate validated one preflight `402 Payment Required` challenge, while `wrapFetchWithPayment()` normally performs its own initial request and could therefore receive a materially different challenge before signing.
+
+The validated implementation closes that gap in two layers:
+
+1. the x402 wrapper consumes a clone of the already validated preflight response as its initial 402, so no second unpaid network challenge exists between validation and signing;
+2. the x402 client applies ProofGate's hard payment policy again to the exact `PaymentRequirements` selected for payment-payload creation.
+
+The network request that follows is the payment-bearing request. ProofGate does not register a recovery hook that could authorize a second paid attempt.
 
 ## Production dependency audit
 
@@ -152,6 +167,7 @@ The authoritative production path must construct the bundle inside the trusted T
 - exact chain binding
 - Telegraph signal metadata
 - approved x402 payment lane and budget when paid
+- exact challenge/payment-requirements binding before signing
 - provable settlement
 - raw-response commitment
 
