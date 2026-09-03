@@ -172,13 +172,27 @@ export async function authorizeRegisteredAction<P>(input: {
       ...(check.code ? { code: check.code } : {})
     }));
 
-  // Only the trusted adapter runs evidence acquisition/evaluation. The agent
-  // supplies a proposal; it does not supply an ALLOW decision or permit.
-  const trusted = await adapter.evaluateTrusted({
-    action,
-    requiredIntents,
-    now
-  });
+  const preflightChecks = [
+    ...mandateChecks,
+    ...delegatedChecks
+  ];
+  const preflightBlocked = preflightChecks.some(
+    (check) => check.status === "BLOCK"
+  );
+
+  // Authority is checked before potentially paid evidence acquisition. An
+  // undelegated action cannot consume the principal's Telegraph/x402 budget.
+  const trusted: TrustedAdapterEvaluation =
+    preflightBlocked
+      ? {
+          evidenceCommitmentHash: null,
+          checks: []
+        }
+      : await adapter.evaluateTrusted({
+          action,
+          requiredIntents,
+          now
+        });
 
   const decision = createGeneralAuthorizationDecision({
     mandate: input.mandate,
@@ -187,8 +201,7 @@ export async function authorizeRegisteredAction<P>(input: {
     evidenceCommitmentHash:
       trusted.evidenceCommitmentHash,
     checks: [
-      ...mandateChecks,
-      ...delegatedChecks,
+      ...preflightChecks,
       ...trusted.checks
     ],
     now
