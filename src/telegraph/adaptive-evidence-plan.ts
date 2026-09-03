@@ -61,12 +61,14 @@ const FIVE_USDC =
 function quorum(
   minimumDistinctMiners: number,
   minimumPositiveResults: number,
+  minimumPositiveConfidence: number | null,
   maxAttempts: number,
   negativeVetoConfidence: number | null
 ): EvidenceQuorumRule {
   return {
     minimumDistinctMiners,
     minimumPositiveResults,
+    minimumPositiveConfidence,
     maxAttempts,
     negativeVetoConfidence
   };
@@ -125,7 +127,7 @@ export function createAdaptiveEvidencePlan(
           requirement(
             "FRAUD_DETECTION",
             0.70,
-            quorum(1, 1, 1, null)
+            quorum(1, 1, 0.70, 1, null)
           )
         ]
       : riskTier === "MEDIUM"
@@ -133,29 +135,29 @@ export function createAdaptiveEvidencePlan(
             requirement(
               "FRAUD_DETECTION",
               0.75,
-              quorum(2, 2, 4, 0.90)
+              quorum(2, 2, 0.75, 4, 0.90)
             ),
             requirement(
               "ONCHAIN_TX_LOOKUP",
               undefined,
-              quorum(1, 0, 1, null)
+              quorum(1, 0, null, 1, null)
             )
           ]
         : [
             requirement(
               "FRAUD_DETECTION",
               0.80,
-              quorum(3, 2, 5, 0.90)
+              quorum(3, 2, 0.80, 5, 0.90)
             ),
             requirement(
               "ONCHAIN_TX_LOOKUP",
               undefined,
-              quorum(1, 0, 1, null)
+              quorum(1, 0, null, 1, null)
             ),
             requirement(
               "WALLET_BALANCE_CHECK",
               undefined,
-              quorum(1, 0, 1, null)
+              quorum(1, 0, null, 1, null)
             )
           ];
 
