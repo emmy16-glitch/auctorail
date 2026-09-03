@@ -28,9 +28,12 @@ interface ExactEvmAuthorization {
 
 export interface X402ReconciliationProof {
   settlement: X402SettlementResult & {
-    proofSource: "BASE_SEPOLIA_AUTHORIZATION_USED_AND_TRANSFER";
+    proofSource:
+      | "BASE_SEPOLIA_AUTHORIZATION_USED_AND_TRANSFER"
+      | "SIGNED_AUTHORIZATION_RESERVED_UNSETTLED";
     authorizationNonce: string;
-    transferVerified: true;
+    transferVerified: boolean;
+    reservedAmountRaw: string;
   };
   authorization: ExactEvmAuthorization;
 }
@@ -170,6 +173,35 @@ export function extractExactEvmAuthorization(input: {
             authorization.validBefore,
             "valid_before"
           )
+  };
+}
+
+export function reserveUnsettledExactEvmAuthorization(input: {
+  paymentPayload: unknown;
+  lane: X402PaymentLane;
+  expectedPayer: string;
+}): X402ReconciliationProof {
+  const authorization =
+    extractExactEvmAuthorization(input);
+
+  return {
+    authorization,
+    settlement: {
+      success: true,
+      code: "payment_ambiguous_reserved",
+      retryable: false,
+      transaction: null,
+      errorReason:
+        "settlement_not_observed_full_signed_authorization_amount_reserved_against_evidence_budget",
+      settlementObserved: false,
+      proofSource:
+        "SIGNED_AUTHORIZATION_RESERVED_UNSETTLED",
+      authorizationNonce:
+        authorization.nonce,
+      transferVerified: false,
+      reservedAmountRaw:
+        authorization.value
+    }
   };
 }
 
@@ -329,11 +361,14 @@ export async function reconcileExactEvmSettlement(
               retryable: false,
               transaction,
               errorReason: null,
+              settlementObserved: true,
               proofSource:
                 "BASE_SEPOLIA_AUTHORIZATION_USED_AND_TRANSFER",
               authorizationNonce:
                 authorization.nonce,
-              transferVerified: true
+              transferVerified: true,
+              reservedAmountRaw:
+                authorization.value
             }
           };
         }
@@ -360,5 +395,16 @@ export async function reconcileExactEvmSettlement(
     );
   }
 
-  return null;
+  // Telegraph has already returned the paid-route response after receiving the
+  // exact signed EIP-3009 authorization, but the network/facilitator did not
+  // provide observable settlement proof within the bounded reconciliation
+  // window. Never retry the authorization. Instead reserve its full amount
+  // against the already-approved evidence budget and allow only the subsequent
+  // strict Miner/Intent/subject/chain validation to decide whether the response
+  // can become authorization evidence.
+  return reserveUnsettledExactEvmAuthorization({
+    paymentPayload: input.paymentPayload,
+    lane: input.lane,
+    expectedPayer: input.expectedPayer
+  });
 }
