@@ -19,6 +19,10 @@ import {
   type TelegraphEvidenceRecord
 } from "../evidence/telegraph.js";
 import {
+  selectDirectCorroborationTarget,
+  type DirectCorroborationTarget
+} from "./direct-corroboration.js";
+import {
   buildTelegraphEngineAskBody
 } from "./engine-ask.js";
 import {
@@ -65,6 +69,28 @@ export interface LiveIntentAcquisitionResult
   };
   settlement: X402SettlementResult | null;
 }
+
+type RoutePlan =
+  | {
+      mode: "TELEGRAPH_AUTO_ROUTE";
+      url: string;
+      body: ReturnType<typeof buildTelegraphEngineAskBody>;
+      engineEndpoint: "/v1/ask";
+      expectedMiner: null;
+      directTarget: null;
+    }
+  | {
+      mode: "TELEGRAPH_DIRECT_CORROBORATION";
+      url: string;
+      body: {
+        method: "GET" | "POST";
+        endpoint: string;
+        payload: Record<string, unknown>;
+      };
+      engineEndpoint: string;
+      expectedMiner: TelegraphMinerRecord;
+      directTarget: DirectCorroborationTarget;
+    };
 
 function isObject(
   value: unknown
@@ -133,9 +159,7 @@ function actualRequirementAllowed(
       accepts: [toPaymentLane(requirement)]
     });
 
-  if (!decision.approved) {
-    return false;
-  }
+  if (!decision.approved) return false;
 
   try {
     return (
@@ -157,15 +181,10 @@ async function preflightWithReadRetry(
   const delays = [0, 350, 800];
   let lastError: unknown = null;
 
-  for (
-    let attempt = 0;
-    attempt < delays.length;
-    attempt++
-  ) {
+  for (let attempt = 0; attempt < delays.length; attempt++) {
     if (delays[attempt] > 0) {
       await new Promise(
-        (resolve) =>
-          setTimeout(resolve, delays[attempt])
+        (resolve) => setTimeout(resolve, delays[attempt])
       );
     }
 
@@ -181,18 +200,10 @@ async function preflightWithReadRetry(
   );
 }
 
-function requireDeadline(
-  deadlineAt: string
-): void {
+function requireDeadline(deadlineAt: string): void {
   const deadline = new Date(deadlineAt).getTime();
-
-  if (
-    !Number.isFinite(deadline) ||
-    Date.now() > deadline
-  ) {
-    throw new Error(
-      "adaptive_evidence_deadline_exceeded"
-    );
+  if (!Number.isFinite(deadline) || Date.now() > deadline) {
+    throw new Error("adaptive_evidence_deadline_exceeded");
   }
 }
 
@@ -201,14 +212,11 @@ function saveEvidenceArtifact(
   intent: string,
   savedEvidence: unknown
 ): string {
-  fs.mkdirSync(directory, {
-    recursive: true
-  });
+  fs.mkdirSync(directory, { recursive: true });
 
-  const stamp =
-    new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-");
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-");
 
   const file = path.join(
     directory,
@@ -252,9 +260,7 @@ function routedQuery(
       context.requirement.intent
     );
 
-  const prior =
-    context.priorMinerIds ?? [];
-
+  const prior = context.priorMinerIds ?? [];
   if (prior.length === 0) {
     return verificationPlan.query;
   }
@@ -282,32 +288,135 @@ function requestBody(
   });
 }
 
+function resolveRoutePlan(input: {
+  context: IntentAcquisitionContext;
+  engineUrl: string;
+  miners: TelegraphMinerRecord[];
+}): RoutePlan {
+  const prior = input.context.priorMinerIds ?? [];
+  const needsIndependentProviders =
+    input.context.requirement.quorum.minimumDistinctMiners > 1;
+
+  if (needsIndependentProviders && prior.length > 0) {
+    const directTarget =
+      selectDirectCorroborationTarget({
+        miners: input.miners,
+        action: input.context.action,
+        intent: input.context.requirement.intent,
+        excludedMinerIds: prior
+      });
+
+    if (directTarget) {
+      const encodedMiner =
+        encodeURIComponent(directTarget.miner.slug);
+      const engineEndpoint =
+        `/v1/ask/${encodedMiner}`;
+
+      return {
+        mode: "TELEGRAPH_DIRECT_CORROBORATION",
+        url: `${input.engineUrl}${engineEndpoint}`,
+        body: {
+          method: directTarget.endpoint.method,
+          endpoint: directTarget.endpoint.path,
+          payload: directTarget.payload
+        },
+        engineEndpoint,
+        expectedMiner: directTarget.miner,
+        directTarget
+      };
+    }
+  }
+
+  return {
+    mode: "TELEGRAPH_AUTO_ROUTE",
+    url: `${input.engineUrl}/v1/ask`,
+    body: requestBody(input.context),
+    engineEndpoint: "/v1/ask",
+    expectedMiner: null,
+    directTarget: null
+  };
+}
+
+function routeRequestRecord(
+  route: RoutePlan,
+  context: IntentAcquisitionContext
+): Record<string, unknown> {
+  return {
+    endpoint: route.engineEndpoint,
+    routeMode: route.mode,
+    target: context.action.payload.destination,
+    chainId: context.action.payload.chainId,
+    actionHash: context.action.actionHash,
+    requiredIntent: context.requirement.intent,
+    attemptNumber: context.attemptNumber ?? 1,
+    priorMinerIds: context.priorMinerIds ?? [],
+    remainingBudgetRaw: context.remainingBudgetRaw,
+    ...(route.directTarget
+      ? {
+          directCorroboration: {
+            minerId: String(route.directTarget.miner.id),
+            minerSlug: route.directTarget.miner.slug,
+            minerEndpoint: route.directTarget.endpoint.path,
+            minerMethod: route.directTarget.endpoint.method,
+            selectionHash: route.directTarget.selectionHash
+          }
+        }
+      : {})
+  };
+}
+
+function assertDirectMinerIdentity(
+  body: Record<string, unknown>,
+  expectedMiner: TelegraphMinerRecord | null
+): void {
+  if (!expectedMiner) return;
+
+  const token =
+    typeof body.miner_used === "string" && body.miner_used.trim()
+      ? body.miner_used.trim()
+      : body.miner_id !== undefined && body.miner_id !== null
+        ? String(body.miner_id)
+        : null;
+
+  if (
+    token &&
+    token !== expectedMiner.slug &&
+    token !== String(expectedMiner.id)
+  ) {
+    throw new Error(
+      `direct_route_miner_mismatch:expected_${expectedMiner.slug}:returned_${token}`
+    );
+  }
+}
+
 function parseSuccessfulEvidence(input: {
   body: Record<string, unknown>;
   context: IntentAcquisitionContext;
   miners: TelegraphMinerRecord[];
+  route: RoutePlan;
   paymentLane: X402PaymentLane | null;
   settlement: X402SettlementResult | null;
   startedAt: string;
   evidenceDirectory: string;
 }): LiveIntentAcquisitionResult {
   if (!isObject(input.body.result)) {
-    throw new Error(
-      "miner_result_missing"
-    );
+    throw new Error("miner_result_missing");
   }
+
+  assertDirectMinerIdentity(
+    input.body,
+    input.route.expectedMiner
+  );
 
   const servingMiner =
     resolveServingMiner(
       input.body,
-      null,
+      input.route.expectedMiner,
       input.miners
     );
 
   if (!servingMiner) {
-    throw new Error(
-      "serving_miner_identity_missing"
-    );
+    throw new Error("serving_miner_identity_missing");
   }
 
   const returnedIntent =
@@ -315,22 +424,14 @@ function parseSuccessfulEvidence(input: {
       ? input.body.intent
       : input.context.requirement.intent;
 
-  if (
-    returnedIntent !==
-    input.context.requirement.intent
-  ) {
-    const finishedAt =
-      new Date().toISOString();
+  if (returnedIntent !== input.context.requirement.intent) {
+    const finishedAt = new Date().toISOString();
     const rejectionPath =
       saveEvidenceArtifact(
-        path.join(
-          input.evidenceDirectory,
-          "rejected"
-        ),
+        path.join(input.evidenceDirectory, "rejected"),
         input.context.requirement.intent,
         {
-          schemaVersion:
-            "proofgate.telegraph-evidence-rejection.v1",
+          schemaVersion: "proofgate.telegraph-evidence-rejection.v1",
           source: "telegraph",
           intent: returnedIntent,
           miner: {
@@ -338,23 +439,10 @@ function parseSuccessfulEvidence(input: {
             name: servingMiner.name,
             slug: servingMiner.slug
           },
-          request: {
-            endpoint: "/v1/ask",
-            target:
-              input.context.action.payload.destination,
-            chainId:
-              input.context.action.payload.chainId,
-            actionHash:
-              input.context.action.actionHash,
-            requiredIntent:
-              input.context.requirement.intent,
-            attemptNumber:
-              input.context.attemptNumber ?? 1,
-            priorMinerIds:
-              input.context.priorMinerIds ?? [],
-            remainingBudgetRaw:
-              input.context.remainingBudgetRaw
-          },
+          request: routeRequestRecord(
+            input.route,
+            input.context
+          ),
           rejection: {
             code: "routed_intent_mismatch",
             detail:
@@ -366,12 +454,10 @@ function parseSuccessfulEvidence(input: {
               input.settlement
             ),
           capturedAt: {
-            startedAt:
-              input.startedAt,
+            startedAt: input.startedAt,
             finishedAt
           },
-          rawResponse:
-            input.body
+          rawResponse: input.body
         }
       );
 
@@ -381,10 +467,8 @@ function parseSuccessfulEvidence(input: {
         `expected ${input.context.requirement.intent}, returned ${returnedIntent}`,
       paymentAmountRaw:
         input.paymentLane?.amount ?? "0",
-      artifactPath:
-        rejectionPath,
-      minerId:
-        servingMiner.id
+      artifactPath: rejectionPath,
+      minerId: servingMiner.id
     });
   }
 
@@ -410,18 +494,13 @@ function parseSuccessfulEvidence(input: {
     });
 
   if (!binding.valid) {
-    const finishedAt =
-      new Date().toISOString();
+    const finishedAt = new Date().toISOString();
     const rejectionPath =
       saveEvidenceArtifact(
-        path.join(
-          input.evidenceDirectory,
-          "rejected"
-        ),
+        path.join(input.evidenceDirectory, "rejected"),
         returnedIntent,
         {
-          schemaVersion:
-            "proofgate.telegraph-evidence-rejection.v1",
+          schemaVersion: "proofgate.telegraph-evidence-rejection.v1",
           source: "telegraph",
           intent: returnedIntent,
           miner: {
@@ -429,23 +508,10 @@ function parseSuccessfulEvidence(input: {
             name: servingMiner.name,
             slug: servingMiner.slug
           },
-          request: {
-            endpoint: "/v1/ask",
-            target:
-              input.context.action.payload.destination,
-            chainId:
-              input.context.action.payload.chainId,
-            actionHash:
-              input.context.action.actionHash,
-            requiredIntent:
-              input.context.requirement.intent,
-            attemptNumber:
-              input.context.attemptNumber ?? 1,
-            priorMinerIds:
-              input.context.priorMinerIds ?? [],
-            remainingBudgetRaw:
-              input.context.remainingBudgetRaw
-          },
+          request: routeRequestRecord(
+            input.route,
+            input.context
+          ),
           rejection: {
             code: binding.code,
             detail: binding.detail
@@ -456,30 +522,24 @@ function parseSuccessfulEvidence(input: {
               input.settlement
             ),
           capturedAt: {
-            startedAt:
-              input.startedAt,
+            startedAt: input.startedAt,
             finishedAt
           },
-          rawResponse:
-            input.body
+          rawResponse: input.body
         }
       );
 
     if (
-      binding.code ===
-        "evidence_subject_not_asserted" ||
-      binding.code ===
-        "evidence_chain_not_asserted"
+      binding.code === "evidence_subject_not_asserted" ||
+      binding.code === "evidence_chain_not_asserted"
     ) {
       throw new RetryableEvidenceAcquisitionError({
         code: binding.code,
         detail: binding.detail,
         paymentAmountRaw:
           input.paymentLane?.amount ?? "0",
-        artifactPath:
-          rejectionPath,
-        minerId:
-          servingMiner.id
+        artifactPath: rejectionPath,
+        minerId: servingMiner.id
       });
     }
 
@@ -495,12 +555,9 @@ function parseSuccessfulEvidence(input: {
       binding
     );
 
-  const finishedAt =
-    new Date().toISOString();
-
+  const finishedAt = new Date().toISOString();
   const savedEvidence = {
-    schemaVersion:
-      "proofgate.telegraph-evidence.v1",
+    schemaVersion: "proofgate.telegraph-evidence.v1",
     source: "telegraph" as const,
     intent: returnedIntent,
     miner: {
@@ -508,27 +565,11 @@ function parseSuccessfulEvidence(input: {
       name: servingMiner.name,
       slug: servingMiner.slug
     },
-    request: {
-      endpoint: "/v1/ask",
-      target:
-        input.context.action.payload.destination,
-      chainId:
-        input.context.action.payload.chainId,
-      routeMode:
-        "TELEGRAPH_INTENT_ROUTE",
-      actionHash:
-        input.context.action.actionHash,
-      requiredIntent:
-        input.context.requirement.intent,
-      attemptNumber:
-        input.context.attemptNumber ?? 1,
-      priorMinerIds:
-        input.context.priorMinerIds ?? [],
-      remainingBudgetRaw:
-        input.context.remainingBudgetRaw
-    },
-    result:
-      canonicalResult,
+    request: routeRequestRecord(
+      input.route,
+      input.context
+    ),
+    result: canonicalResult,
     telegraph: {
       signalHash:
         typeof input.body.signal_hash === "string"
@@ -547,10 +588,8 @@ function parseSuccessfulEvidence(input: {
           ? input.body.timestamp
           : null,
       binding: {
-        subjectField:
-          binding.subjectField,
-        chainField:
-          binding.chainField
+        subjectField: binding.subjectField,
+        chainField: binding.chainField
       }
     },
     payment:
@@ -559,19 +598,14 @@ function parseSuccessfulEvidence(input: {
         input.settlement
       ),
     capturedAt: {
-      startedAt:
-        input.startedAt,
+      startedAt: input.startedAt,
       finishedAt
     },
-    rawResponse:
-      input.body
+    rawResponse: input.body
   };
 
-  const evidence:
-    TelegraphEvidenceRecord =
-    normalizeTelegraphEvidence(
-      savedEvidence
-    );
+  const evidence: TelegraphEvidenceRecord =
+    normalizeTelegraphEvidence(savedEvidence);
 
   const evidencePath =
     saveEvidenceArtifact(
@@ -594,8 +628,7 @@ function parseSuccessfulEvidence(input: {
       name: servingMiner.name,
       slug: servingMiner.slug
     },
-    settlement:
-      input.settlement
+    settlement: input.settlement
   };
 }
 
@@ -611,45 +644,34 @@ export function createLiveIntentAcquirer(
 
   const evidenceDirectory =
     options.evidenceDirectory ??
-    path.join(
-      "data",
-      "evidence",
-      "adaptive"
-    );
+    path.join("data", "evidence", "adaptive");
 
-  const fetchImpl =
-    options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? fetch;
 
-  const account =
-    privateKeyToAccount(
-      options.privateKey
-    );
-  const signer =
-    toClientEvmSigner(account);
+  const account = privateKeyToAccount(options.privateKey);
+  const signer = toClientEvmSigner(account);
 
   return async (
     context: IntentAcquisitionContext
   ): Promise<LiveIntentAcquisitionResult> => {
-    requireDeadline(
-      context.deadlineAt
-    );
+    requireDeadline(context.deadlineAt);
 
-    const url =
-      `${engineUrl}/v1/ask`;
+    const route = resolveRoutePlan({
+      context,
+      engineUrl,
+      miners: options.miners
+    });
+
+    const url = route.url;
     const init: RequestInit = {
       method: "POST",
       headers: {
-        "Content-Type":
-          "application/json"
+        "Content-Type": "application/json"
       },
-      body:
-        JSON.stringify(
-          requestBody(context)
-        )
+      body: JSON.stringify(route.body)
     };
 
-    const startedAt =
-      new Date().toISOString();
+    const startedAt = new Date().toISOString();
 
     const preflight =
       await preflightWithReadRetry(
@@ -659,19 +681,16 @@ export function createLiveIntentAcquirer(
       );
 
     if (preflight.ok) {
-      const parsed =
-        await preflight.json();
-
+      const parsed = await preflight.json();
       if (!isObject(parsed)) {
-        throw new Error(
-          "miner_response_not_object"
-        );
+        throw new Error("miner_response_not_object");
       }
 
       return parseSuccessfulEvidence({
         body: parsed,
         context,
         miners: options.miners,
+        route,
         paymentLane: null,
         settlement: null,
         startedAt,
@@ -686,43 +705,30 @@ export function createLiveIntentAcquirer(
     }
 
     const paymentRequired =
-      preflight.headers.get(
-        "payment-required"
-      );
+      preflight.headers.get("payment-required");
 
     if (!paymentRequired) {
-      throw new Error(
-        "payment_challenge_missing"
-      );
+      throw new Error("payment_challenge_missing");
     }
 
     const challenge =
-      parsePaymentRequiredHeader(
-        paymentRequired
-      );
+      parsePaymentRequiredHeader(paymentRequired);
     const laneDecision =
-      selectApprovedTelegraphPaymentLane(
-        challenge
-      );
+      selectApprovedTelegraphPaymentLane(challenge);
 
     if (!laneDecision.approved) {
-      throw new Error(
-        laneDecision.code
-      );
+      throw new Error(laneDecision.code);
     }
 
-    const preflightLane =
-      laneDecision.lane;
-    const remaining =
-      unsigned(
-        context.remainingBudgetRaw,
-        "remaining_evidence_budget"
-      );
-    const preflightPrice =
-      unsigned(
-        preflightLane.amount,
-        "payment_amount"
-      );
+    const preflightLane = laneDecision.lane;
+    const remaining = unsigned(
+      context.remainingBudgetRaw,
+      "remaining_evidence_budget"
+    );
+    const preflightPrice = unsigned(
+      preflightLane.amount,
+      "payment_amount"
+    );
 
     if (preflightPrice > remaining) {
       throw new Error(
@@ -730,9 +736,7 @@ export function createLiveIntentAcquirer(
       );
     }
 
-    requireDeadline(
-      context.deadlineAt
-    );
+    requireDeadline(context.deadlineAt);
 
     let replayValidatedPreflight = true;
     const boundFetch: typeof fetch = async (
@@ -743,7 +747,6 @@ export function createLiveIntentAcquirer(
         replayValidatedPreflight = false;
         return preflight.clone();
       }
-
       return fetchImpl(input, requestInit);
     };
 
@@ -751,10 +754,8 @@ export function createLiveIntentAcquirer(
       x402Client.fromConfig({
         schemes: [
           {
-            network:
-              TELEGRAPH_X402_POLICY.network,
-            client:
-              new ExactEvmScheme(signer)
+            network: TELEGRAPH_X402_POLICY.network,
+            client: new ExactEvmScheme(signer)
           }
         ],
         spendControls: false
@@ -776,13 +777,15 @@ export function createLiveIntentAcquirer(
     let paymentPayloadCreated = false;
 
     client.onBeforePaymentCreation(
-      async ({ paymentRequired: actualChallenge, selectedRequirements }) => {
+      async ({
+        paymentRequired: actualChallenge,
+        selectedRequirements
+      }) => {
         const selected =
           toPaymentLane(selectedRequirements);
         const decision =
           selectApprovedTelegraphPaymentLane({
-            x402Version:
-              actualChallenge.x402Version,
+            x402Version: actualChallenge.x402Version,
             accepts: [selected]
           });
 
@@ -794,11 +797,10 @@ export function createLiveIntentAcquirer(
           };
         }
 
-        const amount =
-          unsigned(
-            decision.lane.amount,
-            "payment_amount"
-          );
+        const amount = unsigned(
+          decision.lane.amount,
+          "payment_amount"
+        );
 
         if (amount > remaining) {
           return {
@@ -812,25 +814,17 @@ export function createLiveIntentAcquirer(
       }
     );
 
-    client.onAfterPaymentCreation(
-      async () => {
-        paymentPayloadCreated = true;
-      }
-    );
+    client.onAfterPaymentCreation(async () => {
+      paymentPayloadCreated = true;
+    });
 
     const paidFetch =
-      wrapFetchWithPayment(
-        boundFetch,
-        client
-      );
+      wrapFetchWithPayment(boundFetch, client);
 
     let response: Response;
 
     try {
-      response = await paidFetch(
-        url,
-        init
-      );
+      response = await paidFetch(url, init);
     } catch (error) {
       if (paymentPayloadCreated) {
         throw new Error(
@@ -851,12 +845,8 @@ export function createLiveIntentAcquirer(
 
     const settlement =
       classifyPaymentResponseHeader(
-        response.headers.get(
-          "payment-response"
-        ) ??
-        response.headers.get(
-          "x-payment-response"
-        ) ??
+        response.headers.get("payment-response") ??
+        response.headers.get("x-payment-response") ??
         null
       );
 
@@ -872,19 +862,16 @@ export function createLiveIntentAcquirer(
       );
     }
 
-    const parsed =
-      await response.json();
-
+    const parsed = await response.json();
     if (!isObject(parsed)) {
-      throw new Error(
-        "miner_response_not_object"
-      );
+      throw new Error("miner_response_not_object");
     }
 
     return parseSuccessfulEvidence({
       body: parsed,
       context,
       miners: options.miners,
+      route,
       paymentLane: actualLane,
       settlement,
       startedAt,
