@@ -9,5 +9,5 @@
     "types": ["node", "vite/client"],
     "allowImportingTsExtensions": true
   },
-  "include": ["web/**/*.ts", "web/**/*.tsx", "vite.config.ts"]
+  "include": ["web/main.tsx", "vite.config.ts"]
 }
