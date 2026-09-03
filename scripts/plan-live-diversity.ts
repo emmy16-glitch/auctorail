@@ -64,7 +64,7 @@ const plan = planDirectDiversity({
   action,
   intent: requestedIntent,
   miners: loadMiners(),
-  excludeMinerIds,
+  excludeMinerIds: excludedMinerIds,
   count: 3
 });
 
@@ -107,7 +107,7 @@ if (plan.selected.length === 0) {
 
 if (plan.skipped.length > 0) {
   console.log("");
-  console.log("Skipped FRAUD-capable candidates:");
+  console.log("Skipped candidates:");
   for (const item of plan.skipped) {
     console.log(
       `- ${item.slug} (${item.minerId}): ${item.reason}`
