@@ -4,6 +4,20 @@
    Imported first by checking-screen.css, so these measured corrections use
    !important only where they intentionally override the responsive base. */
 
+/* Before Telegraph is actually dispatched, row 03 must not claim that real
+   checks are already running. Hide the generic React title in the pending
+   state and render the truthful pending label; once the row becomes running,
+   the real REAL CHECKS RUNNING title is shown normally. */
+.timeline-row[data-stage="03"].timeline-pending .timeline-copy strong {
+  display: none;
+}
+.timeline-row[data-stage="03"].timeline-pending .timeline-copy::before {
+  content: "REAL CHECKS PENDING";
+  overflow-wrap: anywhere;
+  font: 900 11px/1.08 var(--mono);
+  letter-spacing: .005em;
+}
+
 @media (min-width: 351px) and (max-width: 480px) {
   /* The reference title is deliberately more compact than Screen 1's hero.
      Use a responsive cap so 390px matches the source while 430px can breathe. */
@@ -81,6 +95,10 @@
 }
 
 @media (max-width: 350px) {
+  .timeline-row[data-stage="03"].timeline-pending .timeline-copy::before {
+    font-size: 9.7px;
+  }
+
   .checking-request-card {
     min-height: 56px !important;
     padding-block: 7px !important;
