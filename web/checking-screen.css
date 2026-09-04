@@ -1,0 +1,483 @@
+/* Screen 2 — live authorization / external verification.
+   Mirrors the selected CLASP-inspired mobile reference while keeping every
+   progress state tied to a real ProofGate request stage. */
+
+.checking-shell {
+  padding: 25px 21px 18px;
+  font-family: var(--mono);
+}
+
+.checking-shell > h1 {
+  margin: 0 0 16px;
+  font: 900 25px/.98 var(--mono);
+  letter-spacing: -.035em;
+}
+
+.checking-request-card {
+  min-height: 76px;
+  padding: 11px 13px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  border: 1.8px solid var(--ink);
+  background: var(--panel);
+}
+
+.checking-request-card svg {
+  width: 29px;
+  height: 33px;
+}
+
+.checking-request-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.checking-request-card strong {
+  overflow-wrap: anywhere;
+  font: 800 16px/1.08 var(--mono);
+  letter-spacing: -.015em;
+}
+
+.checking-request-card span {
+  overflow-wrap: anywhere;
+  font: 500 10.5px/1.18 var(--mono);
+}
+
+.checking-request-card b {
+  padding-inline: 5px;
+  font-weight: 900;
+}
+
+.check-timeline {
+  position: relative;
+  display: grid;
+  gap: 13px;
+  margin-top: 20px;
+}
+
+.check-timeline::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 20px;
+  top: 42px;
+  bottom: 42px;
+  width: 1.6px;
+  background: var(--ink);
+}
+
+.timeline-row {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 54px;
+  gap: 12px;
+  align-items: center;
+}
+
+.timeline-number {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1.7px solid var(--ink);
+  background: var(--paper);
+  font: 800 17px/1 var(--mono);
+}
+
+.timeline-copy {
+  min-width: 0;
+  min-height: 58px;
+  padding: 9px 11px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border: 1.7px solid var(--ink);
+  background: var(--panel);
+}
+
+.timeline-copy strong {
+  overflow-wrap: anywhere;
+  font: 900 11px/1.08 var(--mono);
+  letter-spacing: .005em;
+}
+
+.timeline-copy span {
+  overflow-wrap: anywhere;
+  font: 500 9.5px/1.25 var(--mono);
+}
+
+.timeline-status-wrap {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.timeline-status {
+  width: 48px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1.7px solid var(--ink);
+  background: var(--panel);
+}
+
+.timeline-done .timeline-status,
+.timeline-decision .timeline-status[aria-label="ALLOW"] {
+  background: var(--mint);
+}
+
+.timeline-running .timeline-status {
+  border-style: dotted;
+}
+
+.timeline-skipped .timeline-status {
+  background: #f1f1f1;
+}
+
+.timeline-error .timeline-status,
+.timeline-decision .timeline-status:not([aria-label="ALLOW"]) {
+  background: #ffe7e7;
+}
+
+.timeline-status svg {
+  width: 26px;
+  height: 26px;
+}
+
+.status-spinner {
+  width: 25px;
+  height: 25px;
+  display: block;
+  border: 4px dotted var(--ink);
+  border-radius: 50%;
+  animation: proofgate-spin 900ms linear infinite;
+}
+
+.status-dash,
+.status-symbol {
+  font: 700 23px/1 var(--mono);
+}
+
+.timeline-time {
+  max-width: 54px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font: 700 8.5px/1.05 var(--mono);
+}
+
+.checking-work-box {
+  min-height: 96px;
+  margin-top: 20px;
+  padding: 12px 13px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  border: 1.7px solid var(--ink);
+  background: var(--panel);
+  transition: background 150ms ease;
+}
+
+.checking-work-box.ready {
+  background: #eefaf2;
+}
+
+.checking-work-box.error {
+  background: #fff0f0;
+}
+
+.terminal-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1.7px solid var(--ink);
+  font: 800 15px/1 var(--mono);
+}
+
+.checking-work-box > div:last-child {
+  min-width: 0;
+}
+
+.checking-work-box strong {
+  display: block;
+  margin: 1px 0 7px;
+  font: 900 12.5px/1 var(--mono);
+}
+
+.checking-work-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 500 9.6px/1.35 var(--mono);
+}
+
+.cancel-check-button {
+  width: 100%;
+  min-height: 47px;
+  margin-top: 16px;
+  padding: 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1.7px solid var(--ink);
+  border-radius: 0;
+  background: var(--panel);
+  font: 900 11px/1 var(--mono);
+  cursor: pointer;
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+.cancel-check-button:not(:disabled):hover,
+.cancel-check-button:not(:disabled):focus-visible {
+  background: #f1f1f1;
+}
+
+.cancel-check-button:not(:disabled):active {
+  transform: translate(2px, 2px);
+}
+
+.cancel-check-button:disabled {
+  color: #7f7f7f;
+  border-color: #9f9f9f;
+  cursor: not-allowed;
+}
+
+.cancel-x {
+  font: 500 24px/1 var(--sans);
+}
+
+.checking-safety-note {
+  min-height: 74px;
+  margin-top: 14px;
+  padding: 10px 11px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1.5px dashed #9c9c9c;
+  background: var(--panel);
+}
+
+.checking-lock-box {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+}
+
+.checking-lock-box svg {
+  width: 20px;
+  height: 23px;
+}
+
+.checking-safety-note p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 500 9.6px/1.35 var(--mono);
+}
+
+.checking-safety-note strong {
+  font-weight: 800;
+}
+
+@keyframes proofgate-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 410px) {
+  .checking-shell {
+    padding: 26px 20px 18px;
+  }
+
+  .checking-shell > h1 {
+    margin-bottom: 15px;
+    font-size: 24px;
+  }
+
+  .checking-request-card {
+    min-height: 72px;
+    grid-template-columns: 31px minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .checking-request-card svg {
+    width: 27px;
+    height: 31px;
+  }
+
+  .checking-request-card strong {
+    font-size: 15.5px;
+  }
+
+  .checking-request-card span {
+    font-size: 10.1px;
+  }
+
+  .check-timeline {
+    gap: 12px;
+    margin-top: 19px;
+  }
+
+  .timeline-row {
+    grid-template-columns: 40px minmax(0, 1fr) 50px;
+    gap: 10px;
+  }
+
+  .check-timeline::before {
+    left: 19px;
+  }
+
+  .timeline-number {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .timeline-copy {
+    min-height: 56px;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .timeline-copy strong {
+    font-size: 10.6px;
+  }
+
+  .timeline-copy span {
+    font-size: 9px;
+  }
+
+  .timeline-status {
+    width: 46px;
+    height: 40px;
+  }
+
+  .timeline-time {
+    max-width: 50px;
+    font-size: 8px;
+  }
+
+  .checking-work-box {
+    min-height: 91px;
+    margin-top: 19px;
+    padding: 11px 12px;
+    grid-template-columns: 39px minmax(0, 1fr);
+    gap: 11px;
+  }
+
+  .terminal-icon {
+    width: 33px;
+    height: 33px;
+  }
+
+  .checking-work-box strong {
+    font-size: 12px;
+  }
+
+  .checking-work-box p,
+  .checking-safety-note p {
+    font-size: 9px;
+  }
+
+  .cancel-check-button {
+    min-height: 46px;
+    margin-top: 15px;
+  }
+
+  .checking-safety-note {
+    min-height: 70px;
+    margin-top: 13px;
+    padding: 9px 10px;
+    grid-template-columns: 39px minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+
+@media (max-width: 350px) {
+  .checking-shell {
+    padding-inline: 14px;
+  }
+
+  .checking-shell > h1 {
+    font-size: 22px;
+  }
+
+  .checking-request-card strong {
+    font-size: 13.7px;
+  }
+
+  .checking-request-card span {
+    font-size: 8.9px;
+  }
+
+  .timeline-row {
+    grid-template-columns: 38px minmax(0, 1fr) 44px;
+    gap: 7px;
+  }
+
+  .check-timeline::before {
+    left: 18px;
+  }
+
+  .timeline-number {
+    width: 38px;
+    height: 38px;
+    font-size: 15px;
+  }
+
+  .timeline-copy {
+    min-height: 54px;
+    padding: 7px 8px;
+  }
+
+  .timeline-copy strong {
+    font-size: 9.5px;
+  }
+
+  .timeline-copy span {
+    font-size: 8.2px;
+  }
+
+  .timeline-status {
+    width: 42px;
+    height: 38px;
+  }
+
+  .timeline-status svg {
+    width: 23px;
+    height: 23px;
+  }
+
+  .status-spinner {
+    width: 22px;
+    height: 22px;
+  }
+
+  .timeline-time {
+    max-width: 44px;
+    font-size: 7.3px;
+  }
+
+  .checking-work-box {
+    grid-template-columns: 36px minmax(0, 1fr);
+    padding-inline: 10px;
+    gap: 9px;
+  }
+
+  .checking-work-box p,
+  .checking-safety-note p {
+    font-size: 8.25px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-spinner { animation-duration: 1ms; animation-iteration-count: 1; }
+}
