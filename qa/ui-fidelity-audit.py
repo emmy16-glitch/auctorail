@@ -143,7 +143,7 @@ async def first_screen_390(browser):
     tabs = page.locator(".top-tabs")
     await assert_near((await box(tabs))["height"], 32, 2, "tab strip height")
     for label in ["CHECK", "ACTIVITY", "PERMISSIONS", "SECURITY LAB"]:
-        tab = page.get_by_role("button", name=label)
+        tab = page.get_by_role("button", name=label, exact=True)
         await assert_near(await px(tab, "font-size"), 9.15, 0.2, f"{label} tab font")
 
     # Hero typography, spacing and icon geometry.
@@ -257,7 +257,6 @@ async def checking_screen_390(browser):
     await page.get_by_role("button", name="CHECK THIS REQUEST").click()
     await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_be_visible(timeout=2000)
     await assert_no_overflow(page, "390px checking screen")
-
     heading = page.get_by_role("heading", name="CHECKING REQUEST")
     await assert_near(await px(heading, "font-size"), 20, 0.3, "checking heading font")
     heading_box = await box(heading)
