@@ -258,6 +258,38 @@ function summarizeRequirements(plan: ReturnType<typeof createAdaptiveEvidencePla
   }));
 }
 
+function summarizeEvidenceSources(bundle: EvidenceBundle) {
+  const sources = new Map<string, {
+    id: string;
+    name: string;
+    slug: string;
+    intents: Set<string>;
+  }>();
+
+  for (const item of bundle.items) {
+    const existing = sources.get(item.miner.id);
+    if (existing) {
+      existing.intents.add(item.intent);
+      continue;
+    }
+    sources.set(item.miner.id, {
+      id: item.miner.id,
+      name: item.miner.name,
+      slug: item.miner.slug,
+      intents: new Set([item.intent])
+    });
+  }
+
+  return [...sources.values()]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((source) => ({
+      id: source.id,
+      name: source.name,
+      slug: source.slug,
+      intents: [...source.intents].sort()
+    }));
+}
+
 function createFreezeFingerprint(input: {
   actionHash: string;
   limitRaw: string;
@@ -410,7 +442,8 @@ async function performLiveAuthorization(input: {
         completedIntents: collection.completedIntents,
         spendRaw: collection.actualEvidenceSpendRaw,
         bundleHash: collection.bundle.bundleHash,
-        rejectedAttempts: collection.rejectedAttempts.length
+        rejectedAttempts: collection.rejectedAttempts.length,
+        sources: summarizeEvidenceSources(collection.bundle)
       }
     };
 
@@ -579,7 +612,8 @@ async function performPendingExecution(
       },
       evidence: {
         bundleHash: pending.evidence.bundleHash,
-        spendRaw: pending.evidenceSpendRaw
+        spendRaw: pending.evidenceSpendRaw,
+        sources: summarizeEvidenceSources(pending.evidence)
       },
       receipt: {
         id: receipt.receiptId,
