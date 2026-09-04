@@ -35,8 +35,8 @@ export interface ExecutionAuthorizationSummary {
   permit: ExecutionPermitSummary;
   evidence: {
     spendRaw: string;
-    bundleHash: string;
-    sources: ExecutionIntelligenceSource[];
+    bundleHash?: string;
+    sources?: ExecutionIntelligenceSource[];
   };
 }
 
@@ -110,7 +110,8 @@ function formatEvidenceSpend(raw: string | undefined): string {
   return `${whole.toString()}${fraction ? `.${fraction}` : ""} USDC`;
 }
 
-function sourceNames(sources: ExecutionIntelligenceSource[]): string {
+function sourceNames(sources: ExecutionIntelligenceSource[] | undefined): string {
+  if (!sources?.length) return "Source metadata unavailable";
   return sources.map((source) => source.name).join(" · ");
 }
 
