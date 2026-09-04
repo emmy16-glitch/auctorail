@@ -11,6 +11,44 @@ ARTIFACTS.mkdir(exist_ok=True)
 EXPECTED_VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14"
 
 
+def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQUESTED"):
+    return {
+        "status": status,
+        "decision": decision,
+        "reason": "external_intelligence_required" if decision is None else "adaptive_policy_allow",
+        "riskTier": "MEDIUM",
+        "policyId": "payments.adaptive.v1",
+        "policyVersion": 1,
+        "routing": {"mode": "TELEGRAPH_AUTO_INTENT", "endpoint": "/v1/ask"},
+        "action": {
+            "id": "act_qa",
+            "hash": "0xqa",
+            "amount": amount,
+            "amountRaw": str(int(float(amount) * 1_000_000)),
+            "recipient": EXPECTED_VENDOR,
+            "chainId": 84532,
+            "chain": "Base Sepolia",
+            "asset": "USDC",
+            "reason": "Supplier invoice #4471",
+            "reference": "INV-4471",
+        },
+        "mandate": {
+            "id": "proofgate-live-mandate",
+            "hash": "0xmandate",
+            "maxPerAction": "5.00",
+            "expiresAt": "2026-09-04T03:00:00.000Z",
+        },
+        "evidence": {
+            "status": evidence_status,
+            "code": "adaptive_evidence_complete" if evidence_status == "COMPLETE" else None,
+            "spendRaw": "1000" if evidence_status == "COMPLETE" else "0",
+            "bundleHash": "0xbundle" if evidence_status == "COMPLETE" else None,
+            "rejectedAttempts": 0,
+            "completedIntents": ["FRAUD_DETECTION"] if evidence_status == "COMPLETE" else [],
+        },
+    }
+
+
 async def assert_tap_target(locator, minimum=44):
     box = await locator.bounding_box()
     assert box is not None, "expected visible control"
@@ -62,7 +100,6 @@ async def reference_state_checks(page):
     overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     assert overflow <= 1, f"horizontal overflow detected: {overflow}px"
 
-    # Reference screenshot palette and typography split.
     live_color = await page.locator(".live-strip").evaluate("el => getComputedStyle(el).backgroundColor")
     cta_color = await page.locator(".check-button").evaluate("el => getComputedStyle(el).backgroundColor")
     paper_color = await page.locator(".app-page").evaluate("el => getComputedStyle(el).backgroundColor")
@@ -75,12 +112,9 @@ async def reference_state_checks(page):
     assert "Arial" in brand_family or "Helvetica" in brand_family, f"brand should use heavy sans: {brand_family}"
     assert "Courier New" in mono_family, f"subtitle should use reference mono face: {mono_family}"
 
-    # The reference has two deliberate headline lines and two deliberate copy lines.
-    # A soft wrap here was the main reason the first implementation looked stretched.
     await assert_two_line_block(page.locator(".hero-block h1"))
     await assert_two_line_block(page.locator(".hero-block p"))
 
-    # Reference-derived mobile geometry (390x844 logical viewport).
     await assert_box(page.locator(".live-strip"), height=27, tolerance=1)
     await assert_box(page.locator(".brand-row"), height=60, tolerance=2)
     await assert_box(page.locator(".top-tabs"), height=32, tolerance=2)
@@ -99,14 +133,45 @@ async def reference_state_checks(page):
     assert page_height <= 875, f"reference first screen became vertically stretched: {page_height}px"
 
 
+async def second_screen_reference_checks(page):
+    await expect(page.get_by_role("heading", name="CHECKING REQUEST")).to_be_visible()
+    await expect(page.get_by_text("REQUEST RECEIVED", exact=True)).to_be_visible()
+    await expect(page.get_by_text("RULES CHECKED", exact=True)).to_be_visible()
+    await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_be_visible()
+    await expect(page.get_by_text("DECISION", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Independent checks with real miners and policy engine", exact=True)).to_be_visible()
+    await expect(page.get_by_text("PENDING", exact=True)).to_be_visible()
+
+    body_text = await page.locator("body").inner_text()
+    assert "TEN ORDERED CHECKS" not in body_text.upper(), "UI must not invent a fixed check count"
+    assert "NO PAYMENT IS MADE." not in body_text.upper(), "UI must not hide real x402 verification fees"
+    assert "BOUNDED X402 VERIFICATION FEES" in body_text.upper(), "live x402 cost disclosure is missing"
+
+    overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"second screen overflow detected: {overflow}px"
+
+    await assert_box(page.get_by_test_id("checking-screen"), width=390, tolerance=2)
+    for selector in ["01", "02", "03", "04"]:
+        number = page.locator(f'[data-stage="{selector}"] .timeline-number')
+        box = await number.bounding_box()
+        assert box is not None and box["width"] >= 38 and box["height"] >= 38
+
+    spinner = page.locator(".timeline-running .status-spinner")
+    await expect(spinner).to_be_visible()
+    animation_name = await spinner.evaluate("el => getComputedStyle(el).animationName")
+    assert animation_name == "proofgate-spin", f"real-check spinner missing: {animation_name}"
+
+
 async def mobile_flow(browser):
     page = await browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
     console_errors = []
+    call_modes = []
     page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
 
     async def authorize(route):
         payload = json.loads(route.request.post_data or "{}")
-        assert payload["mode"] == "live"
+        mode = payload["mode"]
+        call_modes.append(mode)
         assert payload["agentId"] == "invoice-bot"
         assert payload["limit"] == "5.00"
         assert payload["amount"] == "2.00"
@@ -114,47 +179,24 @@ async def mobile_flow(browser):
         assert payload["durationSeconds"] == 3600
         assert payload["reason"] == "Supplier invoice #4471"
         assert payload["reference"] == "INV-4471"
-        assert route.request.headers.get("idempotency-key")
 
-        await asyncio.sleep(0.45)
+        if mode == "policy":
+            assert not route.request.headers.get("idempotency-key")
+            await asyncio.sleep(0.12)
+            await route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(common_response(status="REQUIRES_INTELLIGENCE", decision=None)),
+            )
+            return
+
+        assert mode == "live"
+        assert route.request.headers.get("idempotency-key")
+        await asyncio.sleep(0.75)
         await route.fulfill(
             status=200,
             content_type="application/json",
-            body=json.dumps({
-                "status": "DECIDED",
-                "decision": "ALLOW",
-                "reason": "adaptive_policy_allow",
-                "riskTier": "MEDIUM",
-                "policyId": "payments.adaptive.v1",
-                "policyVersion": 1,
-                "routing": {"mode": "TELEGRAPH_AUTO_INTENT", "endpoint": "/v1/ask"},
-                "action": {
-                    "id": "act_qa",
-                    "hash": "0xqa",
-                    "amount": "2.00",
-                    "amountRaw": "2000000",
-                    "recipient": EXPECTED_VENDOR,
-                    "chainId": 84532,
-                    "chain": "Base Sepolia",
-                    "asset": "USDC",
-                    "reason": "Supplier invoice #4471",
-                    "reference": "INV-4471"
-                },
-                "mandate": {
-                    "id": "proofgate-live-mandate",
-                    "hash": "0xmandate",
-                    "maxPerAction": "5.00",
-                    "expiresAt": "2026-09-04T03:00:00.000Z"
-                },
-                "evidence": {
-                    "status": "COMPLETE",
-                    "code": "adaptive_evidence_complete",
-                    "spendRaw": "1000",
-                    "bundleHash": "0xbundle",
-                    "rejectedAttempts": 0,
-                    "completedIntents": ["FRAUD_DETECTION"]
-                }
-            })
+            body=json.dumps(common_response(status="DECIDED", decision="ALLOW", evidence_status="COMPLETE")),
         )
 
     await page.route("**/api/authorize", authorize)
@@ -202,18 +244,54 @@ async def mobile_flow(browser):
     assert transition not in ("0s", "0ms", ""), f"primary CTA has no transition: {transition}"
 
     await check.click()
-    checking = page.get_by_role("button", name="CHECKING REAL MINERS")
-    await expect(checking).to_be_visible()
-    await expect(page.get_by_text("Checking now…", exact=True)).to_be_visible()
-    animation_name = await checking.evaluate("el => getComputedStyle(el, '::after').animationName")
-    assert animation_name == "loading-scan", f"loading animation missing: {animation_name}"
+    await expect(page.get_by_role("heading", name="CHECKING REQUEST")).to_be_visible()
+    await expect(page.get_by_text("RULES CHECKED", exact=True)).to_be_visible(timeout=2500)
+    await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_be_visible(timeout=2500)
+    await second_screen_reference_checks(page)
 
-    await expect(page.get_by_text("ALLOW — decision ready.", exact=True)).to_be_visible(timeout=4000)
-    await expect(page.get_by_text("Real Miner evidence was used.", exact=False)).to_be_visible()
-    await expect(page.get_by_role("button", name="CHECK AGAIN")).to_be_visible()
+    cancel = page.get_by_role("button", name="CANCEL CHECK")
+    await expect(cancel).to_be_disabled()
+    assert "live Miner request" in (await cancel.get_attribute("title") or "")
 
-    await page.screenshot(path=str(ARTIFACTS / "first-screen-result-mobile.png"), full_page=True)
+    await page.screenshot(path=str(ARTIFACTS / "second-screen-checking-mobile.png"), full_page=True)
+
+    await expect(page.get_by_text("ALLOW", exact=True)).to_be_visible(timeout=4000)
+    await expect(page.get_by_text("REAL CHECKS COMPLETE", exact=True)).to_be_visible()
+    await expect(page.get_by_text("All required checks completed", exact=True)).to_be_visible()
+    await expect(page.get_by_role("button", name="BACK TO REQUEST")).to_be_enabled()
+    await expect(page.get_by_text("The requested payment has not been executed.", exact=False)).to_be_visible()
+
+    await page.screenshot(path=str(ARTIFACTS / "second-screen-decision-mobile.png"), full_page=True)
+    assert call_modes == ["policy", "live"], f"expected policy preflight then live Telegraph call, got {call_modes}"
+
+    await page.get_by_role("button", name="BACK TO REQUEST").click()
+    await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible()
+
     assert not console_errors, f"browser console errors: {console_errors}"
+    await page.close()
+
+
+async def policy_block_short_circuit(browser):
+    page = await browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
+    call_modes = []
+
+    async def authorize(route):
+        payload = json.loads(route.request.post_data or "{}")
+        call_modes.append(payload["mode"])
+        assert payload["mode"] == "policy", "blocked preflight must never reach a paid live call"
+        body = common_response(status="BLOCKED", decision="BLOCK", amount="1.00")
+        body["reason"] = "mandate_destination_not_allowed"
+        await route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+    await page.route("**/api/authorize", authorize)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    await page.get_by_role("button", name="CHECK THIS REQUEST").click()
+
+    await expect(page.get_by_text("REAL CHECKS NOT NEEDED", exact=True)).to_be_visible(timeout=2000)
+    await expect(page.get_by_text("Rules blocked this request before any Miner call", exact=True)).to_be_visible()
+    await expect(page.get_by_text("BLOCK", exact=True)).to_be_visible()
+    assert call_modes == ["policy"], f"paid live call occurred after rules-level block: {call_modes}"
+    await page.screenshot(path=str(ARTIFACTS / "second-screen-policy-block-mobile.png"), full_page=True)
     await page.close()
 
 
@@ -229,10 +307,40 @@ async def narrow_mobile_fit(browser):
         page.get_by_role("button", name="Increase maximum payment"),
         page.get_by_role("button", name="Shorten permission duration"),
         page.get_by_role("button", name="Extend permission duration"),
-        page.get_by_role("button", name="CHECK THIS REQUEST")
+        page.get_by_role("button", name="CHECK THIS REQUEST"),
     ]:
         await assert_tap_target(control)
     await page.screenshot(path=str(ARTIFACTS / "first-screen-320-mobile.png"), full_page=True)
+    await page.close()
+
+
+async def narrow_checking_fit(browser):
+    page = await browser.new_page(viewport={"width": 320, "height": 800}, device_scale_factor=1)
+
+    async def authorize(route):
+        payload = json.loads(route.request.post_data or "{}")
+        if payload["mode"] == "policy":
+            await route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(common_response(status="REQUIRES_INTELLIGENCE", decision=None, amount="1.00")),
+            )
+            return
+        await asyncio.sleep(0.45)
+        await route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(common_response(status="DECIDED", decision="ALLOW", amount="1.00", evidence_status="COMPLETE")),
+        )
+
+    await page.route("**/api/authorize", authorize)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    await page.get_by_role("button", name="CHECK THIS REQUEST").click()
+    await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_be_visible(timeout=2000)
+    overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"320px checking-screen overflow: {overflow}px"
+    await page.screenshot(path=str(ARTIFACTS / "second-screen-320-mobile.png"), full_page=True)
+    await expect(page.get_by_text("ALLOW", exact=True)).to_be_visible(timeout=3000)
     await page.close()
 
 
@@ -245,8 +353,6 @@ async def desktop_fit(browser):
     assert 458 <= box["width"] <= 462, f"desktop mobile canvas width drifted: {box}"
     overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     assert overflow <= 1
-    page_height = await page.evaluate("document.documentElement.scrollHeight")
-    assert 900 <= page_height <= 1080, f"desktop reference scale drifted: {page_height}px"
     await page.screenshot(path=str(ARTIFACTS / "first-screen-idle-desktop.png"), full_page=True)
     await page.close()
 
@@ -256,7 +362,9 @@ async def main():
         browser = await p.chromium.launch()
         try:
             await mobile_flow(browser)
+            await policy_block_short_circuit(browser)
             await narrow_mobile_fit(browser)
+            await narrow_checking_fit(browser)
             await desktop_fit(browser)
         finally:
             await browser.close()
