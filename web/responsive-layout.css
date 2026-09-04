@@ -7,15 +7,12 @@
   --pg-page-gutter: clamp(18px, 3vw, 42px);
 }
 
-/* The old shell was capped at 460px everywhere. Let the application own the
-   available viewport and cap only the desktop working canvas. */
 .app-page {
   width: min(100%, var(--pg-page-max));
   min-height: 100vh;
   margin: 0 auto;
 }
 
-/* Keep long text readable while allowing the application chrome to expand. */
 .brand-row,
 .live-strip,
 .top-tabs {
@@ -24,9 +21,7 @@
 
 /* Mobile: true edge-to-edge product UI. */
 @media (max-width: 767px) {
-  body {
-    min-width: 0;
-  }
+  body { min-width: 0; }
 
   .app-page {
     width: 100%;
@@ -43,8 +38,6 @@
     max-width: none;
   }
 
-  /* Undo the screenshot-scale typography on phones. Operational copy should
-     remain comfortably readable rather than looking like a shrunk desktop page. */
   .live-strip { font-size: 9px; }
   .top-tabs button { font-size: 9px; }
   .hero-block p,
@@ -53,11 +46,11 @@
   .control-note p { font-size: 10px; }
 }
 
-/* Tablet: widen cards and use the available horizontal space without changing
-   the visual identity. */
-@media (min-width: 768px) and (max-width: 1099px) {
+/* Tablet stays single-surface. Chrome Android desktop-site mode commonly exposes
+   a ~980px CSS viewport, so the real desktop composition now begins at 900px. */
+@media (min-width: 768px) and (max-width: 899px) {
   .app-page {
-    width: min(calc(100% - 32px), 980px);
+    width: min(calc(100% - 32px), 860px);
     margin-block: 16px;
     min-height: calc(100vh - 32px);
     border: 2px solid var(--ink);
@@ -71,9 +64,7 @@
     padding: 32px;
   }
 
-  .brand-row {
-    padding-inline: 30px;
-  }
+  .brand-row { padding-inline: 30px; }
 
   .hero-block,
   .control-hero {
@@ -81,17 +72,16 @@
   }
 }
 
-/* Desktop: deliberate desktop composition. */
-@media (min-width: 1100px) {
+/* Desktop: deliberate desktop composition. This also covers Android Chrome's
+   desktop-site viewport instead of falling back to the old tall single column. */
+@media (min-width: 900px) {
   html,
-  body {
-    background: #e7e7e7;
-  }
+  body { background: #e7e7e7; }
 
   .app-page {
-    width: min(calc(100% - 64px), var(--pg-page-max));
-    margin-block: 32px;
-    min-height: calc(100vh - 64px);
+    width: min(calc(100% - 48px), var(--pg-page-max));
+    margin-block: 24px;
+    min-height: calc(100vh - 48px);
     border: 2px solid var(--ink);
     box-shadow: 10px 10px 0 var(--ink);
   }
@@ -112,26 +102,24 @@
   .brand-lockup strong { font-size: 22px; }
   .brand-lockup span { font-size: 12px; }
 
-  .top-tabs {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+  .top-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
   .top-tabs button {
     min-height: 46px;
     font-size: 11px;
   }
 
-  /* CHECK screen: controls left, current request and state right. */
+  /* CHECK screen */
   .content-shell {
-    padding: 42px 46px 46px;
+    padding: clamp(30px, 3vw, 42px) clamp(30px, 3.5vw, 46px) 46px;
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
     grid-template-areas:
       "hero hero"
       "authority request"
       "authority action"
       "authority safety";
-    column-gap: 34px;
+    column-gap: clamp(24px, 3vw, 34px);
     row-gap: 22px;
     align-items: start;
   }
@@ -143,7 +131,7 @@
     margin-bottom: 4px;
   }
 
-  .hero-block h1 { font-size: 48px; }
+  .hero-block h1 { font-size: clamp(40px, 4vw, 48px); }
   .hero-block p { max-width: 650px; font-size: 13px; }
   .hero-mark { width: 104px; height: 104px; justify-self: end; }
   .hero-mark svg { width: 48px; height: 58px; }
@@ -157,16 +145,16 @@
   .control-section { padding: 14px 20px; }
   .request-summary { min-height: 132px; padding: 18px 20px; }
 
-  /* PERMISSIONS screen: use the same two-column information hierarchy. */
+  /* PERMISSIONS screen */
   .control-shell {
-    padding: 42px 46px 46px;
+    padding: clamp(30px, 3vw, 42px) clamp(30px, 3.5vw, 46px) 46px;
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr);
     grid-template-areas:
       "controlHero controlHero"
       "authorityCard activityCard"
       "authorityCard controlNote";
-    gap: 28px 34px;
+    gap: 28px clamp(24px, 3vw, 34px);
     align-items: start;
   }
 
@@ -177,45 +165,33 @@
     margin-bottom: 0;
   }
 
-  .control-hero h1 { font-size: 46px; }
+  .control-hero h1 { font-size: clamp(38px, 4vw, 46px); }
   .control-hero p { max-width: 620px; font-size: 13px; }
   .control-hero-mark { width: 104px; height: 104px; justify-self: end; }
   .control-authority { grid-area: authorityCard; }
   .activity-card { grid-area: activityCard; margin-top: 0; }
   .control-note { grid-area: controlNote; margin-top: 0; }
 
-  /* CHECKING / DECISION screen: timeline left, explanatory state right when the
-     markup exposes the known containers. If a state is absent, grid auto-flow
-     simply leaves the remaining content full-height. */
-  .checking-shell {
-    padding: 42px 46px 46px;
+  .checking-shell,
+  .execution-shell,
+  .security-lab-shell {
+    padding: clamp(30px, 3vw, 42px) clamp(30px, 3.5vw, 46px) 46px;
   }
 
   .checking-shell .checking-layout,
   .checking-shell .checking-body {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
-    gap: 34px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr);
+    gap: clamp(24px, 3vw, 34px);
     align-items: start;
-  }
-
-  /* EXECUTION screen gets a wider work surface instead of a phone column. */
-  .execution-shell {
-    padding: 42px 46px 46px;
   }
 
   .execution-shell .execution-layout,
   .execution-shell .execution-body {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr);
-    gap: 34px;
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+    gap: clamp(24px, 3vw, 34px);
     align-items: start;
-  }
-
-  /* SECURITY LAB: preserve the four-layer concept but let layers occupy a real
-     desktop matrix. */
-  .security-lab-shell {
-    padding: 42px 46px 46px;
   }
 
   .security-lab-shell .attack-grid,
@@ -225,7 +201,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* Avoid excessively long measure inside expanded cards. */
   .activity-main small,
   .control-note p,
   .safety-note p,
