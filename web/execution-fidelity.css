@@ -1,0 +1,81 @@
+/* Final Screen 3 fidelity layer.
+   Keep the execution surface in the same flat editorial/brutalist language as
+   Screens 1–2: no gradients, no soft SaaS cards, bold sans hero + mono data. */
+
+.execution-hero-mark {
+  background: transparent !important;
+}
+
+.execution-hero h1 {
+  font-family: var(--sans) !important;
+  font-weight: 900 !important;
+  letter-spacing: -.048em !important;
+}
+
+.execution-shell,
+.execution-request,
+.execution-progress,
+.execution-message,
+.execution-details,
+.execution-actions,
+.proof-drawer,
+.execution-safety {
+  border-radius: 0 !important;
+}
+
+.execution-progress,
+.execution-details,
+.execution-request {
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.execution-message.success {
+  background: var(--mint);
+}
+
+.execution-message.warning {
+  background: #fff3bd;
+}
+
+.execution-message.error {
+  background: #ffe7e7;
+}
+
+.execution-row-copy strong,
+.execution-row-copy span,
+.execution-details dt,
+.execution-details dd,
+.proof-drawer dt,
+.proof-drawer dd,
+.execution-message strong,
+.execution-message p,
+.execution-safety p,
+.execution-actions button,
+.step-chip,
+.execution-request,
+.execution-progress h2,
+.execution-details h2 {
+  font-family: var(--mono);
+}
+
+/* Avoid over-compacting the 320px layout: operational text stays readable. */
+@media (max-width: 350px) {
+  .execution-hero h1 { font-size: 21px !important; line-height: .98 !important; }
+  .execution-hero p { font-size: 9px !important; }
+  .execution-request strong { font-size: 13px !important; }
+  .execution-request p { font-size: 8.6px !important; }
+  .execution-row-copy strong { font-size: 8.9px !important; }
+  .execution-row-copy span { font-size: 8px !important; line-height: 1.3 !important; }
+  .execution-details dt,
+  .execution-details dd,
+  .proof-drawer dt,
+  .proof-drawer dd { font-size: 8.1px !important; line-height: 1.25 !important; }
+  .execution-message p { font-size: 8.2px !important; }
+  .execution-actions button { font-size: 8.1px !important; }
+  .execution-safety p { font-size: 8px !important; }
+}
+
+/* The reference language uses hard state changes, not decorative gradients. */
+.execution-shell * {
+  background-image: none;
+}
