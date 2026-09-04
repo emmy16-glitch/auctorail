@@ -1,3 +1,5 @@
+@import "./checking-fidelity.css";
+
 /* Screen 2 — live authorization / external verification.
    Mirrors the selected CLASP-inspired mobile reference while keeping every
    progress state tied to a real ProofGate request stage. */
