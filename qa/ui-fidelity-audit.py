@@ -285,9 +285,8 @@ async def checking_screen_390(browser):
         await assert_not_clipped(row.locator(".timeline-copy"), f"timeline {stage} copy")
 
     spinner = page.locator(".status-spinner")
-    spinner_box = await box(spinner)
-    await assert_near(spinner_box["width"], 22, 0.6, "spinner width")
-    await assert_near(spinner_box["height"], 22, 0.6, "spinner height")
+    await assert_near(await px(spinner, "width"), 22, 0.6, "spinner width")
+    await assert_near(await px(spinner, "height"), 22, 0.6, "spinner height")
     assert await css(spinner, "animation-name") == "proofgate-spin"
     await assert_near(await px(spinner, "border-top-width"), 3, 0.2, "spinner stroke")
 
