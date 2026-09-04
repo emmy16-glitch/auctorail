@@ -31,7 +31,8 @@
     "gateway:serve": "tsx scripts/serve-authorization-gateway.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts",
-    "web:dev": "vite --host 0.0.0.0",
+    "dev": "PROOFGATE_LIVE_AUTHORIZATION_ENABLED=true tsx web/api-bundle.ts & vite --host 0.0.0.0",
+    "web:dev": "PROOFGATE_LIVE_AUTHORIZATION_ENABLED=true tsx web/api-bundle.ts & vite --host 0.0.0.0",
     "web:build": "vite build",
     "web:preview": "vite preview --host 0.0.0.0",
     "web:api": "tsx web/api-bundle.ts"
