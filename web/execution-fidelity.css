@@ -1,13 +1,14 @@
 /* Final Screen 3 fidelity layer.
-   Keep the execution surface in the same flat editorial/brutalist language as
-   Screens 1–2: no gradients, no soft SaaS cards, bold sans hero + mono data. */
+   Match the generated reference and CLASP language: flat surfaces, hard
+   outlines/shadows, bold mono execution heading, no gradients or soft cards. */
 
 .execution-hero-mark {
-  background: transparent !important;
+  background: var(--mint) !important;
+  background-image: none !important;
 }
 
 .execution-hero h1 {
-  font-family: var(--sans) !important;
+  font-family: var(--mono) !important;
   font-weight: 900 !important;
   letter-spacing: -.048em !important;
 }
@@ -29,17 +30,9 @@
   box-shadow: 7px 7px 0 var(--ink);
 }
 
-.execution-message.success {
-  background: var(--mint);
-}
-
-.execution-message.warning {
-  background: #fff3bd;
-}
-
-.execution-message.error {
-  background: #ffe7e7;
-}
+.execution-message.success { background: var(--mint); }
+.execution-message.warning { background: #fff3bd; }
+.execution-message.error { background: #ffe7e7; }
 
 .execution-row-copy strong,
 .execution-row-copy span,
@@ -76,6 +69,4 @@
 }
 
 /* The reference language uses hard state changes, not decorative gradients. */
-.execution-shell * {
-  background-image: none;
-}
+.execution-shell * { background-image: none; }
