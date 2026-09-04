@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -6,14 +7,24 @@ import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC,
   canonicalize,
-  hashCanonicalPayload
+  hashCanonicalPayload,
+  type ActionContract
 } from "../src/core/action-contract.js";
-import { createMandateContract, evaluateMandate } from "../src/core/mandate-contract.js";
+import { createMandateContract, evaluateMandate, type MandateContract } from "../src/core/mandate-contract.js";
 import { evaluatePaymentsAdaptiveV1 } from "../src/policy/payments-adaptive-v1.js";
+import type { DecisionRecord } from "../src/policy/payments-strict-v1.js";
 import { ADAPTIVE_EVIDENCE_INTENTS, createAdaptiveEvidencePlan } from "../src/telegraph/adaptive-evidence-plan.js";
 import { collectAdaptiveEvidence } from "../src/telegraph/adaptive-orchestrator.js";
 import { createAutoRoutedLiveIntentAcquirer } from "../src/telegraph/auto-route-acquirer.js";
+import type { EvidenceBundle } from "../src/telegraph/evidence-bundle.js";
 import type { TelegraphMinerRecord } from "../src/telegraph/routed-evidence.js";
+import { mintPermit, type Permit } from "../src/permit/permit.js";
+import { Ed25519PermitSigner } from "../src/permit/signer.js";
+import { executeProtectedAction } from "../src/executor/controlled-executor.js";
+import { FilePermitConsumptionStore } from "../src/executor/permit-store.js";
+import { executeBaseSepoliaUsdcTransfer } from "../src/executor/base-sepolia-usdc.js";
+import type { PaymentExecutionArtifact } from "../src/gateway/payment-gateway.js";
+import { createProofReceipt, verifyProofReceipt, type ReceiptExecution } from "../src/receipt/proof-receipt.js";
 
 const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 const AGENT_ID = "invoice-bot";
@@ -21,9 +32,12 @@ const PORT = Number(process.env.PROOFGATE_WEB_API_PORT ?? 8787);
 const LIVE_ENABLED = process.env.PROOFGATE_LIVE_AUTHORIZATION_ENABLED === "true";
 const TRUST_PROXY = process.env.PROOFGATE_TRUST_PROXY === "true";
 const LIVE_PER_HOUR = positiveInteger(process.env.PROOFGATE_LIVE_REQUESTS_PER_HOUR, 3);
+const EXECUTIONS_PER_HOUR = positiveInteger(process.env.PROOFGATE_EXECUTIONS_PER_HOUR, 3);
 const POLICY_PER_MINUTE = positiveInteger(process.env.PROOFGATE_POLICY_REQUESTS_PER_MINUTE, 30);
 const LIVE_DAILY_BUDGET_RAW = unsignedEnv(process.env.PROOFGATE_LIVE_DAILY_BUDGET_RAW, 500_000n);
 const FROZEN_REQUEST_TTL_MS = 120_000;
+const EXECUTION_SESSION_TTL_MS = 120_000;
+const PERMIT_TTL_SECONDS = 120;
 const ALLOWED_ORIGINS = new Set(
   (process.env.PROOFGATE_WEB_ORIGINS ?? "http://localhost:5173")
     .split(",")
@@ -50,12 +64,34 @@ interface FrozenRequestEntry {
   consumedBy?: string;
 }
 
+interface PendingExecution {
+  token: string;
+  action: ActionContract;
+  mandate: MandateContract;
+  evidence: EvidenceBundle;
+  decision: DecisionRecord;
+  permit: Permit;
+  signer: Ed25519PermitSigner;
+  freezeFingerprint: string;
+  reference: string;
+  evidenceSpendRaw: string;
+  createdAt: number;
+  validUntil: number;
+  claimedBy?: string;
+}
+
+interface IdempotentExecutionEntry {
+  token: string;
+  promise: Promise<ApiReply>;
+  createdAt: number;
+}
+
 const rateWindows = new Map<string, number[]>();
 const idempotentLiveRequests = new Map<string, IdempotentEntry>();
-// A fingerprint is useful only while this server-side record exists. A client
-// cannot manufacture a new eligible live request merely by hashing new fields:
-// only a request that actually passed the policy preflight is inserted here.
+const idempotentExecutions = new Map<string, IdempotentExecutionEntry>();
 const frozenRequests = new Map<string, FrozenRequestEntry>();
+const pendingExecutions = new Map<string, PendingExecution>();
+let cachedPermitSigner: Ed25519PermitSigner | null | undefined;
 let budgetDay = utcDay();
 let dailySpentRaw = 0n;
 let dailyReservedRaw = 0n;
@@ -105,6 +141,17 @@ function json(request: IncomingMessage, response: ServerResponse, status: number
   response.end(JSON.stringify(body));
 }
 
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  let raw = "";
+  for await (const chunk of request) {
+    raw += chunk;
+    if (raw.length > 16_000) throw new Error("request_too_large");
+  }
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("request_body_invalid");
+  return parsed as Record<string, unknown>;
+}
+
 function clientKey(request: IncomingMessage): string {
   if (TRUST_PROXY) {
     const forwarded = request.headers["x-forwarded-for"];
@@ -131,9 +178,17 @@ function cleanupIdempotencyCache(): void {
   for (const [key, entry] of idempotentLiveRequests) {
     if (entry.createdAt < cutoff) idempotentLiveRequests.delete(key);
   }
-  if (idempotentLiveRequests.size <= 200) return;
-  const oldest = [...idempotentLiveRequests.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
-  for (const [key] of oldest.slice(0, idempotentLiveRequests.size - 200)) idempotentLiveRequests.delete(key);
+  for (const [key, entry] of idempotentExecutions) {
+    if (entry.createdAt < cutoff) idempotentExecutions.delete(key);
+  }
+  if (idempotentLiveRequests.size > 200) {
+    const oldest = [...idempotentLiveRequests.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [key] of oldest.slice(0, idempotentLiveRequests.size - 200)) idempotentLiveRequests.delete(key);
+  }
+  if (idempotentExecutions.size > 200) {
+    const oldest = [...idempotentExecutions.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [key] of oldest.slice(0, idempotentExecutions.size - 200)) idempotentExecutions.delete(key);
+  }
 }
 
 function cleanupFrozenRequests(): void {
@@ -144,6 +199,16 @@ function cleanupFrozenRequests(): void {
   if (frozenRequests.size <= 200) return;
   const oldest = [...frozenRequests.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
   for (const [key] of oldest.slice(0, frozenRequests.size - 200)) frozenRequests.delete(key);
+}
+
+function cleanupPendingExecutions(): void {
+  const now = Date.now();
+  for (const [token, entry] of pendingExecutions) {
+    if (entry.validUntil < now) pendingExecutions.delete(token);
+  }
+  if (pendingExecutions.size <= 200) return;
+  const oldest = [...pendingExecutions.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+  for (const [token] of oldest.slice(0, pendingExecutions.size - 200)) pendingExecutions.delete(token);
 }
 
 function readMiners(): TelegraphMinerRecord[] {
@@ -210,6 +275,58 @@ function createFreezeFingerprint(input: {
   }));
 }
 
+function permitHash(permit: Permit): string {
+  return hashCanonicalPayload(canonicalize(permit));
+}
+
+function loadPermitPem(): string | null {
+  const fromEnv = process.env.PROOFGATE_PERMIT_ED25519_PRIVATE_KEY;
+  if (fromEnv?.trim()) return fromEnv.replace(/\\n/g, "\n");
+
+  const configuredPath = process.env.PROOFGATE_PERMIT_ED25519_PRIVATE_KEY_FILE;
+  if (configuredPath?.trim()) {
+    try { return fs.readFileSync(configuredPath, "utf8"); } catch { return null; }
+  }
+
+  if (process.env.NODE_ENV === "production") return null;
+
+  const localPath = path.join(process.cwd(), ".proofgate", "web-permit-ed25519.pem");
+  try {
+    if (fs.existsSync(localPath)) return fs.readFileSync(localPath, "utf8");
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    const pair = generateKeyPairSync("ed25519");
+    const pem = pair.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    fs.writeFileSync(localPath, pem, { mode: 0o600 });
+    return pem;
+  } catch {
+    return null;
+  }
+}
+
+function getPermitSigner(): Ed25519PermitSigner | null {
+  if (cachedPermitSigner !== undefined) return cachedPermitSigner;
+  const pem = loadPermitPem();
+  if (!pem) {
+    cachedPermitSigner = null;
+    return null;
+  }
+  try {
+    cachedPermitSigner = new Ed25519PermitSigner(
+      pem,
+      process.env.PROOFGATE_PERMIT_KEY_ID ?? "proofgate-web-v1"
+    );
+    return cachedPermitSigner;
+  } catch {
+    cachedPermitSigner = null;
+    return null;
+  }
+}
+
+function executorPrivateKey(): `0x${string}` | null {
+  const value = process.env.PROOFGATE_EXECUTOR_PRIVATE_KEY ?? process.env.TELEGRAPH_EVM_PRIVATE_KEY;
+  return value && /^0x[0-9a-fA-F]{64}$/.test(value) ? value as `0x${string}` : null;
+}
+
 function commonRecord(input: {
   action: ReturnType<typeof createActionContract>;
   mandate: ReturnType<typeof createMandateContract>;
@@ -244,7 +361,8 @@ function commonRecord(input: {
     },
     requirements: summarizeRequirements(input.plan),
     executionAuthorized: false as const,
-    permit: null
+    permit: null,
+    execution: null
   };
 }
 
@@ -255,6 +373,7 @@ async function performLiveAuthorization(input: {
   reference: string;
   freezeFingerprint: string;
   privateKey: `0x${string}`;
+  signer: Ed25519PermitSigner;
   now: Date;
 }): Promise<ApiReply> {
   resetDailyBudgetIfNeeded();
@@ -277,23 +396,83 @@ async function performLiveAuthorization(input: {
     dailyReservedRaw -= plannedSpend;
     dailySpentRaw += actualSpend;
 
+    const base = {
+      status: "DECIDED",
+      decision: decision.decision,
+      reason: decision.reason,
+      policyId: decision.policyId,
+      policyVersion: decision.policyVersion,
+      ...commonRecord(input),
+      checks: decision.checks,
+      evidence: {
+        status: collection.status,
+        code: collection.code,
+        completedIntents: collection.completedIntents,
+        spendRaw: collection.actualEvidenceSpendRaw,
+        bundleHash: collection.bundle.bundleHash,
+        rejectedAttempts: collection.rejectedAttempts.length
+      }
+    };
+
+    if (decision.decision !== "ALLOW") {
+      return { status: 200, body: base };
+    }
+
+    let permit: Permit;
+    try {
+      permit = mintPermit(
+        input.mandate,
+        input.action,
+        collection.bundle,
+        decision,
+        input.signer,
+        { now: new Date(), ttlSeconds: PERMIT_TTL_SECONDS }
+      );
+    } catch (error) {
+      return {
+        status: 503,
+        body: {
+          error: "permit_issuance_failed",
+          detail: error instanceof Error ? error.message : "unknown_permit_error"
+        }
+      };
+    }
+
+    const token = `exec_${randomBytes(24).toString("hex")}`;
+    const now = Date.now();
+    const validUntil = Math.min(Date.parse(permit.payload.expiresAt), now + EXECUTION_SESSION_TTL_MS);
+    pendingExecutions.set(token, {
+      token,
+      action: input.action,
+      mandate: input.mandate,
+      evidence: collection.bundle,
+      decision,
+      permit,
+      signer: input.signer,
+      freezeFingerprint: input.freezeFingerprint,
+      reference: input.reference,
+      evidenceSpendRaw: collection.actualEvidenceSpendRaw,
+      createdAt: now,
+      validUntil
+    });
+
     return {
       status: 200,
       body: {
-        status: "DECIDED",
-        decision: decision.decision,
-        reason: decision.reason,
-        policyId: decision.policyId,
-        policyVersion: decision.policyVersion,
-        ...commonRecord(input),
-        checks: decision.checks,
-        evidence: {
-          status: collection.status,
-          code: collection.code,
-          completedIntents: collection.completedIntents,
-          spendRaw: collection.actualEvidenceSpendRaw,
-          bundleHash: collection.bundle.bundleHash,
-          rejectedAttempts: collection.rejectedAttempts.length
+        ...base,
+        executionAuthorized: true,
+        permit: {
+          id: permit.payload.permitId,
+          hash: permitHash(permit),
+          actionHash: permit.payload.actionHash,
+          expiresAt: permit.payload.expiresAt,
+          keyId: permit.payload.keyId,
+          algorithm: permit.payload.algorithm
+        },
+        execution: {
+          status: "READY",
+          token,
+          endpoint: "/api/execute"
         }
       }
     };
@@ -310,32 +489,168 @@ async function performLiveAuthorization(input: {
   }
 }
 
-const server = createServer(async (request, response) => {
-  if (!requestOriginAllowed(request)) return json(request, response, 403, { error: "origin_not_allowed" });
+function saveReceipt(receipt: ReturnType<typeof createProofReceipt>): void {
+  const directory = path.join(process.cwd(), "data", "receipts");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(
+    path.join(directory, `${receipt.receiptId}.json`),
+    JSON.stringify(receipt, null, 2),
+    { mode: 0o600 }
+  );
+}
 
-  if (request.method === "OPTIONS") {
-    return json(request, response, 204, null, {
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "content-type, idempotency-key",
-      "access-control-max-age": "600"
-    });
+async function performPendingExecution(
+  pending: PendingExecution,
+  privateKey: `0x${string}`,
+  executionId: string
+): Promise<ApiReply> {
+  const store = new FilePermitConsumptionStore(path.join(process.cwd(), ".proofgate", "consumed"));
+  const outcome = await executeProtectedAction<PaymentExecutionArtifact>({
+    mandate: pending.mandate,
+    permit: pending.permit,
+    action: pending.action,
+    evidence: pending.evidence,
+    decision: pending.decision,
+    verifier: pending.signer,
+    store,
+    executionId,
+    execute: (action) => executeBaseSepoliaUsdcTransfer({ action, privateKey })
+  });
+
+  const artifact = outcome.result as Partial<PaymentExecutionArtifact> | undefined;
+  const receiptExecution: ReceiptExecution = {
+    status: outcome.status === "EXECUTED" ? "EXECUTED" : outcome.status === "AMBIGUOUS" ? "AMBIGUOUS" : outcome.status === "BLOCKED" ? "BLOCKED" : "FAILED",
+    code: outcome.code,
+    ...(artifact?.transactionHash ? { transactionHash: artifact.transactionHash } : {}),
+    chainId: BASE_SEPOLIA_CHAIN_ID,
+    ...(outcome.status === "EXECUTED" && artifact?.confirmedAt ? { executedAt: artifact.confirmedAt } : outcome.consumedAt ? { executedAt: outcome.consumedAt } : {}),
+    ...(outcome.error ? { error: outcome.error } : {})
+  };
+
+  const receipt = createProofReceipt({
+    mandate: pending.mandate,
+    action: pending.action,
+    evidence: pending.evidence,
+    decision: pending.decision,
+    permit: pending.permit,
+    execution: receiptExecution,
+    ...(artifact?.operationId ? { operationId: artifact.operationId } : {})
+  });
+
+  if (!verifyProofReceipt(receipt)) {
+    return { status: 500, body: { error: "proof_receipt_verification_failed" } };
   }
+  saveReceipt(receipt);
 
-  if (request.method !== "POST" || request.url !== "/api/authorize") return json(request, response, 404, { error: "not_found" });
+  return {
+    status: 200,
+    body: {
+      status: outcome.status,
+      code: outcome.code,
+      actionHash: pending.action.actionHash,
+      freezeFingerprint: pending.freezeFingerprint,
+      permit: {
+        id: pending.permit.payload.permitId,
+        hash: permitHash(pending.permit),
+        expiresAt: pending.permit.payload.expiresAt
+      },
+      network: {
+        chain: "Base Sepolia",
+        chainId: BASE_SEPOLIA_CHAIN_ID,
+        asset: "USDC"
+      },
+      payment: {
+        amount: (Number(pending.action.payload.amountRaw) / 1_000_000).toFixed(2),
+        amountRaw: pending.action.payload.amountRaw,
+        recipient: pending.action.payload.destination,
+        recipientLabel: "ProofGate Vendor",
+        reference: pending.reference
+      },
+      transaction: {
+        status: outcome.status === "EXECUTED" ? "CONFIRMED" : outcome.status === "AMBIGUOUS" ? "CONFIRMATION_UNCERTAIN" : outcome.status,
+        transactionHash: artifact?.transactionHash ?? null,
+        blockNumber: artifact?.blockNumber ?? null,
+        confirmedAt: artifact?.confirmedAt ?? null,
+        confirmedVia: artifact?.confirmedVia ?? null,
+        sender: artifact?.sender ?? null,
+        nonce: artifact?.nonce ?? null,
+        operationId: artifact?.operationId ?? null,
+        automaticRetry: false
+      },
+      evidence: {
+        bundleHash: pending.evidence.bundleHash,
+        spendRaw: pending.evidenceSpendRaw
+      },
+      receipt: {
+        id: receipt.receiptId,
+        hash: receipt.receiptHash,
+        schemaVersion: receipt.schemaVersion,
+        createdAt: receipt.createdAt
+      },
+      ...(outcome.error ? { error: outcome.error } : {})
+    }
+  };
+}
 
+async function handleExecute(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const identity = clientKey(request);
+  try {
+    const body = await readJsonBody(request);
+    const token = body.executionToken;
+    if (typeof token !== "string" || !/^exec_[0-9a-f]{48}$/.test(token)) {
+      return json(request, response, 400, { error: "execution_token_invalid" });
+    }
+
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      return json(request, response, 400, { error: "idempotency_key_required" });
+    }
+
+    cleanupPendingExecutions();
+    cleanupIdempotencyCache();
+
+    const existing = idempotentExecutions.get(idempotencyKey);
+    if (existing) {
+      if (existing.token !== token) return json(request, response, 409, { error: "idempotency_key_conflict" });
+      const reply = await existing.promise;
+      return json(request, response, reply.status, reply.body);
+    }
+
+    const pending = pendingExecutions.get(token);
+    if (!pending) return json(request, response, 409, { error: "execution_session_invalid" });
+    if (pending.validUntil <= Date.now()) {
+      pendingExecutions.delete(token);
+      return json(request, response, 409, { error: "execution_session_expired" });
+    }
+    if (pending.claimedBy && pending.claimedBy !== idempotencyKey) {
+      return json(request, response, 409, { error: "execution_session_consumed" });
+    }
+
+    const privateKey = executorPrivateKey();
+    if (!privateKey) return json(request, response, 503, { error: "executor_credentials_unavailable" });
+    if (!consumeRateLimit(`execute:${identity}`, EXECUTIONS_PER_HOUR, 60 * 60_000)) {
+      return json(request, response, 429, { error: "execution_rate_limited" }, { "retry-after": "3600" });
+    }
+
+    pending.claimedBy = idempotencyKey;
+    const promise = performPendingExecution(pending, privateKey, idempotencyKey);
+    idempotentExecutions.set(idempotencyKey, { token, promise, createdAt: Date.now() });
+    const reply = await promise;
+    return json(request, response, reply.status, reply.body);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "invalid_execution_request";
+    return json(request, response, code === "request_too_large" ? 413 : 400, { error: code });
+  }
+}
+
+async function handleAuthorize(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const identity = clientKey(request);
   if (!consumeRateLimit(`policy:${identity}`, POLICY_PER_MINUTE, 60_000)) {
     return json(request, response, 429, { error: "policy_rate_limited" }, { "retry-after": "60" });
   }
 
   try {
-    let raw = "";
-    for await (const chunk of request) {
-      raw += chunk;
-      if (raw.length > 16_000) return json(request, response, 413, { error: "request_too_large" });
-    }
-
-    const input = JSON.parse(raw) as {
+    const input = await readJsonBody(request) as {
       mode?: unknown;
       agentId?: unknown;
       limit: unknown;
@@ -377,6 +692,7 @@ const server = createServer(async (request, response) => {
     });
 
     cleanupFrozenRequests();
+    cleanupPendingExecutions();
     let issuedAt = new Date(now.getTime() - 60_000).toISOString();
     let expiresAt = new Date(now.getTime() + durationSeconds * 1_000).toISOString();
     let frozenEntry: FrozenRequestEntry | undefined;
@@ -454,7 +770,14 @@ const server = createServer(async (request, response) => {
     if (!frozenEntry) return json(request, response, 409, { error: "frozen_request_invalid" });
     if (!LIVE_ENABLED) return json(request, response, 503, { error: "live_authorization_disabled" });
     const privateKey = process.env.TELEGRAPH_EVM_PRIVATE_KEY as `0x${string}` | undefined;
-    if (!privateKey) return json(request, response, 503, { error: "telegraph_credentials_unavailable" });
+    if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
+      return json(request, response, 503, { error: "telegraph_credentials_unavailable" });
+    }
+
+    // Fail before x402 evidence spend when automatic execution cannot be completed.
+    const signer = getPermitSigner();
+    if (!signer) return json(request, response, 503, { error: "permit_signer_unavailable" });
+    if (!executorPrivateKey()) return json(request, response, 503, { error: "executor_credentials_unavailable" });
 
     const idempotencyKey = request.headers["idempotency-key"];
     if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
@@ -478,18 +801,36 @@ const server = createServer(async (request, response) => {
     }
 
     frozenEntry.consumedBy = idempotencyKey;
-    const promise = performLiveAuthorization({ action, mandate, plan, reference, freezeFingerprint, privateKey, now });
+    const promise = performLiveAuthorization({ action, mandate, plan, reference, freezeFingerprint, privateKey, signer, now });
     idempotentLiveRequests.set(idempotencyKey, { fingerprint: freezeFingerprint, promise, createdAt: Date.now() });
     const reply = await promise;
     return json(request, response, reply.status, reply.body);
   } catch (error) {
-    return json(request, response, 400, { error: error instanceof Error ? error.message : "invalid_authorization_request" });
+    const code = error instanceof Error ? error.message : "invalid_authorization_request";
+    return json(request, response, code === "request_too_large" ? 413 : 400, { error: code });
   }
+}
+
+const server = createServer(async (request, response) => {
+  if (!requestOriginAllowed(request)) return json(request, response, 403, { error: "origin_not_allowed" });
+
+  if (request.method === "OPTIONS") {
+    return json(request, response, 204, null, {
+      "access-control-allow-methods": "POST, OPTIONS",
+      "access-control-allow-headers": "content-type, idempotency-key",
+      "access-control-max-age": "600"
+    });
+  }
+
+  if (request.method === "POST" && request.url === "/api/authorize") return handleAuthorize(request, response);
+  if (request.method === "POST" && request.url === "/api/execute") return handleExecute(request, response);
+  return json(request, response, 404, { error: "not_found" });
 });
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`ProofGate web API listening on ${PORT}`);
   console.log(`Live Telegraph auto-route authorization: ${LIVE_ENABLED ? "enabled" : "disabled"}`);
+  console.log("Authorized Base Sepolia execution endpoint: /api/execute");
 });
 
 process.on("SIGTERM", () => server.close());
