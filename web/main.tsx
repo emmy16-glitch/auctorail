@@ -20,6 +20,7 @@ type AuthorizationResponse = {
   riskTier: "LOW" | "MEDIUM" | "HIGH";
   policyId: string;
   policyVersion: number;
+  freezeFingerprint: string;
   routing?: {
     mode: string;
     endpoint: string;
@@ -141,6 +142,8 @@ function friendlyError(code: string): string {
       return "Today's live evidence budget has been used.";
     case "live_verification_failed":
       return "The real Miner check did not finish safely. Nothing was approved.";
+    case "frozen_request_mismatch":
+      return "The request changed after the rules check. Start again before any live Miner check.";
     case "origin_not_allowed":
       return "This page is not allowed to use the ProofGate API.";
     default:
@@ -207,7 +210,7 @@ function App() {
     resetDecision();
   }
 
-  function requestBody(mode: "policy" | "live") {
+  function requestBody(mode: "policy" | "live", freezeFingerprint?: string) {
     return {
       mode,
       agentId: AGENT_ID,
@@ -216,7 +219,8 @@ function App() {
       destination: VENDOR_ADDRESS,
       durationSeconds,
       reason: reason.trim(),
-      reference: reference.trim()
+      reference: reference.trim(),
+      ...(freezeFingerprint ? { freezeFingerprint } : {})
     };
   }
 
@@ -238,8 +242,6 @@ function App() {
     setResult(null);
 
     try {
-      // First ask the real policy path. This is not a visual delay: the UI only
-      // marks RULES CHECKED after the server confirms the mandate/policy result.
       const policyResponse = await fetch(`${API_BASE}/api/authorize`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -250,7 +252,6 @@ function App() {
       const rulesAt = timeLabel();
       setEventTimes((current) => current ? { ...current, rules: rulesAt } : { request: rulesAt, rules: rulesAt });
 
-      // A rules-level block is final and deliberately skips every paid Miner call.
       if (policyResult.status === "BLOCKED" || policyResult.decision === "BLOCK") {
         setResult(policyResult);
         setCheckStage("decision");
@@ -264,24 +265,30 @@ function App() {
         throw new Error("policy_preflight_unexpected");
       }
 
+      if (!/^0x[0-9a-fA-F]{64}$/.test(policyResult.freezeFingerprint)) {
+        throw new Error("frozen_request_mismatch");
+      }
+
       setCheckStage("miners");
       setEventTimes((current) => current ? { ...current, miners: timeLabel() } : { request: rulesAt, rules: rulesAt, miners: timeLabel() });
 
       const idempotencyKey = requestIdRef.current ?? crypto.randomUUID();
       requestIdRef.current = idempotencyKey;
 
-      // Only now do we enter the paid live path. Telegraph chooses Miners through
-      // automatic Intent routing and x402 remains bounded by the server-side plan.
       const liveResponse = await fetch(`${API_BASE}/api/authorize`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "idempotency-key": idempotencyKey
         },
-        body: JSON.stringify(requestBody("live")),
+        body: JSON.stringify(requestBody("live", policyResult.freezeFingerprint)),
         signal: controller.signal
       });
       const liveResult = await parseAuthorization(liveResponse);
+
+      if (liveResult.freezeFingerprint !== policyResult.freezeFingerprint) {
+        throw new Error("frozen_request_mismatch");
+      }
 
       setResult(liveResult);
       setCheckStage("decision");
@@ -301,9 +308,6 @@ function App() {
   }
 
   function cancelCheck() {
-    // Once the live x402 request has started, a browser abort cannot truthfully
-    // promise that an already-dispatched Miner payment is cancelled. Therefore
-    // cancellation is only enabled during the unpaid rules preflight.
     if (phase !== "checking" || checkStage !== "rules") return;
     abortRef.current?.abort();
     clearCheckState();
