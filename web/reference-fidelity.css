@@ -1,0 +1,64 @@
+/* Final visual-fidelity overrides for the selected first-screen reference.
+   Kept separate so functional styles remain easy to review. */
+
+.check-button .arrow {
+  position: absolute;
+  right: 30px;
+}
+
+.check-button > span:first-child {
+  transform: translateX(-19px);
+}
+
+.request-summary svg {
+  width: 27px;
+  height: 32px;
+}
+
+.select-shell svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The strong line already says "Nothing is sent yet." in the reference.
+   Avoid visually repeating it in the supporting copy while preserving the
+   dynamic status copy used by checking/ready/error states. */
+.safety-note.idle p {
+  font-size: 0;
+  line-height: 0;
+}
+
+.safety-note.idle p::before {
+  content: "We check the rules and real evidence first. You stay in control.";
+  font: 500 10.5px/1.42 var(--mono);
+}
+
+@media (max-width: 410px) {
+  .check-button .arrow {
+    right: 25px;
+  }
+
+  .check-button > span:first-child {
+    transform: translateX(-18px);
+  }
+
+  .request-summary svg {
+    width: 24px;
+    height: 29px;
+  }
+
+  .select-shell svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .safety-note svg {
+    width: 24px;
+    height: 29px;
+  }
+
+  .safety-note.idle p::before {
+    font-size: 9.8px;
+    line-height: 1.35;
+  }
+}
