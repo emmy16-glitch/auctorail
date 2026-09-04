@@ -18,6 +18,84 @@ async def assert_tap_target(locator, minimum=44):
     assert box["height"] >= minimum, f"tap target too short: {box}"
 
 
+async def assert_box(locator, *, width=None, height=None, tolerance=2):
+    box = await locator.bounding_box()
+    assert box is not None, "expected visible element"
+    if width is not None:
+        assert abs(box["width"] - width) <= tolerance, f"unexpected width {box}; expected ~{width}px"
+    if height is not None:
+        assert abs(box["height"] - height) <= tolerance, f"unexpected height {box}; expected ~{height}px"
+    return box
+
+
+async def assert_two_line_block(locator, slack=2.25):
+    metrics = await locator.evaluate(
+        """el => {
+            const style = getComputedStyle(el);
+            return {
+              height: el.getBoundingClientRect().height,
+              lineHeight: parseFloat(style.lineHeight),
+              fontSize: parseFloat(style.fontSize)
+            };
+        }"""
+    )
+    assert metrics["height"] <= metrics["lineHeight"] * slack, (
+        f"text soft-wrapped beyond two lines: {metrics}"
+    )
+
+
+async def reference_state_checks(page):
+    await expect(page.get_by_text("LIVE", exact=True)).to_be_visible()
+    await expect(page.get_by_text("BASE SEPOLIA", exact=True)).to_be_visible()
+    await expect(page.get_by_text("REAL MINERS", exact=True)).to_be_visible()
+    await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible()
+    await expect(page.get_by_text("invoice-bot", exact=True)).to_be_visible()
+    await expect(page.get_by_text("5.00 USDC", exact=True)).to_be_visible()
+    await expect(page.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Nothing is sent yet.", exact=True)).to_be_visible()
+
+    body_text = await page.locator("body").inner_text()
+    assert "SANDBOX" not in body_text.upper()
+    assert "SYNTHETIC" not in body_text.upper()
+    assert "DEMO MODE" not in body_text.upper()
+
+    overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"horizontal overflow detected: {overflow}px"
+
+    # Reference screenshot palette and typography split.
+    live_color = await page.locator(".live-strip").evaluate("el => getComputedStyle(el).backgroundColor")
+    cta_color = await page.locator(".check-button").evaluate("el => getComputedStyle(el).backgroundColor")
+    paper_color = await page.locator(".app-page").evaluate("el => getComputedStyle(el).backgroundColor")
+    assert live_color == "rgb(193, 239, 211)", f"mint mismatch: {live_color}"
+    assert cta_color == "rgb(255, 199, 44)", f"yellow mismatch: {cta_color}"
+    assert paper_color == "rgb(250, 250, 250)", f"paper mismatch: {paper_color}"
+
+    brand_family = await page.locator(".brand-lockup strong").evaluate("el => getComputedStyle(el).fontFamily")
+    mono_family = await page.locator(".brand-lockup span").evaluate("el => getComputedStyle(el).fontFamily")
+    assert "Arial" in brand_family or "Helvetica" in brand_family, f"brand should use heavy sans: {brand_family}"
+    assert "Courier New" in mono_family, f"subtitle should use reference mono face: {mono_family}"
+
+    # At the reference mobile width the explicit BRs must remain exactly two lines,
+    # rather than soft wrapping into the four-line version we had before this QA pass.
+    await assert_two_line_block(page.locator(".hero-block h1"))
+    await assert_two_line_block(page.locator(".hero-block p"))
+
+    # Reference-derived mobile geometry (390x844 logical viewport).
+    await assert_box(page.locator(".live-strip"), height=30, tolerance=1)
+    await assert_box(page.locator(".brand-row"), height=60, tolerance=2)
+    await assert_box(page.locator(".top-tabs"), height=38, tolerance=3)
+    await assert_box(page.get_by_role("button", name="Open menu"), width=44, height=44, tolerance=1)
+    await assert_box(page.locator(".check-button"), height=52, tolerance=2)
+
+    panel_box = await page.locator(".authority-panel").bounding_box()
+    request_box = await page.locator(".request-panel").bounding_box()
+    assert panel_box is not None and 250 <= panel_box["height"] <= 285, f"permission card scale drifted: {panel_box}"
+    assert request_box is not None and 92 <= request_box["height"] <= 104, f"request card scale drifted: {request_box}"
+
+    page_height = await page.evaluate("document.documentElement.scrollHeight")
+    assert page_height <= 875, f"reference first screen became vertically stretched: {page_height}px"
+
+
 async def mobile_flow(browser):
     page = await browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
     console_errors = []
@@ -79,21 +157,8 @@ async def mobile_flow(browser):
     await page.route("**/api/authorize", authorize)
     await page.goto(BASE_URL, wait_until="networkidle")
 
-    await expect(page.get_by_text("LIVE", exact=True)).to_be_visible()
-    await expect(page.get_by_text("BASE SEPOLIA", exact=True)).to_be_visible()
-    await expect(page.get_by_text("REAL MINERS", exact=True)).to_be_visible()
-    await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible()
-    await expect(page.get_by_text("invoice-bot", exact=True)).to_be_visible()
-    await expect(page.get_by_text("5.00 USDC", exact=True)).to_be_visible()
-    await expect(page.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
-
-    body_text = await page.locator("body").inner_text()
-    assert "SANDBOX" not in body_text.upper()
-    assert "SYNTHETIC" not in body_text.upper()
-    assert "DEMO MODE" not in body_text.upper()
-
-    overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
-    assert overflow <= 1, f"horizontal overflow detected: {overflow}px"
+    await reference_state_checks(page)
+    await page.screenshot(path=str(ARTIFACTS / "first-screen-idle-mobile.png"), full_page=True)
 
     menu = page.get_by_role("button", name="Open menu")
     check = page.get_by_role("button", name="CHECK THIS REQUEST")
@@ -101,8 +166,9 @@ async def mobile_flow(browser):
     inc_limit = page.get_by_role("button", name="Increase maximum payment")
     dec_duration = page.get_by_role("button", name="Shorten permission duration")
     inc_duration = page.get_by_role("button", name="Extend permission duration")
+    recipient = page.locator("#allowed-recipient")
 
-    for control in [menu, check, dec_limit, inc_limit, dec_duration, inc_duration]:
+    for control in [menu, check, dec_limit, inc_limit, dec_duration, inc_duration, recipient]:
         await assert_tap_target(control)
 
     await dec_limit.click()
@@ -143,21 +209,42 @@ async def mobile_flow(browser):
     await expect(page.get_by_text("Real Miner evidence was used.", exact=False)).to_be_visible()
     await expect(page.get_by_role("button", name="CHECK AGAIN")).to_be_visible()
 
-    await page.screenshot(path=str(ARTIFACTS / "first-screen-mobile.png"), full_page=True)
+    await page.screenshot(path=str(ARTIFACTS / "first-screen-result-mobile.png"), full_page=True)
     assert not console_errors, f"browser console errors: {console_errors}"
     await page.close()
 
 
+async def narrow_mobile_fit(browser):
+    page = await browser.new_page(viewport={"width": 320, "height": 800}, device_scale_factor=1)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"320px viewport overflow: {overflow}px"
+    await assert_two_line_block(page.locator(".hero-block h1"), slack=2.35)
+    for control in [
+        page.get_by_role("button", name="Open menu"),
+        page.get_by_role("button", name="Decrease maximum payment"),
+        page.get_by_role("button", name="Increase maximum payment"),
+        page.get_by_role("button", name="Shorten permission duration"),
+        page.get_by_role("button", name="Extend permission duration"),
+        page.get_by_role("button", name="CHECK THIS REQUEST")
+    ]:
+        await assert_tap_target(control)
+    await page.screenshot(path=str(ARTIFACTS / "first-screen-320-mobile.png"), full_page=True)
+    await page.close()
+
+
 async def desktop_fit(browser):
-    page = await browser.new_page(viewport={"width": 1024, "height": 900})
+    page = await browser.new_page(viewport={"width": 1024, "height": 1100})
     await page.goto(BASE_URL, wait_until="networkidle")
     shell = page.locator(".app-page")
     box = await shell.bounding_box()
     assert box is not None
-    assert box["width"] <= 462, f"mobile canvas should remain focused on desktop: {box}"
+    assert 458 <= box["width"] <= 462, f"desktop mobile canvas width drifted: {box}"
     overflow = await page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     assert overflow <= 1
-    await page.screenshot(path=str(ARTIFACTS / "first-screen-desktop-fit.png"), full_page=True)
+    page_height = await page.evaluate("document.documentElement.scrollHeight")
+    assert 900 <= page_height <= 1080, f"desktop reference scale drifted: {page_height}px"
+    await page.screenshot(path=str(ARTIFACTS / "first-screen-idle-desktop.png"), full_page=True)
     await page.close()
 
 
@@ -166,6 +253,7 @@ async def main():
         browser = await p.chromium.launch()
         try:
             await mobile_flow(browser)
+            await narrow_mobile_fit(browser)
             await desktop_fit(browser)
         finally:
             await browser.close()
