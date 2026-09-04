@@ -62,6 +62,9 @@ jobs:
       - name: Run typography and visual-fidelity audit
         run: python qa/ui-fidelity-audit.py
 
+      - name: Run truthful error-state audit
+        run: python qa/error-state-fidelity.py
+
       - name: Upload UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
