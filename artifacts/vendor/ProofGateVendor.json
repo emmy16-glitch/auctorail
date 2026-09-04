@@ -1,0 +1,45 @@
+{
+  "contractName": "ProofGateVendor",
+  "compiler": "0.8.36+commit.8a079791",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "_vendorId",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "proofGateVendorVersion",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "vendorId",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60a0604052348015600e575f5ffd5b50604051610102380380610102833981016040819052602b916032565b6080526048565b5f602082840312156041575f5ffd5b5051919050565b60805160a561005d5f395f604d015260a55ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c80631df7415f146034578063518684a4146049575b5f5ffd5b60015b60405190815260200160405180910390f35b60377f00000000000000000000000000000000000000000000000000000000000000008156fea26469706673582212203ef6040509850f456132676a5695c0f8a1d0f5b977c74d4249f887af6a4a046464736f6c63430008240033",
+  "deployedBytecode": "0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c80631df7415f146034578063518684a4146049575b5f5ffd5b60015b60405190815260200160405180910390f35b60377f00000000000000000000000000000000000000000000000000000000000000008156fea26469706673582212203ef6040509850f456132676a5695c0f8a1d0f5b977c74d4249f887af6a4a046464736f6c63430008240033"
+}

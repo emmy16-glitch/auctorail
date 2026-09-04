@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "proofgate.deployment.v1",
+  "contract": "ProofGateVendor",
+  "address": "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+  "chainId": 84532,
+  "network": "base-sepolia",
+  "deployer": "0xC07a448DF2E1F3AF0d6f0E8cCe45d5D753fc8eF4",
+  "vendorId": "0x8842933eec069a2d7afcf59fe7d749634a38a6870c61ebe5b8d8b0dab5512911",
+  "transactionHash": "0x3588a682917a0b371c963bdc3b6d8c7a2997543440f4a9bbcd37ce2015f6b73a",
+  "blockNumber": 46259466,
+  "gasUsed": "90481",
+  "runtimeCodeBytes": 165,
+  "status": "confirmed"
+}

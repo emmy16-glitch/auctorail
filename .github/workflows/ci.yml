@@ -1,0 +1,54 @@
+name: ProofGate CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proofgate-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tracked vendor artifact
+        run: npm run vendor:verify
+
+      - name: Recompile and verify vendor reproducibility
+        run: |
+          npm run vendor:compile
+          npm run vendor:verify
+          git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
+
+      - name: Typecheck, test, and build web UI
+        run: npm run ci
+
+      - name: Run deterministic v1 fuzz harness
+        run: npm run security:fuzz
+
+      - name: Run adaptive and quorum fuzz harness
+        run: npm run security:fuzz:adaptive
+
+      - name: Run generic authorization fuzz harness
+        run: npm run security:fuzz:general
+
+      - name: Audit production dependencies
+        run: npm run audit:prod
