@@ -27,7 +27,6 @@ async def responsive_fit(browser, width: int, height: int, artifact_name: str):
     else:
         assert shell_box["width"] <= width + 1, f"mobile canvas exceeds viewport: {shell_box}"
 
-    # The target stays readable rather than collapsing into a compact dashboard.
     await qa.assert_two_line_block(page.locator(".hero-block h1"), slack=2.35)
     authority_box = await page.locator(".authority-panel").bounding_box()
     request_box = await page.locator(".request-panel").bounding_box()
@@ -52,12 +51,15 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         try:
-            # Full reference/fidelity + interaction + mocked transport-state QA at 390px.
+            # Full first-screen fidelity + the wired Screen 1 → Screen 2 flow.
             await qa.mobile_flow(browser)
 
-            # Extra responsive widths: smallest supported phone, common Android/iPhone,
-            # wider phone, and centered mobile canvas on desktop.
+            # Verify the unpaid policy preflight blocks before any live Miner/x402 call.
+            await qa.policy_block_short_circuit(browser)
+
+            # Responsive coverage for both the setup screen and the live checking screen.
             await qa.narrow_mobile_fit(browser)
+            await qa.narrow_checking_fit(browser)
             await responsive_fit(browser, 360, 800, "first-screen-360-mobile.png")
             await responsive_fit(browser, 430, 932, "first-screen-430-mobile.png")
             await responsive_fit(browser, 1024, 1100, "first-screen-idle-desktop.png")
