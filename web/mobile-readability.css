@@ -4,17 +4,17 @@
 
 @media (max-width: 350px) {
   /* Shared shell / Screen 1 */
-  .live-strip { font-size: 8.3px; }
-  .top-tabs button { font-size: 8.4px; }
-  .safety-note p { font-size: 10px; line-height: 1.4; }
+  .live-strip { font-size: 8.3px !important; }
+  .top-tabs button { font-size: 8.4px !important; }
+  .safety-note p { font-size: 10px !important; line-height: 1.4 !important; }
 
   /* Screen 2 */
-  .checking-request-card span { font-size: 9.2px; }
-  .timeline-copy strong { font-size: 9.7px; }
-  .timeline-copy span { font-size: 8.8px; line-height: 1.32; }
-  .timeline-time { font-size: 8px; }
+  .checking-request-card span { font-size: 9.2px !important; }
+  .timeline-copy strong { font-size: 9.7px !important; }
+  .timeline-copy span { font-size: 8.8px !important; line-height: 1.32 !important; }
+  .timeline-time { font-size: 8px !important; }
   .checking-work-box p,
-  .checking-safety-note p { font-size: 8.9px; line-height: 1.4; }
+  .checking-safety-note p { font-size: 8.9px !important; line-height: 1.4 !important; }
 
   /* Screen 3 */
   .execution-request p { font-size: 9px !important; line-height: 1.28 !important; }
