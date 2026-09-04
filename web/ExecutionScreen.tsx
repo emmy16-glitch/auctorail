@@ -12,7 +12,21 @@ export interface ExecutionPermitSummary {
   algorithm: string;
 }
 
+export interface ExecutionIntelligenceSource {
+  id: string;
+  name: string;
+  slug?: string;
+  intents?: string[];
+}
+
 export interface ExecutionAuthorizationSummary {
+  decision: "ALLOW";
+  policyId: string;
+  riskTier: "LOW" | "MEDIUM" | "HIGH";
+  routing: {
+    mode: string;
+    endpoint: string;
+  };
   action: {
     hash: string;
     amount: string;
@@ -24,6 +38,7 @@ export interface ExecutionAuthorizationSummary {
   evidence: {
     spendRaw: string;
     bundleHash?: string;
+    sources?: ExecutionIntelligenceSource[];
   };
 }
 
@@ -132,11 +147,21 @@ function formatEvidenceSpend(raw: string | undefined): string {
   return `${whole.toString()}${fraction ? `.${fraction}` : ""} USDC`;
 }
 
-function executionMessage(phase: ExecutionUiPhase, response: ExecutionResponse | null, error: string | null) {
+function sourceNames(sources: ExecutionIntelligenceSource[] | undefined): string {
+  if (!sources?.length) return "Recorded in evidence bundle";
+  return sources.map((source) => source.name).join(" · ");
+}
+
+function executionMessage(
+  phase: ExecutionUiPhase,
+  amount: string,
+  response: ExecutionResponse | null,
+  error: string | null
+) {
   if (phase === "executed") {
     return {
       title: "Payment confirmed.",
-      copy: "The authorized 1.00 USDC action was executed on Base Sepolia and a verifiable ProofGate receipt was created."
+      copy: `The authorized ${amount} USDC action was confirmed on Base Sepolia and a verifiable ProofGate receipt was created.`
     };
   }
   if (phase === "execution_ambiguous") {
@@ -144,7 +169,7 @@ function executionMessage(phase: ExecutionUiPhase, response: ExecutionResponse |
       title: "Confirmation uncertain.",
       copy: response?.transaction.transactionHash
         ? "A transaction hash exists, but confirmation could not be established safely. ProofGate will not broadcast another payment automatically."
-        : "The execution request may have reached the network, but the browser lost a trustworthy result. Do not retry the same payment automatically."
+        : "The execution request may have reached the network, but a trustworthy final result was not available. ProofGate will not create a replacement transaction automatically."
     };
   }
   if (phase === "execution_failed") {
@@ -155,7 +180,7 @@ function executionMessage(phase: ExecutionUiPhase, response: ExecutionResponse |
   }
   return {
     title: "Execution in progress.",
-    copy: "Your authorized action is being executed automatically. ProofGate will wait for a real Base Sepolia confirmation before marking it complete."
+    copy: `The ${amount} USDC action is now inside the protected executor. ProofGate will mark it complete only after a real Base Sepolia confirmation.`
   };
 }
 
@@ -173,7 +198,7 @@ export function ExecutionScreen(props: {
   const ambiguous = phase === "execution_ambiguous";
   const failed = phase === "execution_failed";
   const pending = phase === "executing";
-  const message = executionMessage(phase, response, error);
+  const message = executionMessage(phase, authorization.action.amount, response, error);
   const transactionHash = response?.transaction.transactionHash ?? null;
   const blockNumber = response?.transaction.blockNumber ?? null;
   const receipt = response?.receipt ?? null;
@@ -185,7 +210,16 @@ export function ExecutionScreen(props: {
         <div>
           <span className="step-chip">STEP 3 OF 3</span>
           <h1>{confirmed ? "PAYMENT EXECUTED" : ambiguous ? "CONFIRMATION UNCERTAIN" : failed ? "EXECUTION STOPPED" : "EXECUTING REQUEST"}</h1>
-          <p>{confirmed ? "Authorization and execution complete." : "Authorization complete."}<br />{confirmed ? "The approved action is confirmed on Base Sepolia." : pending ? "Executing the approved action on Base Sepolia." : ambiguous ? "ProofGate will not rebroadcast automatically." : "The payment was not completed."}</p>
+          <p>
+            {confirmed ? "Authorization and execution complete." : "Authorization complete."}<br />
+            {confirmed
+              ? "The approved action is confirmed on Base Sepolia."
+              : pending
+                ? "The approved action is executing automatically."
+                : ambiguous
+                  ? "No automatic rebroadcast is allowed."
+                  : "The protected payment did not complete."}
+          </p>
         </div>
         <div className="execution-hero-mark" aria-hidden="true">
           <span className="exec-corner ec1" /><span className="exec-corner ec2" /><span className="exec-corner ec3" /><span className="exec-corner ec4" />
@@ -195,7 +229,7 @@ export function ExecutionScreen(props: {
 
       <section className="execution-request hard-shadow" aria-label="Authorized request">
         <div>
-          <span>REQUEST</span>
+          <span>AUTHORIZED REQUEST</span>
           <strong>{authorization.action.amount} USDC → ProofGate Vendor</strong>
           <p>{authorization.action.reason}</p>
           <p>Ref: {authorization.action.reference || "—"}</p>
@@ -205,8 +239,8 @@ export function ExecutionScreen(props: {
 
       <section className="execution-progress hard-shadow" aria-label="Execution progress">
         <h2>EXECUTION PROGRESS</h2>
-        <ExecutionRow number="01" title="AUTHORIZATION PASSED" copy="Policy and Miner checks completed." state="done" />
-        <ExecutionRow number="02" title="PERMIT ISSUED" copy="Execution permit generated and signed." state="done" />
+        <ExecutionRow number="01" title="AUTHORIZATION PASSED" copy="Authority and ranked Telegraph intelligence satisfied policy." state="done" />
+        <ExecutionRow number="02" title="PERMIT ISSUED" copy="Exact-action one-use Permit generated and signed." state="done" />
         <ExecutionRow
           number="03"
           title={confirmed ? "EXECUTED ON BASE SEPOLIA" : ambiguous ? "BROADCAST STATUS UNCERTAIN" : failed ? "EXECUTION STOPPED" : "EXECUTING ON BASE SEPOLIA"}
@@ -235,8 +269,10 @@ export function ExecutionScreen(props: {
           <div><dt>Network</dt><dd>Base Sepolia</dd></div>
           <div><dt>Recipient</dt><dd>ProofGate Vendor</dd></div>
           <div><dt>Amount</dt><dd>{authorization.action.amount} USDC</dd></div>
+          <div><dt>Decision</dt><dd>{authorization.decision}</dd></div>
+          <div><dt>Telegraph route</dt><dd>{authorization.routing.endpoint} · auto-ranked</dd></div>
+          <div><dt>Intelligence spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
           <div><dt>Permit hash</dt><dd title={authorization.permit.hash}>{shortHash(authorization.permit.hash)}</dd></div>
-          <div><dt>Miner verification</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
           <div><dt>Status</dt><dd>{confirmed ? "Confirmed" : ambiguous ? "Uncertain — no retry" : failed ? "Stopped" : "Executing"}</dd></div>
           <div><dt>Tx hash</dt><dd title={transactionHash ?? undefined}>{shortHash(transactionHash, 10, 8)}</dd></div>
           <div><dt>Block</dt><dd>{blockNumber ?? "—"}</dd></div>
@@ -251,7 +287,7 @@ export function ExecutionScreen(props: {
           onClick={onNewRequest}
           title={pending ? "The protected execution request is already in flight. An on-chain broadcast cannot be safely cancelled from the browser." : ambiguous ? "Resolve the uncertain transaction before creating a replacement for this payment." : undefined}
         >
-          <span>{pending ? "CANCEL (IF PENDING)" : ambiguous ? "RETRY LOCKED" : "NEW REQUEST"}</span>
+          <span>{pending ? "EXECUTION IN PROGRESS" : ambiguous ? "RETRY LOCKED" : "NEW REQUEST"}</span>
           <span aria-hidden="true">{pending || ambiguous ? "×" : "←"}</span>
         </button>
         <button type="button" className="execution-proof" disabled={!receipt} onClick={onToggleProof} aria-expanded={proofOpen}>
@@ -263,11 +299,16 @@ export function ExecutionScreen(props: {
         <section className="proof-drawer" data-testid="proof-drawer">
           <div className="proof-title"><span>VERIFIABLE RECEIPT</span><b>REAL</b></div>
           <dl>
+            <div><dt>Decision</dt><dd>{authorization.decision}</dd></div>
+            <div><dt>Policy</dt><dd>{authorization.policyId}</dd></div>
+            <div><dt>Risk tier</dt><dd>{authorization.riskTier}</dd></div>
             <div><dt>Receipt</dt><dd title={receipt.hash}>{shortHash(receipt.hash, 10, 8)}</dd></div>
             <div><dt>Action</dt><dd title={authorization.action.hash}>{shortHash(authorization.action.hash, 10, 8)}</dd></div>
             <div><dt>Permit</dt><dd title={authorization.permit.hash}>{shortHash(authorization.permit.hash, 10, 8)}</dd></div>
             <div><dt>Evidence</dt><dd title={authorization.evidence.bundleHash}>{shortHash(authorization.evidence.bundleHash, 10, 8)}</dd></div>
-            <div><dt>Telegraph</dt><dd>/v1/ask · auto-routed</dd></div>
+            <div><dt>Sources</dt><dd>{sourceNames(authorization.evidence.sources)}</dd></div>
+            <div><dt>Telegraph</dt><dd>{authorization.routing.endpoint} · auto-ranked</dd></div>
+            <div><dt>x402 spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
             <div><dt>Transaction</dt><dd title={transactionHash ?? undefined}>{shortHash(transactionHash, 10, 8)}</dd></div>
           </dl>
         </section>
@@ -275,7 +316,7 @@ export function ExecutionScreen(props: {
 
       <section className="execution-safety">
         <div className="execution-lock"><LockIcon /></div>
-        <p><strong>You stay in control.</strong><br />This action can execute only inside the approved limit, exact request binding, signed permit and real live-Miner verification.</p>
+        <p><strong>Authority stays bounded.</strong><br />This action can execute only through the exact frozen request, real Telegraph evidence, signed one-use Permit and protected executor.</p>
       </section>
     </main>
   );
