@@ -21,10 +21,10 @@ export interface ExecutionIntelligenceSource {
 }
 
 export interface ExecutionAuthorizationSummary {
-  decision?: "ALLOW";
-  policyId?: string;
-  riskTier?: "LOW" | "MEDIUM" | "HIGH";
-  routing?: { mode: string; endpoint: string };
+  decision: "ALLOW";
+  policyId: string;
+  riskTier: "LOW" | "MEDIUM" | "HIGH";
+  routing: { mode: string; endpoint: string };
   action: {
     hash: string;
     amount: string;
@@ -35,8 +35,8 @@ export interface ExecutionAuthorizationSummary {
   permit: ExecutionPermitSummary;
   evidence: {
     spendRaw: string;
-    bundleHash?: string;
-    sources?: ExecutionIntelligenceSource[];
+    bundleHash: string;
+    sources: ExecutionIntelligenceSource[];
   };
 }
 
@@ -65,7 +65,11 @@ export interface ExecutionResponse {
     operationId: string | null;
     automaticRetry: false;
   };
-  evidence: { bundleHash: string; spendRaw: string };
+  evidence: {
+    bundleHash: string;
+    spendRaw: string;
+    sources?: ExecutionIntelligenceSource[];
+  };
   receipt: { id: string; hash: string; schemaVersion: string; createdAt: string };
   error?: string;
 }
@@ -106,8 +110,7 @@ function formatEvidenceSpend(raw: string | undefined): string {
   return `${whole.toString()}${fraction ? `.${fraction}` : ""} USDC`;
 }
 
-function sourceNames(sources: ExecutionIntelligenceSource[] | undefined): string {
-  if (!sources?.length) return "Committed in evidence bundle";
+function sourceNames(sources: ExecutionIntelligenceSource[]): string {
   return sources.map((source) => source.name).join(" · ");
 }
 
@@ -145,10 +148,10 @@ export function ExecutionScreen(props: {
   const blockNumber = response?.transaction.blockNumber ?? null;
   const receipt = response?.receipt ?? null;
   const evidenceSpend = response?.evidence.spendRaw ?? authorization.evidence.spendRaw;
-  const decision = authorization.decision ?? "ALLOW";
-  const policyId = authorization.policyId ?? "payments.adaptive.v1";
-  const riskTier = authorization.riskTier ?? "—";
-  const routeEndpoint = authorization.routing?.endpoint ?? "/v1/ask";
+  const decision = authorization.decision;
+  const policyId = authorization.policyId;
+  const riskTier = authorization.riskTier;
+  const routeEndpoint = authorization.routing.endpoint;
 
   return (
     <main className={`execution-shell execution-${phase}`} data-testid="execution-screen">
