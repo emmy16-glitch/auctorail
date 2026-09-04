@@ -1,5 +1,6 @@
 import React from "react";
 import "./execution-screen.css";
+import "./execution-fidelity.css";
 
 export type ExecutionUiPhase = "executing" | "executed" | "execution_failed" | "execution_ambiguous";
 
@@ -20,10 +21,13 @@ export interface ExecutionIntelligenceSource {
 }
 
 export interface ExecutionAuthorizationSummary {
-  decision: "ALLOW";
-  policyId: string;
-  riskTier: "LOW" | "MEDIUM" | "HIGH";
-  routing: {
+  /** Screen 3 is reachable only from a live ALLOW. These fields are optional
+   * for backwards-compatible callers; the fixed payment policy defaults below
+   * are used only when an older caller omits the already-known metadata. */
+  decision?: "ALLOW";
+  policyId?: string;
+  riskTier?: "LOW" | "MEDIUM" | "HIGH";
+  routing?: {
     mode: string;
     endpoint: string;
   };
@@ -148,7 +152,7 @@ function formatEvidenceSpend(raw: string | undefined): string {
 }
 
 function sourceNames(sources: ExecutionIntelligenceSource[] | undefined): string {
-  if (!sources?.length) return "Recorded in evidence bundle";
+  if (!sources?.length) return "Committed in evidence bundle";
   return sources.map((source) => source.name).join(" · ");
 }
 
@@ -203,6 +207,10 @@ export function ExecutionScreen(props: {
   const blockNumber = response?.transaction.blockNumber ?? null;
   const receipt = response?.receipt ?? null;
   const evidenceSpend = response?.evidence.spendRaw ?? authorization.evidence.spendRaw;
+  const decision = authorization.decision ?? "ALLOW";
+  const policyId = authorization.policyId ?? "payments.adaptive.v1";
+  const riskTier = authorization.riskTier ?? "—";
+  const routeEndpoint = authorization.routing?.endpoint ?? "/v1/ask";
 
   return (
     <main className={`execution-shell execution-${phase}`} data-testid="execution-screen">
@@ -269,8 +277,8 @@ export function ExecutionScreen(props: {
           <div><dt>Network</dt><dd>Base Sepolia</dd></div>
           <div><dt>Recipient</dt><dd>ProofGate Vendor</dd></div>
           <div><dt>Amount</dt><dd>{authorization.action.amount} USDC</dd></div>
-          <div><dt>Decision</dt><dd>{authorization.decision}</dd></div>
-          <div><dt>Telegraph route</dt><dd>{authorization.routing.endpoint} · auto-ranked</dd></div>
+          <div><dt>Decision</dt><dd>{decision}</dd></div>
+          <div><dt>Telegraph route</dt><dd>{routeEndpoint} · auto-ranked</dd></div>
           <div><dt>Intelligence spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
           <div><dt>Permit hash</dt><dd title={authorization.permit.hash}>{shortHash(authorization.permit.hash)}</dd></div>
           <div><dt>Status</dt><dd>{confirmed ? "Confirmed" : ambiguous ? "Uncertain — no retry" : failed ? "Stopped" : "Executing"}</dd></div>
@@ -299,15 +307,15 @@ export function ExecutionScreen(props: {
         <section className="proof-drawer" data-testid="proof-drawer">
           <div className="proof-title"><span>VERIFIABLE RECEIPT</span><b>REAL</b></div>
           <dl>
-            <div><dt>Decision</dt><dd>{authorization.decision}</dd></div>
-            <div><dt>Policy</dt><dd>{authorization.policyId}</dd></div>
-            <div><dt>Risk tier</dt><dd>{authorization.riskTier}</dd></div>
+            <div><dt>Decision</dt><dd>{decision}</dd></div>
+            <div><dt>Policy</dt><dd>{policyId}</dd></div>
+            <div><dt>Risk tier</dt><dd>{riskTier}</dd></div>
             <div><dt>Receipt</dt><dd title={receipt.hash}>{shortHash(receipt.hash, 10, 8)}</dd></div>
             <div><dt>Action</dt><dd title={authorization.action.hash}>{shortHash(authorization.action.hash, 10, 8)}</dd></div>
             <div><dt>Permit</dt><dd title={authorization.permit.hash}>{shortHash(authorization.permit.hash, 10, 8)}</dd></div>
             <div><dt>Evidence</dt><dd title={authorization.evidence.bundleHash}>{shortHash(authorization.evidence.bundleHash, 10, 8)}</dd></div>
             <div><dt>Sources</dt><dd>{sourceNames(authorization.evidence.sources)}</dd></div>
-            <div><dt>Telegraph</dt><dd>{authorization.routing.endpoint} · auto-ranked</dd></div>
+            <div><dt>Telegraph</dt><dd>{routeEndpoint} · auto-ranked</dd></div>
             <div><dt>x402 spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
             <div><dt>Transaction</dt><dd title={transactionHash ?? undefined}>{shortHash(transactionHash, 10, 8)}</dd></div>
           </dl>
