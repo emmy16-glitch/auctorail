@@ -57,7 +57,7 @@ jobs:
           exit 1
 
       - name: Run full Screen 1 to Screen 3 Playwright QA
-        run: python qa/three-screen-playwright.py
+        run: python qa/three-screen-playwright-runner.py
 
       - name: Run truthful authorization error-state audit
         run: python qa/error-state-fidelity.py
