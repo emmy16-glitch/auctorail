@@ -70,21 +70,6 @@
   height: 15px;
 }
 
-/* The strong line already says "Nothing is sent yet." in the reference.
-   Keep the support copy on the same two deliberate lines as the selected
-   mockup while preserving dynamic checking/ready/error states. */
-.safety-note.idle p {
-  font-size: 0;
-  line-height: 0;
-}
-
-.safety-note.idle p::before {
-  content: "We check the rules and real evidence first.\A You stay in control.";
-  display: block;
-  white-space: pre-line;
-  font: 500 10.5px/1.42 var(--mono);
-}
-
 @media (max-width: 410px) {
   .top-tabs button {
     font-size: 9.15px;
@@ -145,8 +130,8 @@
     height: 13px;
   }
 
-  /* Reference note starts closer to the left border and uses a slightly
-     tighter mono size so the first sentence remains on one line. */
+  /* Keep the real status text visible. The safe and over-limit messages share
+     this typography, so changing the amount never leaves stale decorative copy. */
   .safety-note {
     grid-template-columns: 27px 1fr;
     gap: 8px;
@@ -159,7 +144,7 @@
     height: 29px;
   }
 
-  .safety-note.idle p::before {
+  .safety-note.idle p {
     font-size: 9.1px;
     line-height: 1.35;
   }
@@ -214,7 +199,7 @@
     padding-right: 8px;
   }
 
-  .safety-note.idle p::before {
+  .safety-note.idle p {
     font-size: 8.65px;
   }
 }
