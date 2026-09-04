@@ -3,7 +3,7 @@
 
 .check-button .arrow {
   position: absolute;
-  right: 30px;
+  right: 28px;
 }
 
 .check-button > span:first-child {
@@ -21,21 +21,27 @@
 }
 
 /* The strong line already says "Nothing is sent yet." in the reference.
-   Avoid visually repeating it in the supporting copy while preserving the
-   dynamic status copy used by checking/ready/error states. */
+   Keep the support copy on the same two deliberate lines as the selected
+   mockup while preserving dynamic checking/ready/error states. */
 .safety-note.idle p {
   font-size: 0;
   line-height: 0;
 }
 
 .safety-note.idle p::before {
-  content: "We check the rules and real evidence first. You stay in control.";
+  content: "We check the rules and real evidence first.\A You stay in control.";
+  display: block;
+  white-space: pre-line;
   font: 500 10.5px/1.42 var(--mono);
 }
 
 @media (max-width: 410px) {
+  .top-tabs button {
+    font-size: 9.15px;
+  }
+
   .check-button .arrow {
-    right: 25px;
+    right: 22px;
   }
 
   .check-button > span:first-child {
@@ -43,13 +49,20 @@
   }
 
   .request-summary svg {
-    width: 24px;
-    height: 29px;
+    width: 26px;
+    height: 30px;
   }
 
   .select-shell svg {
     width: 13px;
     height: 13px;
+  }
+
+  .safety-note {
+    grid-template-columns: 27px 1fr;
+    gap: 8px;
+    padding-left: 9px;
+    padding-right: 9px;
   }
 
   .safety-note svg {
@@ -58,7 +71,32 @@
   }
 
   .safety-note.idle p::before {
-    font-size: 9.8px;
+    font-size: 9.55px;
     line-height: 1.35;
+  }
+}
+
+@media (max-width: 350px) {
+  .top-tabs button {
+    font-size: 8.1px;
+  }
+
+  .check-button .arrow {
+    right: 17px;
+  }
+
+  .check-button > span:first-child {
+    transform: translateX(-12px);
+  }
+
+  .safety-note {
+    grid-template-columns: 25px 1fr;
+    gap: 7px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .safety-note.idle p::before {
+    font-size: 8.65px;
   }
 }
