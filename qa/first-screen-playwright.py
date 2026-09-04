@@ -251,7 +251,7 @@ async def mobile_flow(browser):
 
     cancel = page.get_by_role("button", name="CANCEL CHECK")
     await expect(cancel).to_be_disabled()
-    assert "live Miner request" in (await cancel.get_attribute("title") or "")
+    assert "real Miner request" in (await cancel.get_attribute("title") or "")
 
     await page.screenshot(path=str(ARTIFACTS / "second-screen-checking-mobile.png"), full_page=True)
 
