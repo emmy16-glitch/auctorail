@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { createActionContract, BASE_SEPOLIA_CHAIN_ID, BASE_SEPOLIA_USDC } from "../src/core/action-contract.js";
+import {
+  createActionContract,
+  BASE_SEPOLIA_CHAIN_ID,
+  BASE_SEPOLIA_USDC,
+  canonicalize,
+  hashCanonicalPayload
+} from "../src/core/action-contract.js";
 import { createMandateContract, evaluateMandate } from "../src/core/mandate-contract.js";
 import { evaluatePaymentsAdaptiveV1 } from "../src/policy/payments-adaptive-v1.js";
 import { ADAPTIVE_EVIDENCE_INTENTS, createAdaptiveEvidencePlan } from "../src/telegraph/adaptive-evidence-plan.js";
@@ -164,13 +170,32 @@ function summarizeRequirements(plan: ReturnType<typeof createAdaptiveEvidencePla
   }));
 }
 
+function createFreezeFingerprint(input: {
+  actionHash: string;
+  limitRaw: string;
+  destination: string;
+  durationSeconds: number;
+  reference: string;
+}): string {
+  return hashCanonicalPayload(canonicalize({
+    agentId: AGENT_ID,
+    actionHash: input.actionHash,
+    maxPerActionRaw: input.limitRaw,
+    destination: input.destination.toLowerCase(),
+    durationSeconds: input.durationSeconds,
+    reference: input.reference
+  }));
+}
+
 function commonRecord(input: {
   action: ReturnType<typeof createActionContract>;
   mandate: ReturnType<typeof createMandateContract>;
   plan: ReturnType<typeof createAdaptiveEvidencePlan>;
   reference: string;
+  freezeFingerprint: string;
 }) {
   return {
+    freezeFingerprint: input.freezeFingerprint,
     riskTier: input.plan.riskTier,
     routing: {
       mode: "TELEGRAPH_AUTO_INTENT",
@@ -205,6 +230,7 @@ async function performLiveAuthorization(input: {
   mandate: ReturnType<typeof createMandateContract>;
   plan: ReturnType<typeof createAdaptiveEvidencePlan>;
   reference: string;
+  freezeFingerprint: string;
   privateKey: `0x${string}`;
   now: Date;
 }): Promise<ApiReply> {
@@ -295,6 +321,7 @@ const server = createServer(async (request, response) => {
       durationSeconds?: unknown;
       reason: unknown;
       reference?: unknown;
+      freezeFingerprint?: unknown;
     };
     const mode = input.mode === undefined || input.mode === "policy" ? "policy" : input.mode === "live" ? "live" : null;
     if (!mode) return json(request, response, 400, { error: "mode_invalid" });
@@ -318,6 +345,18 @@ const server = createServer(async (request, response) => {
       policyId: "payments.adaptive.v1",
       policyVersion: 1
     });
+    const freezeFingerprint = createFreezeFingerprint({
+      actionHash: action.actionHash,
+      limitRaw,
+      destination: action.payload.destination,
+      durationSeconds,
+      reference
+    });
+
+    if (mode === "live" && input.freezeFingerprint !== freezeFingerprint) {
+      return json(request, response, 409, { error: "frozen_request_mismatch" });
+    }
+
     const plan = createAdaptiveEvidencePlan(action);
     const mandate = createMandateContract({
       mandateId: "proofgate-live-mandate",
@@ -335,7 +374,7 @@ const server = createServer(async (request, response) => {
       expiresAt: new Date(now.getTime() + durationSeconds * 1_000).toISOString(),
       version: 1
     });
-    const common = commonRecord({ action, mandate, plan, reference });
+    const common = commonRecord({ action, mandate, plan, reference, freezeFingerprint });
 
     const mandateEvaluation = evaluateMandate(mandate, action, AGENT_ID, now);
     if (!mandateEvaluation.valid) {
@@ -374,10 +413,9 @@ const server = createServer(async (request, response) => {
     }
 
     cleanupIdempotencyCache();
-    const fingerprint = `${action.actionHash}:${limitRaw}:${destination.toLowerCase()}:${durationSeconds}:${reference}`;
     const existing = idempotentLiveRequests.get(idempotencyKey);
     if (existing) {
-      if (existing.fingerprint !== fingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
+      if (existing.fingerprint !== freezeFingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
       const reply = await existing.promise;
       return json(request, response, reply.status, reply.body);
     }
@@ -386,8 +424,8 @@ const server = createServer(async (request, response) => {
       return json(request, response, 429, { error: "live_rate_limited" }, { "retry-after": "3600" });
     }
 
-    const promise = performLiveAuthorization({ action, mandate, plan, reference, privateKey, now });
-    idempotentLiveRequests.set(idempotencyKey, { fingerprint, promise, createdAt: Date.now() });
+    const promise = performLiveAuthorization({ action, mandate, plan, reference, freezeFingerprint, privateKey, now });
+    idempotentLiveRequests.set(idempotencyKey, { fingerprint: freezeFingerprint, promise, createdAt: Date.now() });
     const reply = await promise;
     return json(request, response, reply.status, reply.body);
   } catch (error) {
