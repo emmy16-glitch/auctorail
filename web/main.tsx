@@ -1,8 +1,15 @@
 import React, { useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ExecutionScreen, type ExecutionPermitSummary, type ExecutionResponse, type ExecutionUiPhase } from "./ExecutionScreen";
+import {
+  ExecutionScreen,
+  type ExecutionIntelligenceSource,
+  type ExecutionPermitSummary,
+  type ExecutionResponse,
+  type ExecutionUiPhase
+} from "./ExecutionScreen";
 import "./styles.css";
 import "./checking-screen.css";
+import "./mobile-readability.css";
 
 const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "");
 const VENDOR_ADDRESS = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
@@ -24,7 +31,7 @@ type AuthorizationResponse = {
   policyId: string;
   policyVersion: number;
   freezeFingerprint: string;
-  routing?: {
+  routing: {
     mode: string;
     endpoint: string;
   };
@@ -53,6 +60,7 @@ type AuthorizationResponse = {
     bundleHash?: string;
     rejectedAttempts?: number;
     completedIntents?: string[];
+    sources?: ExecutionIntelligenceSource[];
   };
   executionAuthorized?: boolean;
   permit?: ExecutionPermitSummary | null;
@@ -138,6 +146,10 @@ function timeLabel(date = new Date()): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+function isSha256Hex(value: string | undefined): value is string {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
 function friendlyError(code: string): string {
   switch (code) {
     case "live_authorization_disabled":
@@ -174,14 +186,19 @@ function friendlyError(code: string): string {
 
 function friendlyExecutionError(code: string): string {
   switch (code) {
+    case "execution_token_invalid":
+      return "The protected execution token was rejected before a transaction started.";
+    case "idempotency_key_required":
+    case "idempotency_key_conflict":
+      return "The protected execution request was rejected before a transaction started.";
     case "execution_session_invalid":
     case "execution_session_expired":
     case "execution_session_consumed":
-      return "The protected execution session is no longer usable. ProofGate will not create a replacement payment automatically.";
+      return "The protected execution session is no longer usable. No new transaction was started by this request.";
     case "execution_rate_limited":
-      return "The protected executor reached its live rate limit. No automatic replacement transaction will be created.";
+      return "The protected executor reached its live rate limit. No transaction was started by this request.";
     case "executor_credentials_unavailable":
-      return "The protected Base Sepolia executor is unavailable. No replacement transaction will be created automatically.";
+      return "The protected Base Sepolia executor is unavailable. No transaction was started by this request.";
     case "proof_receipt_verification_failed":
       return "Execution may have occurred, but ProofGate could not verify its receipt. Do not retry automatically.";
     case "execution_response_mismatch":
@@ -189,6 +206,22 @@ function friendlyExecutionError(code: string): string {
     default:
       return "The execution request did not return a trustworthy final receipt. ProofGate will not retry automatically.";
   }
+}
+
+function executionHttpFailureIsDefinitelyPreBroadcast(code: string): boolean {
+  return [
+    "execution_token_invalid",
+    "idempotency_key_required",
+    "idempotency_key_conflict",
+    "execution_session_invalid",
+    "execution_session_expired",
+    "execution_session_consumed",
+    "executor_credentials_unavailable",
+    "execution_rate_limited",
+    "request_too_large",
+    "request_body_invalid",
+    "invalid_execution_request"
+  ].includes(code);
 }
 
 function isExecutionPhase(phase: Phase): phase is ExecutionUiPhase {
@@ -294,7 +327,14 @@ function App() {
       !liveResult.execution ||
       liveResult.execution.status !== "READY" ||
       liveResult.execution.endpoint !== "/api/execute" ||
-      liveResult.permit.actionHash !== liveResult.action.hash
+      liveResult.permit.actionHash !== liveResult.action.hash ||
+      liveResult.evidence.status !== "COMPLETE" ||
+      !isSha256Hex(liveResult.evidence.bundleHash) ||
+      !isSha256Hex(liveResult.action.hash) ||
+      !isSha256Hex(liveResult.permit.hash) ||
+      liveResult.action.chainId !== BASE_SEPOLIA_CHAIN_ID ||
+      liveResult.action.asset !== "USDC" ||
+      liveResult.action.recipient.toLowerCase() !== VENDOR_ADDRESS.toLowerCase()
     ) {
       throw new Error("permit_issuance_failed");
     }
@@ -322,7 +362,7 @@ function App() {
       if (!response.ok) {
         const code = body.error ?? "execution_failed";
         setExecutionError(friendlyExecutionError(code));
-        setPhase("execution_ambiguous");
+        setPhase(executionHttpFailureIsDefinitelyPreBroadcast(code) ? "execution_failed" : "execution_ambiguous");
         return;
       }
 
@@ -401,7 +441,7 @@ function App() {
         throw new Error("policy_preflight_unexpected");
       }
 
-      if (!/^0x[0-9a-fA-F]{64}$/.test(policyResult.freezeFingerprint)) {
+      if (!isSha256Hex(policyResult.freezeFingerprint)) {
         throw new Error("frozen_request_mismatch");
       }
 
@@ -458,7 +498,11 @@ function App() {
   const onSecondaryAction = phase === "checking" ? cancelCheck : clearCheckState;
   const secondaryDisabled = phase === "checking" && checkStage !== "rules";
   const secondaryLabel = phase === "checking" ? "CANCEL CHECK" : "BACK TO REQUEST";
-  const executionAuthorization = result?.permit ? {
+  const executionAuthorization = result?.permit && result.decision === "ALLOW" ? {
+    decision: result.decision,
+    policyId: result.policyId,
+    riskTier: result.riskTier,
+    routing: result.routing,
     action: {
       hash: result.action.hash,
       amount: result.action.amount,
@@ -469,7 +513,8 @@ function App() {
     permit: result.permit,
     evidence: {
       spendRaw: result.evidence.spendRaw,
-      bundleHash: result.evidence.bundleHash
+      bundleHash: result.evidence.bundleHash,
+      sources: result.evidence.sources
     }
   } : null;
 
@@ -709,7 +754,7 @@ function CheckingScreen(props: {
         <TimelineRow
           number="03"
           title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : minersStopped ? "REAL CHECKS STOPPED" : rulesStopped ? "REAL CHECKS NOT STARTED" : "REAL CHECKS RUNNING"}
-          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : rulesStopped ? "Rules did not complete, so no Miner call was made" : "Waiting for authorization rules"}
+          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real Miners and the policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : rulesStopped ? "Rules did not complete, so no Miner call was made" : "Waiting for authorization rules"}
           state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : minersStopped || rulesStopped ? "error" : "pending"}
           time={times?.miners}
         />
