@@ -1,31 +1,40 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  ExecutionScreen,
+  type ExecutionIntelligenceSource,
+  type ExecutionPermitSummary,
+  type ExecutionResponse,
+  type ExecutionUiPhase
+} from "./ExecutionScreen";
 import "./styles.css";
+import "./checking-screen.css";
+import "./mobile-readability.css";
 
-const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "");
+const VENDOR_ADDRESS = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
+const AGENT_ID = "invoice-bot";
+const MAX_USDC = 10;
+const BASE_SEPOLIA_CHAIN_ID = 84532;
+const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
 
+type CheckPhase = "checking" | "ready" | "error";
+type Phase = "idle" | CheckPhase | ExecutionUiPhase;
+type CheckStage = "rules" | "miners" | "decision";
 type Decision = "ALLOW" | "HOLD" | "BLOCK";
-type RiskTier = "LOW" | "MEDIUM" | "HIGH";
-type ViewState = "setup" | "preflight" | "live" | "result" | "error";
 
-interface EvidenceRequirementSummary {
-  intent: string;
-  label: string;
-  minimumDistinctMiners: number;
-  minimumPositiveResults: number;
-  minimumPositiveConfidence: number | null;
-}
-
-interface WebAuthorizationResponse {
+type AuthorizationResponse = {
   status: "BLOCKED" | "REQUIRES_INTELLIGENCE" | "DECIDED";
   decision: Decision | null;
   reason: string;
-  riskTier: RiskTier;
+  riskTier: "LOW" | "MEDIUM" | "HIGH";
   policyId: string;
   policyVersion: number;
-  executionAuthorized: false;
-  permit: null;
+  freezeFingerprint: string;
+  routing: {
+    mode: string;
+    endpoint: string;
+  };
   action: {
     id: string;
     hash: string;
@@ -44,7 +53,6 @@ interface WebAuthorizationResponse {
     maxPerAction: string;
     expiresAt: string;
   };
-  requirements: EvidenceRequirementSummary[];
   evidence: {
     status: string;
     code?: string;
@@ -52,581 +60,772 @@ interface WebAuthorizationResponse {
     bundleHash?: string;
     rejectedAttempts?: number;
     completedIntents?: string[];
+    sources?: ExecutionIntelligenceSource[];
   };
+  executionAuthorized?: boolean;
+  permit?: ExecutionPermitSummary | null;
+  execution?: {
+    status: "READY";
+    token: string;
+    endpoint: "/api/execute";
+  } | null;
+};
+
+type ApiError = { error?: string; detail?: string };
+type EventTimes = {
+  request: string;
+  rules?: string;
+  miners?: string;
+  decision?: string;
+};
+type SvgProps = React.SVGProps<SVGSVGElement>;
+
+function ShieldIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 48 56" aria-hidden="true" {...props}>
+      <path d="M24 3 43 10v15c0 12-7.6 22.4-19 28C12.6 47.4 5 37 5 25V10L24 3Z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="miter" />
+    </svg>
+  );
 }
 
-interface ApiError {
-  error?: string;
+function MenuIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 28 28" aria-hidden="true" {...props}>
+      <path d="M4 7h20M4 14h20M4 21h20" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
 }
 
-const scenarios = {
-  vendor: {
-    label: "Vendor invoice · within authority",
-    limit: "10.00",
-    amount: "7.00",
-    reason: "Pay supplier invoice",
-    reference: "INV-1042"
-  },
-  blocked: {
-    label: "Over-limit payment · blocked locally",
-    limit: "5.00",
-    amount: "7.00",
-    reason: "Pay supplier invoice",
-    reference: "INV-1042"
-  },
-  low: {
-    label: "Small payment · low consequence",
-    limit: "1.00",
-    amount: "0.50",
-    reason: "Pay test invoice",
-    reference: "INV-1001"
-  }
-} as const;
-
-type ScenarioKey = keyof typeof scenarios;
-
-function shortValue(value: string): string {
-  return value.length > 16 ? `${value.slice(0, 7)}…${value.slice(-5)}` : value;
+function FileIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 38 44" aria-hidden="true" {...props}>
+      <path d="M7 2h16l8 8v32H7V2Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <path d="M23 2v9h8M12 21h14M12 27h14M12 33h10" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
 }
 
-function parseAmount(value: string): number | null {
-  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{0,6})?$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+function LockIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 40 44" aria-hidden="true" {...props}>
+      <path d="M11 18v-6a9 9 0 0 1 18 0v6M6 18h28v23H6V18Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <path d="M20 27v7" stroke="currentColor" strokeWidth="2.5" />
+    </svg>
+  );
 }
 
-function riskCopy(risk: RiskTier): string {
-  if (risk === "LOW") return "A small payment needs a focused external check before permission can be considered.";
-  if (risk === "MEDIUM") return "A larger payment needs independent fraud evidence plus transaction intelligence.";
-  return "A high-consequence payment needs stronger independent corroboration across multiple intelligence checks.";
+function ChevronIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" {...props}>
+      <path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
 }
 
-function requirementCopy(requirement: EvidenceRequirementSummary): string {
-  const sourceWord = requirement.minimumDistinctMiners === 1 ? "source" : "sources";
-  const parts = [`${requirement.minimumDistinctMiners} independent ${sourceWord}`];
-  if (requirement.minimumPositiveResults > 0) {
-    parts.push(`${requirement.minimumPositiveResults} qualifying result${requirement.minimumPositiveResults === 1 ? "" : "s"}`);
-  }
-  if (requirement.minimumPositiveConfidence !== null) {
-    parts.push(`${Math.round(requirement.minimumPositiveConfidence * 100)}% minimum confidence`);
-  }
-  return parts.join(" · ");
+function CheckIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" {...props}>
+      <path d="m7 17 6 6L26 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" />
+    </svg>
+  );
+}
+
+function formatUsdc(value: number): string {
+  return value.toFixed(2);
+}
+
+function durationLabel(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds === 3600) return "1 hour";
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} hours`;
+  return "24 hours";
+}
+
+function timeLabel(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function isSha256Hex(value: string | undefined): value is string {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 function friendlyError(code: string): string {
   switch (code) {
     case "live_authorization_disabled":
-      return "Live Telegraph verification is not enabled on this deployment yet.";
+      return "Live checks are not enabled on this deployment.";
     case "telegraph_credentials_unavailable":
-      return "The live Telegraph verifier is not configured on this deployment.";
+      return "The live Telegraph wallet is not connected yet.";
+    case "permit_signer_unavailable":
+      return "The production permit signer is unavailable. No Miner or vendor payment was started.";
+    case "permit_issuance_failed":
+      return "ProofGate could not issue a valid execution permit. The vendor payment was not started.";
+    case "executor_credentials_unavailable":
+      return "The protected Base Sepolia executor is unavailable. No Miner or vendor payment was started.";
     case "live_rate_limited":
-      return "This browser has reached the live-verification limit. Try again later.";
+      return "The live-check limit was reached. Try again later.";
     case "policy_rate_limited":
-      return "Too many policy checks were requested at once. Try again shortly.";
+      return "The rules check is busy. Try again in a moment.";
     case "live_daily_budget_exhausted":
-      return "The public live-verification budget has been reached for today.";
-    case "idempotency_key_required":
-      return "The live request could not be safely identified. Please retry.";
+      return "Today's live evidence budget has been used.";
     case "live_verification_failed":
-      return "Telegraph verification did not complete safely. ProofGate issued no permission.";
+      return "The real Miner check did not finish safely. Nothing was approved.";
+    case "frozen_request_mismatch":
+      return "The request changed after the rules check. Start again before any live Miner check.";
+    case "frozen_request_required":
+    case "frozen_request_invalid":
+    case "frozen_request_expired":
+    case "frozen_request_consumed":
+      return "The verified preflight is no longer valid. Start the check again before any live Miner request.";
     case "origin_not_allowed":
-      return "This deployment is not allowed to call the ProofGate API.";
+      return "This page is not allowed to use the ProofGate API.";
     default:
-      return "ProofGate could not complete this check. No permission was issued and no payment was sent.";
+      return "The request could not be checked safely. Nothing was approved.";
   }
 }
 
-function Header(props: {
-  darkMode: boolean;
-  mobileMenuOpen: boolean;
-  onToggleTheme: () => void;
-  onToggleMenu: () => void;
-  onCloseMenu: () => void;
-  onTry: () => void;
-}) {
-  return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <button className="brand brand-button" type="button" onClick={props.onTry} aria-label="Go to Try ProofGate">
-          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
-          <span>ProofGate</span>
-        </button>
-
-        <div className="desktop-actions">
-          <nav aria-label="Primary navigation">
-            <button className="nav-link active" type="button" onClick={props.onTry}>Try ProofGate</button>
-            <a href="#developers">Developers</a>
-            <a href="#about">About</a>
-          </nav>
-          <button className="theme-toggle" type="button" onClick={props.onToggleTheme}>{props.darkMode ? "Light" : "Dark"}</button>
-        </div>
-
-        <button className="menu-button" type="button" aria-expanded={props.mobileMenuOpen} aria-controls="mobile-nav" aria-label="Open navigation" onClick={props.onToggleMenu}>
-          <span /><span /><span />
-        </button>
-      </div>
-
-      {props.mobileMenuOpen && (
-        <div className="mobile-nav" id="mobile-nav">
-          <button type="button" onClick={() => { props.onTry(); props.onCloseMenu(); }}>Try ProofGate</button>
-          <a href="#developers" onClick={props.onCloseMenu}>Developers</a>
-          <a href="#about" onClick={props.onCloseMenu}>About</a>
-          <button type="button" onClick={props.onToggleTheme}>{props.darkMode ? "Use light mode" : "Use dark mode"}</button>
-        </div>
-      )}
-    </header>
-  );
+function friendlyExecutionError(code: string): string {
+  switch (code) {
+    case "execution_token_invalid":
+      return "The protected execution token was rejected before a transaction started.";
+    case "idempotency_key_required":
+    case "idempotency_key_conflict":
+      return "The protected execution request was rejected before a transaction started.";
+    case "execution_session_invalid":
+    case "execution_session_expired":
+    case "execution_session_consumed":
+      return "The protected execution session is no longer usable. No new transaction was started by this request.";
+    case "execution_rate_limited":
+      return "The protected executor reached its live rate limit. No transaction was started by this request.";
+    case "executor_credentials_unavailable":
+      return "The protected Base Sepolia executor is unavailable. No transaction was started by this request.";
+    case "proof_receipt_verification_failed":
+      return "Execution may have occurred, but ProofGate could not verify its receipt. Do not retry automatically.";
+    case "execution_response_mismatch":
+      return "The execution response did not match the exact authorized request. ProofGate will not retry automatically.";
+    default:
+      return "The execution request did not return a trustworthy final receipt. ProofGate will not retry automatically.";
+  }
 }
 
-function ContextPill() {
-  return <div className="context-pill" aria-label="Current environment"><span className="dot" />Base Sepolia testnet <span>·</span> USDC</div>;
+function executionHttpFailureIsDefinitelyPreBroadcast(code: string): boolean {
+  return [
+    "execution_token_invalid",
+    "idempotency_key_required",
+    "idempotency_key_conflict",
+    "execution_session_invalid",
+    "execution_session_expired",
+    "execution_session_consumed",
+    "executor_credentials_unavailable",
+    "execution_rate_limited",
+    "request_too_large",
+    "request_body_invalid",
+    "invalid_execution_request"
+  ].includes(code);
+}
+
+function isExecutionPhase(phase: Phase): phase is ExecutionUiPhase {
+  return phase === "executing" || phase === "executed" || phase === "execution_failed" || phase === "execution_ambiguous";
 }
 
 function App() {
-  const [limit, setLimit] = useState("10.00");
-  const [amount, setAmount] = useState("7.00");
-  const [reason, setReason] = useState("Pay supplier invoice");
-  const [reference, setReference] = useState("INV-1042");
-  const [scenario, setScenario] = useState<ScenarioKey>("vendor");
-  const [response, setResponse] = useState<WebAuthorizationResponse | null>(null);
-  const [viewState, setViewState] = useState<ViewState>("setup");
-  const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("proofgate-theme") === "dark");
-  const [liveRequestKey, setLiveRequestKey] = useState<string | null>(null);
+  const [limit, setLimit] = useState(5);
+  const [durationIndex, setDurationIndex] = useState(2);
+  const [amount, setAmount] = useState(1);
+  const [reason, setReason] = useState("Supplier invoice #4471");
+  const [reference, setReference] = useState("INV-4471");
+  const [requestEditorOpen, setRequestEditorOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [checkStage, setCheckStage] = useState<CheckStage>("rules");
+  const [eventTimes, setEventTimes] = useState<EventTimes | null>(null);
+  const [result, setResult] = useState<AuthorizationResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [executionResult, setExecutionResult] = useState<ExecutionResponse | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [proofOpen, setProofOpen] = useState(false);
+  const requestIdRef = useRef<string | null>(null);
+  const executionIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
-    window.localStorage.setItem("proofgate-theme", darkMode ? "dark" : "light");
-  }, [darkMode]);
+  const durationSeconds = DURATION_STEPS[durationIndex];
+  const amountValid = Number.isFinite(amount) && amount > 0 && amount <= MAX_USDC;
+  const limitValid = Number.isFinite(limit) && limit > 0 && limit <= MAX_USDC;
+  const withinLimit = amountValid && limitValid && amount <= limit;
+  const canCheck = amountValid && limitValid && reason.trim().length > 0 && phase === "idle";
 
-  const limitNumber = parseAmount(limit);
-  const amountNumber = parseAmount(amount);
-  const limitError = limitNumber === null || limitNumber <= 0 || limitNumber > 10 ? "Enter an amount from 0.000001 to 10 USDC." : null;
-  const amountError = amountNumber === null || amountNumber <= 0 || amountNumber > 10 ? "Enter an amount from 0.000001 to 10 USDC." : null;
-  const withinLimit = !limitError && !amountError && amountNumber! <= limitNumber!;
-  const canRun = !limitError && !amountError && reason.trim().length > 0 && !running;
+  const statusMessage = useMemo(() => {
+    if (!withinLimit) return "This request is above the current limit. ProofGate will block it before any Miner is paid.";
+    return "We check the rules and real evidence first. You stay in control.";
+  }, [withinLimit]);
 
-  const summary = useMemo(() => {
-    if (limitError || amountError) return "Enter valid amounts to compare this action with the boundary.";
-    return withinLimit
-      ? `${amount} USDC is within the agent's ${limit} USDC spending limit.`
-      : `${amount} USDC exceeds the agent's ${limit} USDC spending limit.`;
-  }, [amount, amountError, limit, limitError, withinLimit]);
-
-  function returnToSetup() {
-    setResponse(null);
-    setViewState("setup");
-    setErrorCode(null);
-    setLiveRequestKey(null);
-    setMobileMenuOpen(false);
-    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  function clearCheckState() {
+    setPhase("idle");
+    setCheckStage("rules");
+    setEventTimes(null);
+    setResult(null);
+    setError(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
+    requestIdRef.current = null;
+    executionIdRef.current = null;
+    abortRef.current = null;
   }
 
   function resetDecision() {
-    if (viewState !== "setup") setViewState("setup");
-    setResponse(null);
-    setErrorCode(null);
-    setLiveRequestKey(null);
+    if (phase !== "idle") return;
+    setResult(null);
+    setError(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
+    requestIdRef.current = null;
+    executionIdRef.current = null;
   }
 
-  function applyScenario(key: ScenarioKey) {
-    const next = scenarios[key];
-    setScenario(key);
-    setLimit(next.limit);
-    setAmount(next.amount);
-    setReason(next.reason);
-    setReference(next.reference);
+  function adjustLimit(delta: number) {
+    setLimit((current) => Math.min(MAX_USDC, Math.max(0.01, Number((current + delta).toFixed(2)))));
     resetDecision();
   }
 
-  async function requestAuthorization(mode: "policy" | "live") {
-    const headers: Record<string, string> = { "content-type": "application/json" };
-    if (mode === "live") {
-      const key = liveRequestKey ?? crypto.randomUUID();
-      if (!liveRequestKey) setLiveRequestKey(key);
-      headers["idempotency-key"] = key;
-    }
+  function adjustDuration(delta: number) {
+    setDurationIndex((current) => Math.min(DURATION_STEPS.length - 1, Math.max(0, current + delta)));
+    resetDecision();
+  }
 
-    const result = await fetch(`${API_BASE}/api/authorize`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ mode, limit, amount, reason, reference })
-    });
-    const body = await result.json() as WebAuthorizationResponse & ApiError;
-    if (!result.ok) throw new Error(body.error ?? "authorization_failed");
+  function adjustAmount(delta: number) {
+    setAmount((current) => Math.min(MAX_USDC, Math.max(0.01, Number((current + delta).toFixed(2)))));
+    resetDecision();
+  }
+
+  function requestBody(mode: "policy" | "live", freezeFingerprint?: string) {
+    return {
+      mode,
+      agentId: AGENT_ID,
+      limit: formatUsdc(limit),
+      amount: formatUsdc(amount),
+      destination: VENDOR_ADDRESS,
+      durationSeconds,
+      reason: reason.trim(),
+      reference: reference.trim(),
+      ...(freezeFingerprint ? { freezeFingerprint } : {})
+    };
+  }
+
+  async function parseAuthorization(response: Response): Promise<AuthorizationResponse> {
+    const body = await response.json() as AuthorizationResponse & ApiError;
+    if (!response.ok) throw new Error(body.error ?? "authorization_failed");
     return body;
   }
 
-  async function runProofGate() {
-    if (!canRun) return;
-    setRunning(true);
-    setErrorCode(null);
-    setResponse(null);
+  async function executeAuthorized(liveResult: AuthorizationResponse): Promise<void> {
+    if (
+      liveResult.decision !== "ALLOW" ||
+      liveResult.executionAuthorized !== true ||
+      !liveResult.permit ||
+      !liveResult.execution ||
+      liveResult.execution.status !== "READY" ||
+      liveResult.execution.endpoint !== "/api/execute" ||
+      liveResult.permit.actionHash !== liveResult.action.hash ||
+      liveResult.evidence.status !== "COMPLETE" ||
+      !isSha256Hex(liveResult.evidence.bundleHash) ||
+      !isSha256Hex(liveResult.action.hash) ||
+      !isSha256Hex(liveResult.permit.hash) ||
+      liveResult.action.chainId !== BASE_SEPOLIA_CHAIN_ID ||
+      liveResult.action.asset !== "USDC" ||
+      liveResult.action.recipient.toLowerCase() !== VENDOR_ADDRESS.toLowerCase()
+    ) {
+      throw new Error("permit_issuance_failed");
+    }
+
+    setPhase("executing");
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
+    const executionId = executionIdRef.current ?? crypto.randomUUID();
+    executionIdRef.current = executionId;
+    let requestDispatched = false;
+
     try {
-      const result = await requestAuthorization("policy");
-      setResponse(result);
-      setViewState(result.status === "BLOCKED" ? "result" : "preflight");
-      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
-    } catch (error) {
-      setErrorCode(error instanceof Error ? error.message : "authorization_failed");
-      setViewState("error");
-    } finally {
-      setRunning(false);
+      requestDispatched = true;
+      const response = await fetch(`${API_BASE}/api/execute`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": executionId
+        },
+        body: JSON.stringify({ executionToken: liveResult.execution.token })
+      });
+      const body = await response.json() as ExecutionResponse & ApiError;
+
+      if (!response.ok) {
+        const code = body.error ?? "execution_failed";
+        setExecutionError(friendlyExecutionError(code));
+        setPhase(executionHttpFailureIsDefinitelyPreBroadcast(code) ? "execution_failed" : "execution_ambiguous");
+        return;
+      }
+
+      const bindingsMatch =
+        body.actionHash === liveResult.action.hash &&
+        body.freezeFingerprint === liveResult.freezeFingerprint &&
+        body.permit.id === liveResult.permit.id &&
+        body.permit.hash === liveResult.permit.hash &&
+        body.network.chainId === BASE_SEPOLIA_CHAIN_ID &&
+        body.network.asset === "USDC" &&
+        body.payment.amount === liveResult.action.amount &&
+        body.payment.recipient.toLowerCase() === liveResult.action.recipient.toLowerCase();
+
+      if (!bindingsMatch) {
+        setExecutionError(friendlyExecutionError("execution_response_mismatch"));
+        setPhase("execution_ambiguous");
+        return;
+      }
+
+      setExecutionResult(body);
+      if (body.status === "EXECUTED" && body.transaction.status === "CONFIRMED" && body.transaction.transactionHash && body.receipt.hash) {
+        setPhase("executed");
+      } else if (body.status === "AMBIGUOUS") {
+        setExecutionError(body.error ?? friendlyExecutionError("execution_ambiguous"));
+        setPhase("execution_ambiguous");
+      } else {
+        setExecutionError(body.error ?? "The protected executor did not complete the authorized payment.");
+        setPhase("execution_failed");
+      }
+    } catch {
+      if (requestDispatched) {
+        setExecutionError("The execution request lost its trustworthy response after dispatch. The payment may have reached Base Sepolia, so ProofGate will not retry automatically.");
+        setPhase("execution_ambiguous");
+      } else {
+        setExecutionError("The protected execution request could not be started.");
+        setPhase("execution_failed");
+      }
     }
   }
 
-  async function runLiveVerification() {
-    if (!response) return;
-    setRunning(true);
-    setErrorCode(null);
-    setViewState("live");
+  async function checkRequest() {
+    if (!canCheck) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setPhase("checking");
+    setCheckStage("rules");
+    setEventTimes({ request: timeLabel() });
+    setError(null);
+    setResult(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
+
     try {
-      const result = await requestAuthorization("live");
-      setResponse(result);
-      setViewState("result");
-    } catch (error) {
-      setErrorCode(error instanceof Error ? error.message : "authorization_failed");
-      setViewState("error");
-    } finally {
-      setRunning(false);
+      const policyResponse = await fetch(`${API_BASE}/api/authorize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody("policy")),
+        signal: controller.signal
+      });
+      const policyResult = await parseAuthorization(policyResponse);
+      const rulesAt = timeLabel();
+      setEventTimes((current) => current ? { ...current, rules: rulesAt } : { request: rulesAt, rules: rulesAt });
+
+      if (policyResult.status === "BLOCKED" || policyResult.decision === "BLOCK") {
+        setResult(policyResult);
+        setCheckStage("decision");
+        setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: rulesAt, rules: rulesAt, decision: timeLabel() });
+        setPhase("ready");
+        abortRef.current = null;
+        return;
+      }
+
+      if (policyResult.status !== "REQUIRES_INTELLIGENCE") {
+        throw new Error("policy_preflight_unexpected");
+      }
+
+      if (!isSha256Hex(policyResult.freezeFingerprint)) {
+        throw new Error("frozen_request_mismatch");
+      }
+
+      setCheckStage("miners");
+      setEventTimes((current) => current ? { ...current, miners: timeLabel() } : { request: rulesAt, rules: rulesAt, miners: timeLabel() });
+
+      const idempotencyKey = requestIdRef.current ?? crypto.randomUUID();
+      requestIdRef.current = idempotencyKey;
+
+      const liveResponse = await fetch(`${API_BASE}/api/authorize`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey
+        },
+        body: JSON.stringify(requestBody("live", policyResult.freezeFingerprint)),
+        signal: controller.signal
+      });
+      const liveResult = await parseAuthorization(liveResponse);
+
+      if (liveResult.freezeFingerprint !== policyResult.freezeFingerprint) {
+        throw new Error("frozen_request_mismatch");
+      }
+
+      setResult(liveResult);
+      setCheckStage("decision");
+      setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: timeLabel(), decision: timeLabel() });
+      abortRef.current = null;
+
+      if (liveResult.decision === "ALLOW") {
+        await executeAuthorized(liveResult);
+        return;
+      }
+
+      setPhase("ready");
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      const code = caught instanceof Error ? caught.message : "authorization_failed";
+      setError(friendlyError(code));
+      setCheckStage("decision");
+      setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: timeLabel(), decision: timeLabel() });
+      setPhase("error");
+      requestIdRef.current = null;
+      abortRef.current = null;
     }
   }
 
-  const decision = response?.decision ?? null;
-  const completed = new Set(response?.evidence.completedIntents ?? []);
+  function cancelCheck() {
+    if (phase !== "checking" || checkStage !== "rules") return;
+    abortRef.current?.abort();
+    clearCheckState();
+  }
+
+  const onSecondaryAction = phase === "checking" ? cancelCheck : clearCheckState;
+  const secondaryDisabled = phase === "checking" && checkStage !== "rules";
+  const secondaryLabel = phase === "checking" ? "CANCEL CHECK" : "BACK TO REQUEST";
+  const executionAuthorization = result?.permit && result.decision === "ALLOW" ? {
+    decision: result.decision,
+    policyId: result.policyId,
+    riskTier: result.riskTier,
+    routing: result.routing,
+    action: {
+      hash: result.action.hash,
+      amount: result.action.amount,
+      recipient: result.action.recipient,
+      reason: result.action.reason,
+      reference: result.action.reference
+    },
+    permit: result.permit,
+    evidence: {
+      spendRaw: result.evidence.spendRaw,
+      bundleHash: result.evidence.bundleHash,
+      sources: result.evidence.sources
+    }
+  } : null;
 
   return (
-    <div className="app-shell">
-      <Header
-        darkMode={darkMode}
-        mobileMenuOpen={mobileMenuOpen}
-        onToggleTheme={() => setDarkMode(value => !value)}
-        onToggleMenu={() => setMobileMenuOpen(value => !value)}
-        onCloseMenu={() => setMobileMenuOpen(false)}
-        onTry={returnToSetup}
-      />
+    <div className="app-page">
+      <div className="live-strip" aria-label="Live environment">
+        <span className="live-dot" />
+        <span>LIVE</span><i>·</i><span>BASE SEPOLIA</span><i>·</i><span>REAL MINERS</span>
+      </div>
 
-      {viewState === "setup" && (
-        <main id="try" className="page setup-page">
-          <section className="hero" id="top">
-            <div className="hero-copy">
-              <h1>Proof before permission.</h1>
-              <p>Set what an agent is allowed to do, propose an action, and see whether ProofGate permits it.</p>
-            </div>
-            <ContextPill />
-          </section>
-
-          <div className="scenario-row">
-            <label className="scenario-picker">
-              <span>Try an example</span>
-              <select value={scenario} onChange={(event) => applyScenario(event.target.value as ScenarioKey)}>
-                {Object.entries(scenarios).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
-              </select>
-            </label>
-            <span className="support-note">Public demo scope: one Base Sepolia USDC payment, up to 10 USDC.</span>
+      <header className="brand-row">
+        <div className="brand-lockup">
+          <ShieldIcon className="brand-shield" />
+          <div>
+            <strong>PROOFGATE</strong>
+            <span>Real authorization</span>
           </div>
-
-          <section className="cards" aria-label="Configure authorization">
-            <article className="card">
-              <div className="card-title">
-                <span className="step">1</span>
-                <div><h2>Set the boundary</h2><p>What can this agent spend?</p></div>
-              </div>
-
-              <label className="field-label">
-                Maximum per payment
-                <div className={`input-row amount-row ${limitError ? "invalid" : ""}`}>
-                  <input inputMode="decimal" aria-invalid={Boolean(limitError)} value={limit} onChange={(event) => { setLimit(event.target.value); resetDecision(); }} />
-                  <span>USDC</span>
-                </div>
-                {limitError && <small className="field-error">{limitError}</small>}
-              </label>
-
-              <div className="field-block">
-                <span className="field-label-text">Who can receive it?</span>
-                <div className="static-field"><strong>ProofGate Vendor</strong><small>{shortValue(VENDOR)} · Allowed recipient</small></div>
-              </div>
-
-              <div className="field-block">
-                <span className="field-label-text">Permission expires</span>
-                <div className="static-field single-line"><strong>24 hours</strong></div>
-              </div>
-
-              <div className="callout info">This agent may spend up to <strong>{limit || "0.00"} USDC</strong> with this recipient.</div>
-            </article>
-
-            <article className="card">
-              <div className="card-title">
-                <span className="step">2</span>
-                <div><h2>Propose the action</h2><p>What should the agent do now?</p></div>
-              </div>
-
-              <label className="field-label">
-                Payment amount
-                <div className={`input-row amount-row ${amountError ? "invalid" : ""}`}>
-                  <input inputMode="decimal" aria-invalid={Boolean(amountError)} value={amount} onChange={(event) => { setAmount(event.target.value); resetDecision(); }} />
-                  <span>USDC</span>
-                </div>
-                {amountError && <small className="field-error">{amountError}</small>}
-              </label>
-
-              <div className="field-block">
-                <span className="field-label-text">Recipient</span>
-                <div className="static-field"><strong>ProofGate Vendor</strong><small>{shortValue(VENDOR)}</small></div>
-              </div>
-
-              <label className="field-label">Why is this payment needed?<input value={reason} maxLength={256} onChange={(event) => { setReason(event.target.value); resetDecision(); }} /></label>
-              <label className="field-label">Reference <span className="optional">optional</span><input value={reference} maxLength={200} placeholder="Invoice #, PO #, task id..." onChange={(event) => { setReference(event.target.value); resetDecision(); }} /></label>
-
-              <div className={`callout ${limitError || amountError ? "neutral" : withinLimit ? "success" : "danger"}`}>{summary}</div>
-            </article>
-          </section>
-
-          <div className="action-area">
-            <button className="primary" onClick={runProofGate} disabled={!canRun}>{running ? "Checking this action…" : "Run ProofGate"}<span aria-hidden="true">→</span></button>
-            <small>Checking authorization does not execute a payment.</small>
-          </div>
-
-          <section className="ready-panel" aria-live="polite">
-            <span className="decision-kicker">Ready</span>
-            <h3>Ready to evaluate this exact action.</h3>
-            <p>ProofGate checks delegated authority first. Telegraph is only queried when the action is already inside that boundary.</p>
-          </section>
-
-          <section className="developer-section" id="developers">
-            <div>
-              <span className="section-label">Developers</span>
-              <h2>Inspect the proof, not just the verdict.</h2>
-              <p>ProofGate freezes the action, checks delegated authority, determines the evidence required by consequence, and produces a deterministic decision record.</p>
+        </div>
+        <div className="menu-wrap">
+          <button className="menu-button" type="button" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+            <MenuIcon />
+          </button>
+          {menuOpen && (
+            <div className="menu-popover" role="menu">
+              <a href="https://github.com/emmy16-glitch/proof-gate" target="_blank" rel="noreferrer" role="menuitem">View source ↗</a>
+              <div className="menu-note">Live route only<br />Telegraph /v1/ask + x402</div>
             </div>
-            <div className="developer-actions">
-              <code>npm run demo</code>
-              <code>npm run proof:adaptive -- 7</code>
-              <a href="https://github.com/emmy16-glitch/proof-gate" target="_blank" rel="noreferrer">View source on GitHub <span>↗</span></a>
-            </div>
-          </section>
-
-          <section className="about-section" id="about">
-            <span className="section-label">Why Telegraph</span>
-            <h2>Intelligence informs the decision. It does not grant authority.</h2>
-            <p>Telegraph gives ProofGate access to live external intelligence. ProofGate combines that evidence with authority already delegated to the agent, then decides whether the exact action should be allowed, held, or blocked.</p>
-          </section>
-        </main>
-      )}
-
-      {(viewState === "preflight" || viewState === "live") && response && (
-        <main className="page authorization-page">
-          <div className="authorization-topline">
-            <button className="back-button" type="button" onClick={returnToSetup}><span aria-hidden="true">←</span> Back to setup</button>
-            <ContextPill />
-          </div>
-
-          <section className="authorization-heading">
-            <span className="section-label">Authorization</span>
-            <h1>{viewState === "live" ? "Checking this action." : "This action needs proof."}</h1>
-            <p>{viewState === "live"
-              ? "ProofGate is requesting live intelligence for this exact payment. The result is not predetermined."
-              : "The action is inside the agent's delegated authority. ProofGate now determines how much external intelligence the consequence deserves."}</p>
-          </section>
-
-          <section className="action-summary" aria-label="Action being checked">
-            <div className="summary-half">
-              <span className="summary-label">Boundary</span>
-              <strong>Up to {response.mandate.maxPerAction} USDC</strong>
-              <small>ProofGate Vendor · expires in 24 hours</small>
-            </div>
-            <div className="summary-divider" aria-hidden="true" />
-            <div className="summary-half">
-              <span className="summary-label">Proposed action</span>
-              <strong>Send {response.action.amount} USDC</strong>
-              <small>ProofGate Vendor · {response.action.reason}</small>
-            </div>
-          </section>
-
-          <div className="authorization-layout">
-            <section className="authorization-flow" aria-label="ProofGate authorization stages">
-              <article className="flow-stage passed">
-                <div className="flow-index">1</div>
-                <div className="flow-title">
-                  <span>Delegated authority</span>
-                  <small>Checked against the agent's boundary</small>
-                </div>
-                <div className="flow-content authority-checks">
-                  <div><span className="checkmark">✓</span><p><strong>Amount is within the limit</strong><small>{response.action.amount} USDC ≤ {response.mandate.maxPerAction} USDC</small></p></div>
-                  <div><span className="checkmark">✓</span><p><strong>Recipient is allowed</strong><small>Matches ProofGate Vendor · {shortValue(response.action.recipient)}</small></p></div>
-                  <div><span className="checkmark">✓</span><p><strong>Permission is active</strong><small>Mandate is valid for this authorization check</small></p></div>
-                </div>
-                <span className="stage-status pass">Passed</span>
-              </article>
-
-              <article className="flow-stage">
-                <div className="flow-index">2</div>
-                <div className="flow-title">
-                  <span>Consequence assessment</span>
-                  <small>How much proof should this action require?</small>
-                </div>
-                <div className="flow-content risk-content">
-                  <span className={`risk-pill ${response.riskTier.toLowerCase()}`}>{response.riskTier}</span>
-                  <p>{riskCopy(response.riskTier)}</p>
-                </div>
-                <span className="stage-status">Requires intelligence</span>
-              </article>
-
-              <article className={`flow-stage intelligence-stage ${viewState === "live" ? "active" : ""}`}>
-                <div className="flow-index">3</div>
-                <div className="flow-title">
-                  <span>External intelligence</span>
-                  <small>Requested through Telegraph only after authority passes</small>
-                </div>
-                <div className="flow-content intelligence-content">
-                  <div className="intelligence-header">
-                    <div>
-                      <strong>{viewState === "live" ? "Requesting live intelligence through Telegraph" : "ProofGate is ready to request live intelligence"}</strong>
-                      <small>{viewState === "live" ? "Waiting for Telegraph and the required Miners to return evidence." : "Nothing below has been queried yet."}</small>
-                    </div>
-                    {viewState === "live" && <span className="live-indicator"><i /> Live</span>}
-                  </div>
-
-                  <div className="intelligence-list">
-                    {response.requirements.map((requirement) => (
-                      <div className="intelligence-row" key={requirement.intent}>
-                        <div className="intelligence-copy">
-                          <span className="intel-mark" aria-hidden="true" />
-                          <p><strong>{requirement.label}</strong><small>{requirementCopy(requirement)}</small></p>
-                        </div>
-                        <span className={`intel-status ${viewState === "live" ? "working" : "waiting"}`}>{viewState === "live" ? "Requesting" : "Not requested"}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {viewState === "preflight" ? (
-                    <div className="live-action">
-                      <button className="primary live-button" type="button" onClick={runLiveVerification} disabled={running}>Run live verification <span>→</span></button>
-                      <small>Uses real Telegraph intelligence and x402 testnet payments. The proposed payment is not executed.</small>
-                    </div>
-                  ) : (
-                    <div className="live-action live-waiting">
-                      <span className="spinner" aria-hidden="true" />
-                      <p><strong>Verification in progress</strong><small>Keep this page open. ProofGate will show the actual decision returned by the completed evidence run.</small></p>
-                    </div>
-                  )}
-                </div>
-              </article>
-            </section>
-
-            <aside className="authorization-rail" aria-label="Authorization status">
-              <div className="rail-title">
-                <span className="rail-live-dot" />
-                <div><strong>Authorization status</strong><small>One action. One decision.</small></div>
-              </div>
-              <ol className="rail-steps">
-                <li className="done"><span>1</span><div><strong>Authority</strong><small>Passed</small></div></li>
-                <li className={viewState === "live" ? "active" : "current"}><span>2</span><div><strong>External verification</strong><small>{viewState === "live" ? "In progress" : "Ready"}</small></div></li>
-                <li><span>3</span><div><strong>Final decision</strong><small>ALLOW, HOLD, or BLOCK</small></div></li>
-                <li><span>4</span><div><strong>Execution</strong><small>Always separate</small></div></li>
-              </ol>
-              <div className="separation-note">
-                <strong>Authorization ≠ execution</strong>
-                <p>ProofGate decides whether an action may proceed. This public flow never sends the proposed payment.</p>
-              </div>
-            </aside>
-          </div>
-        </main>
-      )}
-
-      {viewState === "result" && response && decision && (
-        <main className="page result-page">
-          <div className="authorization-topline">
-            <button className="back-button" type="button" onClick={returnToSetup}><span aria-hidden="true">←</span> Back to setup</button>
-            <ContextPill />
-          </div>
-
-          <section className={`final-decision ${decision.toLowerCase()}`}>
-            <div className="final-mark"><span>{decision}</span></div>
-            <div className="final-copy">
-              <span className="section-label">Final authorization decision</span>
-              <h1>{decision === "BLOCK" ? "Permission denied." : decision === "HOLD" ? "Permission withheld." : "Evidence and policy checks passed."}</h1>
-              <p>{decision === "BLOCK"
-                ? response.reason === "mandate_amount_violation" ? "The proposed payment exceeds the agent's delegated limit." : "This action violates policy or received disqualifying evidence."
-                : decision === "HOLD"
-                  ? "ProofGate could not verify enough qualifying evidence to authorize this action."
-                  : "ProofGate returned ALLOW for this exact action. Execution is still a separate step and is not performed by this public flow."}</p>
-            </div>
-          </section>
-
-          <section className="result-grid">
-            <article className="result-card">
-              <span className="summary-label">Action</span>
-              <strong>{response.action.amount} USDC → ProofGate Vendor</strong>
-              <small>{response.action.chain} · {response.action.reason}</small>
-            </article>
-            <article className="result-card">
-              <span className="summary-label">Boundary</span>
-              <strong>Up to {response.mandate.maxPerAction} USDC</strong>
-              <small>Exact recipient · 24 hour mandate</small>
-            </article>
-            <article className="result-card">
-              <span className="summary-label">External evidence</span>
-              <strong>{response.evidence.status === "NOT_REQUESTED" ? "Not queried" : response.evidence.status}</strong>
-              <small>{response.evidence.status === "NOT_REQUESTED" ? "Blocked before external intelligence" : `${(Number(response.evidence.spendRaw) / 1_000_000).toFixed(4)} USDC evidence spend`}</small>
-            </article>
-          </section>
-
-          {response.evidence.status === "NOT_REQUESTED" ? (
-            <div className="decision-explanation">Telegraph was not queried because external intelligence cannot expand delegated authority.</div>
-          ) : (
-            <section className="evidence-result-list">
-              <div className="evidence-result-heading"><div><span className="section-label">Evidence</span><h2>What ProofGate received.</h2></div><span>{response.evidence.rejectedAttempts ?? 0} rejected attempt{response.evidence.rejectedAttempts === 1 ? "" : "s"}</span></div>
-              {response.requirements.map((requirement) => (
-                <div className="evidence-result-row" key={requirement.intent}>
-                  <div><strong>{requirement.label}</strong><small>{requirementCopy(requirement)}</small></div>
-                  <span className={completed.has(requirement.intent) ? "completed" : "incomplete"}>{completed.has(requirement.intent) ? "Completed" : "Not completed"}</span>
-                </div>
-              ))}
-            </section>
           )}
+        </div>
+      </header>
 
-          <details className="technical-proof final-proof">
-            <summary>View technical proof</summary>
-            <div className="proof-grid">
-              <div><span>Policy</span><strong>{response.policyId} · v{response.policyVersion}</strong></div>
-              <div><span>Risk tier</span><strong>{response.riskTier}</strong></div>
-              <div><span>Action hash</span><code title={response.action.hash}>{shortValue(response.action.hash)}</code></div>
-              <div><span>Mandate hash</span><code title={response.mandate.hash}>{shortValue(response.mandate.hash)}</code></div>
-              <div><span>Chain</span><strong>Base Sepolia · {response.action.chainId}</strong></div>
-              <div><span>Evidence spend</span><strong>{(Number(response.evidence.spendRaw) / 1_000_000).toFixed(4)} USDC</strong></div>
-              {response.evidence.bundleHash && <div><span>Evidence bundle</span><code title={response.evidence.bundleHash}>{shortValue(response.evidence.bundleHash)}</code></div>}
+      <nav className="top-tabs" aria-label="ProofGate sections">
+        <button type="button" className="active" aria-current="page">CHECK</button>
+        <button type="button" disabled title="Activity is wired next">ACTIVITY</button>
+        <button type="button" disabled title="Permissions is wired next">PERMISSIONS</button>
+        <button type="button" disabled title="Security Lab is wired next">SECURITY LAB</button>
+      </nav>
+
+      {phase === "idle" ? (
+        <main className="content-shell">
+          <section className="hero-block">
+            <div>
+              <h1>Control what an<br />agent can do.</h1>
+              <p>Set the limit. Give it a request.<br />ProofGate decides whether it can proceed.</p>
             </div>
-          </details>
-
-          <div className="result-footer-actions">
-            <button className="primary" type="button" onClick={returnToSetup}>Try another action <span>→</span></button>
-            <small>No protected payment was sent.</small>
-          </div>
-        </main>
-      )}
-
-      {viewState === "error" && (
-        <main className="page error-page">
-          <div className="authorization-topline">
-            <button className="back-button" type="button" onClick={returnToSetup}><span aria-hidden="true">←</span> Back to setup</button>
-            <ContextPill />
-          </div>
-          <section className="error-card">
-            <span className="section-label">No decision issued</span>
-            <h1>Verification stopped safely.</h1>
-            <p>{friendlyError(errorCode ?? "authorization_failed")}</p>
-            <div className="error-actions">
-              {response?.status === "REQUIRES_INTELLIGENCE" && <button className="primary" type="button" onClick={() => setViewState("preflight")}>Return to verification</button>}
-              <button className="text-button" type="button" onClick={returnToSetup}>Edit action</button>
+            <div className="hero-mark" aria-hidden="true">
+              <span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" />
+              <ShieldIcon />
             </div>
           </section>
+
+          <section className="authority-panel hard-shadow" aria-label="Agent permission">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">AGENT</span>
+                <strong className="agent-name">invoice-bot</strong>
+              </div>
+              <span className="active-badge">ACTIVE</span>
+            </div>
+
+            <div className="control-section">
+              <label>ALLOWED TO SEND (MAX)</label>
+              <div className="stepper" role="group" aria-label="Maximum payment">
+                <button type="button" aria-label="Decrease maximum payment" onClick={() => adjustLimit(-1)} disabled={limit <= 1}>−</button>
+                <output data-testid="limit-value">{formatUsdc(limit)} USDC</output>
+                <button type="button" aria-label="Increase maximum payment" onClick={() => adjustLimit(1)} disabled={limit >= MAX_USDC}>+</button>
+              </div>
+            </div>
+
+            <div className="control-section">
+              <label htmlFor="allowed-recipient">ONLY TO</label>
+              <div className="select-shell">
+                <select id="allowed-recipient" value={VENDOR_ADDRESS} disabled aria-label="Allowed recipient">
+                  <option value={VENDOR_ADDRESS}>ProofGate Vendor</option>
+                </select>
+                <ChevronIcon />
+              </div>
+            </div>
+
+            <div className="control-section">
+              <label>PERMISSION LASTS</label>
+              <div className="stepper" role="group" aria-label="Permission duration">
+                <button type="button" aria-label="Shorten permission duration" onClick={() => adjustDuration(-1)} disabled={durationIndex === 0}>−</button>
+                <output data-testid="duration-value">{durationLabel(durationSeconds)}</output>
+                <button type="button" aria-label="Extend permission duration" onClick={() => adjustDuration(1)} disabled={durationIndex === DURATION_STEPS.length - 1}>+</button>
+              </div>
+            </div>
+          </section>
+
+          <section className={`request-panel hard-shadow ${requestEditorOpen ? "editing" : ""}`} aria-label="Current request">
+            <button className="request-summary" type="button" aria-expanded={requestEditorOpen} onClick={() => setRequestEditorOpen((open) => !open)}>
+              <div>
+                <span className="eyebrow">CURRENT REQUEST</span>
+                <strong>{formatUsdc(amount)} USDC → ProofGate Vendor</strong>
+                <span>{reason}</span>
+                <span>Ref: {reference || "—"}</span>
+              </div>
+              <FileIcon />
+            </button>
+
+            {requestEditorOpen && (
+              <div className="request-editor" data-testid="request-editor">
+                <div className="editor-row">
+                  <label htmlFor="request-amount">AMOUNT</label>
+                  <div className="mini-stepper">
+                    <button type="button" aria-label="Decrease request amount" onClick={() => adjustAmount(-1)} disabled={amount <= 1}>−</button>
+                    <input id="request-amount" inputMode="decimal" value={amount.toFixed(2)} onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setAmount(Number.isFinite(next) ? next : 0);
+                      resetDecision();
+                    }} />
+                    <span>USDC</span>
+                    <button type="button" aria-label="Increase request amount" onClick={() => adjustAmount(1)} disabled={amount >= MAX_USDC}>+</button>
+                  </div>
+                </div>
+                <label className="editor-field">REASON
+                  <input value={reason} maxLength={256} onChange={(event) => { setReason(event.target.value); resetDecision(); }} />
+                </label>
+                <label className="editor-field">REFERENCE
+                  <input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); resetDecision(); }} />
+                </label>
+                <button className="done-editing" type="button" onClick={() => setRequestEditorOpen(false)}>DONE</button>
+              </div>
+            )}
+          </section>
+
+          <button className="check-button" type="button" onClick={checkRequest} disabled={!canCheck}>
+            <span>CHECK THIS REQUEST</span>
+            <span className="arrow" aria-hidden="true">→</span>
+          </button>
+
+          <div className="safety-note idle" role="status" aria-live="polite">
+            <LockIcon />
+            <div>
+              <strong>Nothing is sent yet.</strong>
+              <p>{statusMessage}</p>
+            </div>
+          </div>
         </main>
+      ) : isExecutionPhase(phase) && executionAuthorization ? (
+        <ExecutionScreen
+          phase={phase}
+          authorization={executionAuthorization}
+          response={executionResult}
+          error={executionError}
+          proofOpen={proofOpen}
+          onToggleProof={() => setProofOpen((open) => !open)}
+          onNewRequest={clearCheckState}
+        />
+      ) : (
+        <CheckingScreen
+          amount={amount}
+          reason={reason}
+          reference={reference}
+          phase={phase as CheckPhase}
+          stage={checkStage}
+          times={eventTimes}
+          result={result}
+          error={error}
+          secondaryLabel={secondaryLabel}
+          secondaryDisabled={secondaryDisabled}
+          onSecondaryAction={onSecondaryAction}
+        />
       )}
     </div>
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+function CheckingScreen(props: {
+  amount: number;
+  reason: string;
+  reference: string;
+  phase: CheckPhase;
+  stage: CheckStage;
+  times: EventTimes | null;
+  result: AuthorizationResponse | null;
+  error: string | null;
+  secondaryLabel: string;
+  secondaryDisabled: boolean;
+  onSecondaryAction: () => void;
+}) {
+  const { amount, reason, reference, phase, stage, times, result, error, secondaryLabel, secondaryDisabled, onSecondaryAction } = props;
+  const rulesDone = Boolean(times?.rules);
+  const rulesStopped = phase === "error" && !rulesDone;
+  const minerSkipped = stage === "decision" && result?.evidence.status === "NOT_REQUESTED";
+  const minersDone = stage === "decision" && !minerSkipped && phase === "ready";
+  const minersRunning = phase === "checking" && stage === "miners";
+  const minersStopped = phase === "error" && Boolean(times?.miners);
+  const rulesRunning = phase === "checking" && stage === "rules";
+  const decision = result?.decision;
+
+  const workingTitle = phase === "error"
+    ? "Stopped safely."
+    : phase === "ready"
+      ? `${decision ?? "DONE"}.`
+      : minersRunning
+        ? "Working..."
+        : "Checking rules...";
+
+  const workingCopy = phase === "error"
+    ? error ?? "The check stopped without granting permission."
+    : phase === "ready"
+      ? decision === "ALLOW"
+        ? "The checks passed. ProofGate is issuing the exact-action execution permit."
+        : "The checks finished without permission to execute the requested payment."
+      : minersRunning
+        ? "Independent evidence is being requested through Telegraph automatic Intent routing. Bounded x402 verification fees may be paid to real Miners. The requested payment has not been sent."
+        : "The real policy engine is checking the delegated authority first. No Miner has been paid at this stage.";
+
+  return (
+    <main className="checking-shell" data-testid="checking-screen">
+      <h1>CHECKING REQUEST</h1>
+
+      <section className="checking-request-card" aria-label="Request being checked">
+        <FileIcon />
+        <div>
+          <strong>{formatUsdc(amount)} USDC → ProofGate Vendor</strong>
+          <span>{reason} <b aria-hidden="true">•</b> Ref: {reference || "—"}</span>
+        </div>
+      </section>
+
+      <section className="check-timeline" aria-label="Live authorization progress">
+        <TimelineRow
+          number="01"
+          title="REQUEST RECEIVED"
+          copy="Request captured from invoice-bot"
+          state="done"
+          time={times?.request}
+        />
+        <TimelineRow
+          number="02"
+          title={rulesRunning ? "RULES CHECKING" : rulesDone ? "RULES CHECKED" : rulesStopped ? "RULES STOPPED" : "RULES PENDING"}
+          copy={rulesRunning ? "Authorization rules are being verified" : rulesDone ? "Authorization rules verified" : rulesStopped ? "Authorization rules did not complete" : "Waiting to verify authorization rules"}
+          state={rulesRunning ? "running" : rulesDone ? "done" : rulesStopped ? "error" : "pending"}
+          time={times?.rules}
+        />
+        <TimelineRow
+          number="03"
+          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : minersStopped ? "REAL CHECKS STOPPED" : rulesStopped ? "REAL CHECKS NOT STARTED" : "REAL CHECKS RUNNING"}
+          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real Miners and the policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : rulesStopped ? "Rules did not complete, so no Miner call was made" : "Waiting for authorization rules"}
+          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : minersStopped || rulesStopped ? "error" : "pending"}
+          time={times?.miners}
+        />
+        <TimelineRow
+          number="04"
+          title="DECISION"
+          copy={phase === "ready" ? decision === "ALLOW" ? "All required checks completed" : "Permission was not granted" : phase === "error" ? "The check stopped safely" : "Waiting for all checks to complete"}
+          state={phase === "ready" ? "decision" : phase === "error" ? "error" : "pending"}
+          time={times?.decision}
+          decision={phase === "ready" ? decision ?? undefined : phase === "error" ? "STOPPED" : undefined}
+        />
+      </section>
+
+      <section className={`checking-work-box ${phase}`} role="status" aria-live="polite">
+        <div className="terminal-icon" aria-hidden="true">&gt;_</div>
+        <div>
+          <strong>{workingTitle}</strong>
+          <p>{workingCopy}</p>
+        </div>
+      </section>
+
+      <button
+        className="cancel-check-button"
+        type="button"
+        onClick={onSecondaryAction}
+        disabled={secondaryDisabled}
+        aria-label={secondaryLabel}
+        title={secondaryDisabled ? "A real Miner request is already in flight, so the browser cannot safely promise cancellation." : undefined}
+      >
+        <span>{secondaryLabel}</span>
+        <span className="cancel-x" aria-hidden="true">{phase === "checking" ? "×" : "←"}</span>
+      </button>
+
+      <section className="checking-safety-note">
+        <div className="checking-lock-box"><LockIcon /></div>
+        <p><strong>No agent payment is made on this screen.</strong><br />ProofGate is deciding whether permission can be issued.</p>
+      </section>
+    </main>
+  );
+}
+
+type TimelineState = "done" | "running" | "pending" | "skipped" | "decision" | "error";
+
+function TimelineRow(props: {
+  number: string;
+  title: string;
+  copy: string;
+  state: TimelineState;
+  time?: string;
+  decision?: string;
+}) {
+  const { number, title, copy, state, time, decision } = props;
+  return (
+    <div className={`timeline-row timeline-${state}`} data-stage={number}>
+      <div className="timeline-number">{number}</div>
+      <div className="timeline-copy">
+        <strong>{title}</strong>
+        <span>{copy}</span>
+      </div>
+      <div className="timeline-status-wrap">
+        <div className="timeline-status" aria-label={decision ?? state}>
+          {state === "done" ? <CheckIcon /> : state === "running" ? <span className="status-spinner" /> : state === "decision" ? (decision === "ALLOW" ? <CheckIcon /> : <span className="status-symbol">!</span>) : state === "error" ? <span className="status-symbol">×</span> : <span className="status-dash">−</span>}
+        </div>
+        <span className="timeline-time">{decision ?? (state === "skipped" ? "NOT NEEDED" : time ?? (state === "pending" ? "PENDING" : "—"))}</span>
+      </div>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

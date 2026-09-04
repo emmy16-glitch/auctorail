@@ -9,6 +9,7 @@ import {
   type PermitVerificationCode,
   verifyPermit
 } from "../permit/permit.js";
+import type { PermitVerifier } from "../permit/signer.js";
 import type { PermitConsumptionStore } from "./permit-store.js";
 
 export type ExecutorCode =
@@ -16,6 +17,7 @@ export type ExecutorCode =
   | "execution_failed"
   | "execution_ambiguous"
   | "permit_store_unavailable"
+  | "permit_verifier_unavailable"
   | "permit_already_consumed"
   | PermitVerificationCode;
 
@@ -43,7 +45,10 @@ export interface ExecuteProtectedInput<T> {
   action: ActionContract;
   evidence: AuthorizationEvidence;
   decision: DecisionRecord;
-  secret: string;
+  /** Legacy/local verifier path. Kept for existing CLI and tests. */
+  secret?: string;
+  /** Production-safe verifier path for asymmetric permit signatures. */
+  verifier?: PermitVerifier;
   store: PermitConsumptionStore;
   /** Optional durable execution identity created before permit claim. */
   executionId?: string;
@@ -55,6 +60,15 @@ export async function executeProtectedAction<T>(
   input: ExecuteProtectedInput<T>
 ): Promise<ExecutorResult<T>> {
   const now = input.now ?? new Date();
+  const verifier = input.verifier ?? input.secret;
+
+  if (!verifier) {
+    return {
+      status: "FAILED",
+      code: "permit_verifier_unavailable",
+      error: "Permit verifier is unavailable."
+    };
+  }
 
   const verification = verifyPermit(
     input.mandate,
@@ -62,7 +76,7 @@ export async function executeProtectedAction<T>(
     input.action,
     input.evidence,
     input.decision,
-    input.secret,
+    verifier,
     { now }
   );
 

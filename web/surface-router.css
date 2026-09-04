@@ -1,0 +1,1 @@
+.pg-surface-tabs{grid-template-columns:1fr 1fr 1.35fr}.pg-surface-tabs button{min-height:38px;font-family:var(--sans);font-size:10px;font-weight:900;cursor:pointer}.pg-surface-tabs button:not(.active):hover,.pg-surface-tabs button:not(.active):focus-visible{background:#f1f1f1}@media(max-width:410px){.pg-surface-tabs button{min-height:32px;font-size:9px}}
