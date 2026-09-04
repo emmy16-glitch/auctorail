@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import "./checking-screen.css";
 
 const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "");
 const VENDOR_ADDRESS = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
@@ -9,6 +10,7 @@ const MAX_USDC = 10;
 const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
 
 type Phase = "idle" | "checking" | "ready" | "error";
+type CheckStage = "rules" | "miners" | "decision";
 type Decision = "ALLOW" | "HOLD" | "BLOCK";
 
 type AuthorizationResponse = {
@@ -51,7 +53,12 @@ type AuthorizationResponse = {
 };
 
 type ApiError = { error?: string; detail?: string };
-
+type EventTimes = {
+  request: string;
+  rules?: string;
+  miners?: string;
+  decision?: string;
+};
 type SvgProps = React.SVGProps<SVGSVGElement>;
 
 function ShieldIcon(props: SvgProps) {
@@ -96,6 +103,14 @@ function ChevronIcon(props: SvgProps) {
   );
 }
 
+function CheckIcon(props: SvgProps) {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" {...props}>
+      <path d="m7 17 6 6L26 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" />
+    </svg>
+  );
+}
+
 function formatUsdc(value: number): string {
   return value.toFixed(2);
 }
@@ -107,6 +122,11 @@ function durationLabel(seconds: number): string {
   return "24 hours";
 }
 
+function timeLabel(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function friendlyError(code: string): string {
   switch (code) {
     case "live_authorization_disabled":
@@ -115,6 +135,8 @@ function friendlyError(code: string): string {
       return "The live Telegraph wallet is not connected yet.";
     case "live_rate_limited":
       return "The live-check limit was reached. Try again later.";
+    case "policy_rate_limited":
+      return "The rules check is busy. Try again in a moment.";
     case "live_daily_budget_exhausted":
       return "Today's live evidence budget has been used.";
     case "live_verification_failed":
@@ -135,29 +157,36 @@ function App() {
   const [requestEditorOpen, setRequestEditorOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
+  const [checkStage, setCheckStage] = useState<CheckStage>("rules");
+  const [eventTimes, setEventTimes] = useState<EventTimes | null>(null);
   const [result, setResult] = useState<AuthorizationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const durationSeconds = DURATION_STEPS[durationIndex];
   const amountValid = Number.isFinite(amount) && amount > 0 && amount <= MAX_USDC;
   const limitValid = Number.isFinite(limit) && limit > 0 && limit <= MAX_USDC;
   const withinLimit = amountValid && limitValid && amount <= limit;
-  const canCheck = amountValid && limitValid && reason.trim().length > 0 && phase !== "checking";
+  const canCheck = amountValid && limitValid && reason.trim().length > 0 && phase === "idle";
 
   const statusMessage = useMemo(() => {
-    if (phase === "checking") return "Checking the rules, then asking real Telegraph Miners if evidence is required.";
-    if (phase === "ready" && result?.decision) {
-      const suffix = result.evidence.status === "NOT_REQUESTED" ? " No Miner call was needed because the rules already decided it." : " Real Miner evidence was used.";
-      return `Decision ready: ${result.decision}.${suffix}`;
-    }
-    if (phase === "error" && error) return error;
     if (!withinLimit) return "This request is above the current limit. ProofGate will block it before any Miner is paid.";
     return "Nothing is sent yet. We check the rules and real evidence first. You stay in control.";
-  }, [error, phase, result, withinLimit]);
+  }, [withinLimit]);
+
+  function clearCheckState() {
+    setPhase("idle");
+    setCheckStage("rules");
+    setEventTimes(null);
+    setResult(null);
+    setError(null);
+    requestIdRef.current = null;
+    abortRef.current = null;
+  }
 
   function resetDecision() {
-    setPhase("idle");
+    if (phase !== "idle") return;
     setResult(null);
     setError(null);
     requestIdRef.current = null;
@@ -178,45 +207,111 @@ function App() {
     resetDecision();
   }
 
+  function requestBody(mode: "policy" | "live") {
+    return {
+      mode,
+      agentId: AGENT_ID,
+      limit: formatUsdc(limit),
+      amount: formatUsdc(amount),
+      destination: VENDOR_ADDRESS,
+      durationSeconds,
+      reason: reason.trim(),
+      reference: reference.trim()
+    };
+  }
+
+  async function parseAuthorization(response: Response): Promise<AuthorizationResponse> {
+    const body = await response.json() as AuthorizationResponse & ApiError;
+    if (!response.ok) throw new Error(body.error ?? "authorization_failed");
+    return body;
+  }
+
   async function checkRequest() {
     if (!canCheck) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
     setPhase("checking");
+    setCheckStage("rules");
+    setEventTimes({ request: timeLabel() });
     setError(null);
     setResult(null);
 
-    const idempotencyKey = requestIdRef.current ?? crypto.randomUUID();
-    requestIdRef.current = idempotencyKey;
-
     try {
-      const response = await fetch(`${API_BASE}/api/authorize`, {
+      // First ask the real policy path. This is not a visual delay: the UI only
+      // marks RULES CHECKED after the server confirms the mandate/policy result.
+      const policyResponse = await fetch(`${API_BASE}/api/authorize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody("policy")),
+        signal: controller.signal
+      });
+      const policyResult = await parseAuthorization(policyResponse);
+      const rulesAt = timeLabel();
+      setEventTimes((current) => current ? { ...current, rules: rulesAt } : { request: rulesAt, rules: rulesAt });
+
+      // A rules-level block is final and deliberately skips every paid Miner call.
+      if (policyResult.status === "BLOCKED" || policyResult.decision === "BLOCK") {
+        setResult(policyResult);
+        setCheckStage("decision");
+        setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: rulesAt, rules: rulesAt, decision: timeLabel() });
+        setPhase("ready");
+        abortRef.current = null;
+        return;
+      }
+
+      if (policyResult.status !== "REQUIRES_INTELLIGENCE") {
+        throw new Error("policy_preflight_unexpected");
+      }
+
+      setCheckStage("miners");
+      setEventTimes((current) => current ? { ...current, miners: timeLabel() } : { request: rulesAt, rules: rulesAt, miners: timeLabel() });
+
+      const idempotencyKey = requestIdRef.current ?? crypto.randomUUID();
+      requestIdRef.current = idempotencyKey;
+
+      // Only now do we enter the paid live path. Telegraph chooses Miners through
+      // automatic Intent routing and x402 remains bounded by the server-side plan.
+      const liveResponse = await fetch(`${API_BASE}/api/authorize`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "idempotency-key": idempotencyKey
         },
-        body: JSON.stringify({
-          mode: "live",
-          agentId: AGENT_ID,
-          limit: formatUsdc(limit),
-          amount: formatUsdc(amount),
-          destination: VENDOR_ADDRESS,
-          durationSeconds,
-          reason: reason.trim(),
-          reference: reference.trim()
-        })
+        body: JSON.stringify(requestBody("live")),
+        signal: controller.signal
       });
+      const liveResult = await parseAuthorization(liveResponse);
 
-      const body = await response.json() as AuthorizationResponse & ApiError;
-      if (!response.ok) throw new Error(body.error ?? "authorization_failed");
-      setResult(body);
+      setResult(liveResult);
+      setCheckStage("decision");
+      setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: timeLabel(), decision: timeLabel() });
       setPhase("ready");
+      abortRef.current = null;
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       const code = caught instanceof Error ? caught.message : "authorization_failed";
       setError(friendlyError(code));
+      setCheckStage("decision");
+      setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: timeLabel(), decision: timeLabel() });
       setPhase("error");
       requestIdRef.current = null;
+      abortRef.current = null;
     }
   }
+
+  function cancelCheck() {
+    // Once the live x402 request has started, a browser abort cannot truthfully
+    // promise that an already-dispatched Miner payment is cancelled. Therefore
+    // cancellation is only enabled during the unpaid rules preflight.
+    if (phase !== "checking" || checkStage !== "rules") return;
+    abortRef.current?.abort();
+    clearCheckState();
+  }
+
+  const onSecondaryAction = phase === "checking" ? cancelCheck : clearCheckState;
+  const secondaryDisabled = phase === "checking" && checkStage !== "rules";
+  const secondaryLabel = phase === "checking" ? "CANCEL CHECK" : "BACK TO REQUEST";
 
   return (
     <div className="app-page">
@@ -253,106 +348,261 @@ function App() {
         <button type="button" disabled title="Security Lab is wired next">SECURITY LAB</button>
       </nav>
 
-      <main className="content-shell">
-        <section className="hero-block">
-          <div>
-            <h1>Control what an<br />agent can do.</h1>
-            <p>Set the limit. Give it a request.<br />ProofGate decides whether it can proceed.</p>
-          </div>
-          <div className="hero-mark" aria-hidden="true">
-            <span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" />
-            <ShieldIcon />
-          </div>
-        </section>
-
-        <section className="authority-panel hard-shadow" aria-label="Agent permission">
-          <div className="panel-heading">
+      {phase === "idle" ? (
+        <main className="content-shell">
+          <section className="hero-block">
             <div>
-              <span className="eyebrow">AGENT</span>
-              <strong className="agent-name">invoice-bot</strong>
+              <h1>Control what an<br />agent can do.</h1>
+              <p>Set the limit. Give it a request.<br />ProofGate decides whether it can proceed.</p>
             </div>
-            <span className="active-badge">ACTIVE</span>
-          </div>
+            <div className="hero-mark" aria-hidden="true">
+              <span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" />
+              <ShieldIcon />
+            </div>
+          </section>
 
-          <div className="control-section">
-            <label>ALLOWED TO SEND (MAX)</label>
-            <div className="stepper" role="group" aria-label="Maximum payment">
-              <button type="button" aria-label="Decrease maximum payment" onClick={() => adjustLimit(-1)} disabled={limit <= 1}>−</button>
-              <output data-testid="limit-value">{formatUsdc(limit)} USDC</output>
-              <button type="button" aria-label="Increase maximum payment" onClick={() => adjustLimit(1)} disabled={limit >= MAX_USDC}>+</button>
+          <section className="authority-panel hard-shadow" aria-label="Agent permission">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">AGENT</span>
+                <strong className="agent-name">invoice-bot</strong>
+              </div>
+              <span className="active-badge">ACTIVE</span>
             </div>
-          </div>
 
-          <div className="control-section">
-            <label htmlFor="allowed-recipient">ONLY TO</label>
-            <div className="select-shell">
-              <select id="allowed-recipient" value={VENDOR_ADDRESS} disabled aria-label="Allowed recipient">
-                <option value={VENDOR_ADDRESS}>ProofGate Vendor</option>
-              </select>
-              <ChevronIcon />
+            <div className="control-section">
+              <label>ALLOWED TO SEND (MAX)</label>
+              <div className="stepper" role="group" aria-label="Maximum payment">
+                <button type="button" aria-label="Decrease maximum payment" onClick={() => adjustLimit(-1)} disabled={limit <= 1}>−</button>
+                <output data-testid="limit-value">{formatUsdc(limit)} USDC</output>
+                <button type="button" aria-label="Increase maximum payment" onClick={() => adjustLimit(1)} disabled={limit >= MAX_USDC}>+</button>
+              </div>
             </div>
-          </div>
 
-          <div className="control-section">
-            <label>PERMISSION LASTS</label>
-            <div className="stepper" role="group" aria-label="Permission duration">
-              <button type="button" aria-label="Shorten permission duration" onClick={() => adjustDuration(-1)} disabled={durationIndex === 0}>−</button>
-              <output data-testid="duration-value">{durationLabel(durationSeconds)}</output>
-              <button type="button" aria-label="Extend permission duration" onClick={() => adjustDuration(1)} disabled={durationIndex === DURATION_STEPS.length - 1}>+</button>
+            <div className="control-section">
+              <label htmlFor="allowed-recipient">ONLY TO</label>
+              <div className="select-shell">
+                <select id="allowed-recipient" value={VENDOR_ADDRESS} disabled aria-label="Allowed recipient">
+                  <option value={VENDOR_ADDRESS}>ProofGate Vendor</option>
+                </select>
+                <ChevronIcon />
+              </div>
             </div>
-          </div>
-        </section>
 
-        <section className={`request-panel hard-shadow ${requestEditorOpen ? "editing" : ""}`} aria-label="Current request">
-          <button className="request-summary" type="button" aria-expanded={requestEditorOpen} onClick={() => setRequestEditorOpen((open) => !open)}>
-            <div>
-              <span className="eyebrow">CURRENT REQUEST</span>
-              <strong>{formatUsdc(amount)} USDC → ProofGate Vendor</strong>
-              <span>{reason}</span>
-              <span>Ref: {reference || "—"}</span>
+            <div className="control-section">
+              <label>PERMISSION LASTS</label>
+              <div className="stepper" role="group" aria-label="Permission duration">
+                <button type="button" aria-label="Shorten permission duration" onClick={() => adjustDuration(-1)} disabled={durationIndex === 0}>−</button>
+                <output data-testid="duration-value">{durationLabel(durationSeconds)}</output>
+                <button type="button" aria-label="Extend permission duration" onClick={() => adjustDuration(1)} disabled={durationIndex === DURATION_STEPS.length - 1}>+</button>
+              </div>
             </div>
-            <FileIcon />
+          </section>
+
+          <section className={`request-panel hard-shadow ${requestEditorOpen ? "editing" : ""}`} aria-label="Current request">
+            <button className="request-summary" type="button" aria-expanded={requestEditorOpen} onClick={() => setRequestEditorOpen((open) => !open)}>
+              <div>
+                <span className="eyebrow">CURRENT REQUEST</span>
+                <strong>{formatUsdc(amount)} USDC → ProofGate Vendor</strong>
+                <span>{reason}</span>
+                <span>Ref: {reference || "—"}</span>
+              </div>
+              <FileIcon />
+            </button>
+
+            {requestEditorOpen && (
+              <div className="request-editor" data-testid="request-editor">
+                <div className="editor-row">
+                  <label htmlFor="request-amount">AMOUNT</label>
+                  <div className="mini-stepper">
+                    <button type="button" aria-label="Decrease request amount" onClick={() => adjustAmount(-1)} disabled={amount <= 1}>−</button>
+                    <input id="request-amount" inputMode="decimal" value={amount.toFixed(2)} onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setAmount(Number.isFinite(next) ? next : 0);
+                      resetDecision();
+                    }} />
+                    <span>USDC</span>
+                    <button type="button" aria-label="Increase request amount" onClick={() => adjustAmount(1)} disabled={amount >= MAX_USDC}>+</button>
+                  </div>
+                </div>
+                <label className="editor-field">REASON
+                  <input value={reason} maxLength={256} onChange={(event) => { setReason(event.target.value); resetDecision(); }} />
+                </label>
+                <label className="editor-field">REFERENCE
+                  <input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); resetDecision(); }} />
+                </label>
+                <button className="done-editing" type="button" onClick={() => setRequestEditorOpen(false)}>DONE</button>
+              </div>
+            )}
+          </section>
+
+          <button className="check-button" type="button" onClick={checkRequest} disabled={!canCheck}>
+            <span>CHECK THIS REQUEST</span>
+            <span className="arrow" aria-hidden="true">→</span>
           </button>
 
-          {requestEditorOpen && (
-            <div className="request-editor" data-testid="request-editor">
-              <div className="editor-row">
-                <label htmlFor="request-amount">AMOUNT</label>
-                <div className="mini-stepper">
-                  <button type="button" aria-label="Decrease request amount" onClick={() => adjustAmount(-1)} disabled={amount <= 1}>−</button>
-                  <input id="request-amount" inputMode="decimal" value={amount.toFixed(2)} onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setAmount(Number.isFinite(next) ? next : 0);
-                    resetDecision();
-                  }} />
-                  <span>USDC</span>
-                  <button type="button" aria-label="Increase request amount" onClick={() => adjustAmount(1)} disabled={amount >= MAX_USDC}>+</button>
-                </div>
-              </div>
-              <label className="editor-field">REASON
-                <input value={reason} maxLength={256} onChange={(event) => { setReason(event.target.value); resetDecision(); }} />
-              </label>
-              <label className="editor-field">REFERENCE
-                <input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); resetDecision(); }} />
-              </label>
-              <button className="done-editing" type="button" onClick={() => setRequestEditorOpen(false)}>DONE</button>
+          <div className="safety-note idle" role="status" aria-live="polite">
+            <LockIcon />
+            <div>
+              <strong>Nothing is sent yet.</strong>
+              <p>{statusMessage}</p>
             </div>
-          )}
-        </section>
-
-        <button className={`check-button ${phase === "checking" ? "is-loading" : ""}`} type="button" onClick={checkRequest} disabled={!canCheck} aria-busy={phase === "checking"}>
-          <span>{phase === "checking" ? "CHECKING REAL MINERS" : phase === "ready" ? "CHECK AGAIN" : "CHECK THIS REQUEST"}</span>
-          <span className="arrow" aria-hidden="true">→</span>
-        </button>
-
-        <div className={`safety-note ${phase}`} role="status" aria-live="polite">
-          <LockIcon />
-          <div>
-            <strong>{phase === "ready" && result?.decision ? `${result.decision} — decision ready.` : phase === "checking" ? "Checking now…" : phase === "error" ? "Check stopped safely." : "Nothing is sent yet."}</strong>
-            <p>{statusMessage}</p>
           </div>
+        </main>
+      ) : (
+        <CheckingScreen
+          amount={amount}
+          reason={reason}
+          reference={reference}
+          phase={phase}
+          stage={checkStage}
+          times={eventTimes}
+          result={result}
+          error={error}
+          secondaryLabel={secondaryLabel}
+          secondaryDisabled={secondaryDisabled}
+          onSecondaryAction={onSecondaryAction}
+        />
+      )}
+    </div>
+  );
+}
+
+function CheckingScreen(props: {
+  amount: number;
+  reason: string;
+  reference: string;
+  phase: Exclude<Phase, "idle">;
+  stage: CheckStage;
+  times: EventTimes | null;
+  result: AuthorizationResponse | null;
+  error: string | null;
+  secondaryLabel: string;
+  secondaryDisabled: boolean;
+  onSecondaryAction: () => void;
+}) {
+  const { amount, reason, reference, phase, stage, times, result, error, secondaryLabel, secondaryDisabled, onSecondaryAction } = props;
+  const rulesDone = stage === "miners" || stage === "decision";
+  const minerSkipped = stage === "decision" && result?.evidence.status === "NOT_REQUESTED";
+  const minersDone = stage === "decision" && !minerSkipped && phase === "ready";
+  const minersRunning = phase === "checking" && stage === "miners";
+  const rulesRunning = phase === "checking" && stage === "rules";
+  const decision = result?.decision;
+
+  const workingTitle = phase === "error"
+    ? "Stopped safely."
+    : phase === "ready"
+      ? `${decision ?? "DONE"}.`
+      : minersRunning
+        ? "Working..."
+        : "Checking rules...";
+
+  const workingCopy = phase === "error"
+    ? error ?? "The check stopped without granting permission."
+    : phase === "ready"
+      ? decision === "ALLOW"
+        ? "The checks finished and permission can now be prepared. The requested payment has not been executed."
+        : "The checks finished without permission to execute the requested payment."
+      : minersRunning
+        ? "Independent evidence is being requested through Telegraph automatic Intent routing. Bounded x402 verification fees may be paid to real Miners. The requested payment has not been sent."
+        : "The real policy engine is checking the delegated authority first. No Miner has been paid at this stage.";
+
+  return (
+    <main className="checking-shell" data-testid="checking-screen">
+      <h1>CHECKING REQUEST</h1>
+
+      <section className="checking-request-card" aria-label="Request being checked">
+        <FileIcon />
+        <div>
+          <strong>{formatUsdc(amount)} USDC → ProofGate Vendor</strong>
+          <span>{reason} <b aria-hidden="true">•</b> Ref: {reference || "—"}</span>
         </div>
-      </main>
+      </section>
+
+      <section className="check-timeline" aria-label="Live authorization progress">
+        <TimelineRow
+          number="01"
+          title="REQUEST RECEIVED"
+          copy="Request captured from invoice-bot"
+          state="done"
+          time={times?.request}
+        />
+        <TimelineRow
+          number="02"
+          title={rulesRunning ? "RULES CHECKING" : "RULES CHECKED"}
+          copy={rulesRunning ? "Authorization rules are being verified" : "Authorization rules verified"}
+          state={rulesRunning ? "running" : rulesDone ? "done" : "pending"}
+          time={times?.rules}
+        />
+        <TimelineRow
+          number="03"
+          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : "REAL CHECKS RUNNING"}
+          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : "Waiting for authorization rules"}
+          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : "pending"}
+          time={times?.miners}
+        />
+        <TimelineRow
+          number="04"
+          title="DECISION"
+          copy={phase === "ready" ? decision === "ALLOW" ? "All required checks completed" : "Permission was not granted" : phase === "error" ? "The check stopped safely" : "Waiting for all checks to complete"}
+          state={phase === "ready" ? "decision" : phase === "error" ? "error" : "pending"}
+          time={times?.decision}
+          decision={phase === "ready" ? decision ?? undefined : phase === "error" ? "STOPPED" : undefined}
+        />
+      </section>
+
+      <section className={`checking-work-box ${phase}`} role="status" aria-live="polite">
+        <div className="terminal-icon" aria-hidden="true">&gt;_</div>
+        <div>
+          <strong>{workingTitle}</strong>
+          <p>{workingCopy}</p>
+        </div>
+      </section>
+
+      <button
+        className="cancel-check-button"
+        type="button"
+        onClick={onSecondaryAction}
+        disabled={secondaryDisabled}
+        aria-label={secondaryLabel}
+        title={secondaryDisabled ? "A real Miner request is already in flight, so the browser cannot safely promise cancellation." : undefined}
+      >
+        <span>{secondaryLabel}</span>
+        <span className="cancel-x" aria-hidden="true">{phase === "checking" ? "×" : "←"}</span>
+      </button>
+
+      <section className="checking-safety-note">
+        <div className="checking-lock-box"><LockIcon /></div>
+        <p><strong>No agent payment is made on this screen.</strong><br />ProofGate is deciding whether permission can be issued.</p>
+      </section>
+    </main>
+  );
+}
+
+type TimelineState = "done" | "running" | "pending" | "skipped" | "decision" | "error";
+
+function TimelineRow(props: {
+  number: string;
+  title: string;
+  copy: string;
+  state: TimelineState;
+  time?: string;
+  decision?: string;
+}) {
+  const { number, title, copy, state, time, decision } = props;
+  return (
+    <div className={`timeline-row timeline-${state}`} data-stage={number}>
+      <div className="timeline-number">{number}</div>
+      <div className="timeline-copy">
+        <strong>{title}</strong>
+        <span>{copy}</span>
+      </div>
+      <div className="timeline-status-wrap">
+        <div className="timeline-status" aria-label={decision ?? state}>
+          {state === "done" ? <CheckIcon /> : state === "running" ? <span className="status-spinner" /> : state === "decision" ? (decision === "ALLOW" ? <CheckIcon /> : <span className="status-symbol">!</span>) : state === "error" ? <span className="status-symbol">×</span> : <span className="status-dash">−</span>}
+        </div>
+        <span className="timeline-time">{decision ?? (state === "skipped" ? "NOT NEEDED" : time ?? (state === "pending" ? "PENDING" : "—"))}</span>
+      </div>
     </div>
   );
 }
