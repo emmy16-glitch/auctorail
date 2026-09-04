@@ -57,7 +57,7 @@ jobs:
           exit 1
 
       - name: Run first-screen Playwright QA
-        run: python qa/first-screen-playwright.py
+        run: python qa/first-screen-playwright-runner.py
 
       - name: Upload UI screenshots
         if: always()
