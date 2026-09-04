@@ -326,7 +326,7 @@ const server = createServer(async (request, response) => {
       allowedActionTypes: ["payment"],
       allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
       allowedAssets: [BASE_SEPOLIA_USDC],
-      allowedDestinations: [destination],
+      allowedDestinations: [VENDOR],
       maxPerActionRaw: limitRaw,
       requiredIntents: [...ADAPTIVE_EVIDENCE_INTENTS],
       policyId: "payments.adaptive.v1",
@@ -374,7 +374,7 @@ const server = createServer(async (request, response) => {
     }
 
     cleanupIdempotencyCache();
-    const fingerprint = `${action.actionHash}:${mandate.mandateHash}:${reference}`;
+    const fingerprint = `${action.actionHash}:${limitRaw}:${destination.toLowerCase()}:${durationSeconds}:${reference}`;
     const existing = idempotentLiveRequests.get(idempotencyKey);
     if (existing) {
       if (existing.fingerprint !== fingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
