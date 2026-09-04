@@ -56,8 +56,11 @@ jobs:
           cat /tmp/proofgate-vite.log
           exit 1
 
-      - name: Run first-screen Playwright QA
+      - name: Run functional Playwright QA
         run: python qa/first-screen-playwright-runner.py
+
+      - name: Run typography and visual-fidelity audit
+        run: python qa/ui-fidelity-audit.py
 
       - name: Upload UI screenshots
         if: always()
