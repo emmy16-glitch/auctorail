@@ -1,3 +1,5 @@
+@import "./reference-fidelity.css";
+
 /* Measured Screen 2 fidelity corrections.
    Imported first by checking-screen.css, so these measured corrections use
    !important only where they intentionally override the responsive base. */
