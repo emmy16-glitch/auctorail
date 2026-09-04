@@ -490,6 +490,7 @@ function CheckingScreen(props: {
   const minerSkipped = stage === "decision" && result?.evidence.status === "NOT_REQUESTED";
   const minersDone = stage === "decision" && !minerSkipped && phase === "ready";
   const minersRunning = phase === "checking" && stage === "miners";
+  const minersStopped = phase === "error" && Boolean(times?.miners);
   const rulesRunning = phase === "checking" && stage === "rules";
   const decision = result?.decision;
 
@@ -540,9 +541,9 @@ function CheckingScreen(props: {
         />
         <TimelineRow
           number="03"
-          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : "REAL CHECKS RUNNING"}
-          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : "Waiting for authorization rules"}
-          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : "pending"}
+          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : minersStopped ? "REAL CHECKS STOPPED" : "REAL CHECKS RUNNING"}
+          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : "Waiting for authorization rules"}
+          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : minersStopped ? "error" : "pending"}
           time={times?.miners}
         />
         <TimelineRow
