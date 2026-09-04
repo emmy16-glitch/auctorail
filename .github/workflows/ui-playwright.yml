@@ -65,6 +65,9 @@ jobs:
       - name: Run truthful error-state audit
         run: python qa/error-state-fidelity.py
 
+      - name: Run dynamic limit-warning audit
+        run: python qa/limit-warning-fidelity.py
+
       - name: Upload UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
