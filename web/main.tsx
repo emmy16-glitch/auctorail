@@ -144,6 +144,11 @@ function friendlyError(code: string): string {
       return "The real Miner check did not finish safely. Nothing was approved.";
     case "frozen_request_mismatch":
       return "The request changed after the rules check. Start again before any live Miner check.";
+    case "frozen_request_required":
+    case "frozen_request_invalid":
+    case "frozen_request_expired":
+    case "frozen_request_consumed":
+      return "The verified preflight is no longer valid. Start the check again before any live Miner request.";
     case "origin_not_allowed":
       return "This page is not allowed to use the ProofGate API.";
     default:
@@ -175,7 +180,7 @@ function App() {
 
   const statusMessage = useMemo(() => {
     if (!withinLimit) return "This request is above the current limit. ProofGate will block it before any Miner is paid.";
-    return "Nothing is sent yet. We check the rules and real evidence first. You stay in control.";
+    return "We check the rules and real evidence first. You stay in control.";
   }, [withinLimit]);
 
   function clearCheckState() {
@@ -486,7 +491,8 @@ function CheckingScreen(props: {
   onSecondaryAction: () => void;
 }) {
   const { amount, reason, reference, phase, stage, times, result, error, secondaryLabel, secondaryDisabled, onSecondaryAction } = props;
-  const rulesDone = stage === "miners" || stage === "decision";
+  const rulesDone = Boolean(times?.rules);
+  const rulesStopped = phase === "error" && !rulesDone;
   const minerSkipped = stage === "decision" && result?.evidence.status === "NOT_REQUESTED";
   const minersDone = stage === "decision" && !minerSkipped && phase === "ready";
   const minersRunning = phase === "checking" && stage === "miners";
@@ -534,16 +540,16 @@ function CheckingScreen(props: {
         />
         <TimelineRow
           number="02"
-          title={rulesRunning ? "RULES CHECKING" : "RULES CHECKED"}
-          copy={rulesRunning ? "Authorization rules are being verified" : "Authorization rules verified"}
-          state={rulesRunning ? "running" : rulesDone ? "done" : "pending"}
+          title={rulesRunning ? "RULES CHECKING" : rulesDone ? "RULES CHECKED" : rulesStopped ? "RULES STOPPED" : "RULES PENDING"}
+          copy={rulesRunning ? "Authorization rules are being verified" : rulesDone ? "Authorization rules verified" : rulesStopped ? "Authorization rules did not complete" : "Waiting to verify authorization rules"}
+          state={rulesRunning ? "running" : rulesDone ? "done" : rulesStopped ? "error" : "pending"}
           time={times?.rules}
         />
         <TimelineRow
           number="03"
-          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : minersStopped ? "REAL CHECKS STOPPED" : "REAL CHECKS RUNNING"}
-          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : "Waiting for authorization rules"}
-          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : minersStopped ? "error" : "pending"}
+          title={minerSkipped ? "REAL CHECKS NOT NEEDED" : minersDone ? "REAL CHECKS COMPLETE" : minersStopped ? "REAL CHECKS STOPPED" : rulesStopped ? "REAL CHECKS NOT STARTED" : "REAL CHECKS RUNNING"}
+          copy={minerSkipped ? "Rules blocked this request before any Miner call" : minersRunning ? "Independent checks with real miners and policy engine" : minersDone ? "Independent Miner evidence collected" : minersStopped ? "Live Miner verification did not produce a trusted result" : rulesStopped ? "Rules did not complete, so no Miner call was made" : "Waiting for authorization rules"}
+          state={minerSkipped ? "skipped" : minersRunning ? "running" : minersDone ? "done" : minersStopped || rulesStopped ? "error" : "pending"}
           time={times?.miners}
         />
         <TimelineRow
