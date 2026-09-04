@@ -34,7 +34,7 @@
     "web:dev": "vite --host 0.0.0.0",
     "web:build": "vite build",
     "web:preview": "vite preview --host 0.0.0.0",
-    "web:api": "tsx web/api.ts"
+    "web:api": "tsx web/api-bundle.ts"
   },
   "keywords": [
     "telegraph",
