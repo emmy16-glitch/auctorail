@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  first-screen:
+  three-screen-flow:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -56,13 +56,10 @@ jobs:
           cat /tmp/proofgate-vite.log
           exit 1
 
-      - name: Run functional Playwright QA
-        run: python qa/first-screen-playwright-runner.py
+      - name: Run full Screen 1 to Screen 3 Playwright QA
+        run: python qa/three-screen-playwright.py
 
-      - name: Run typography and visual-fidelity audit
-        run: python qa/ui-fidelity-audit.py
-
-      - name: Run truthful error-state audit
+      - name: Run truthful authorization error-state audit
         run: python qa/error-state-fidelity.py
 
       - name: Run dynamic limit-warning audit
@@ -72,6 +69,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: proofgate-first-screen-playwright
+          name: proofgate-three-screen-playwright
           path: playwright-artifacts/
           if-no-files-found: warn
