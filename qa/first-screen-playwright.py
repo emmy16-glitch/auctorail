@@ -75,17 +75,20 @@ async def reference_state_checks(page):
     assert "Arial" in brand_family or "Helvetica" in brand_family, f"brand should use heavy sans: {brand_family}"
     assert "Courier New" in mono_family, f"subtitle should use reference mono face: {mono_family}"
 
-    # At the reference mobile width the explicit BRs must remain exactly two lines,
-    # rather than soft wrapping into the four-line version we had before this QA pass.
+    # The reference has two deliberate headline lines and two deliberate copy lines.
+    # A soft wrap here was the main reason the first implementation looked stretched.
     await assert_two_line_block(page.locator(".hero-block h1"))
     await assert_two_line_block(page.locator(".hero-block p"))
 
     # Reference-derived mobile geometry (390x844 logical viewport).
-    await assert_box(page.locator(".live-strip"), height=30, tolerance=1)
+    await assert_box(page.locator(".live-strip"), height=27, tolerance=1)
     await assert_box(page.locator(".brand-row"), height=60, tolerance=2)
-    await assert_box(page.locator(".top-tabs"), height=38, tolerance=3)
+    await assert_box(page.locator(".top-tabs"), height=32, tolerance=2)
     await assert_box(page.get_by_role("button", name="Open menu"), width=44, height=44, tolerance=1)
     await assert_box(page.locator(".check-button"), height=52, tolerance=2)
+
+    hero_box = await page.locator(".hero-block h1").bounding_box()
+    assert hero_box is not None and 18 <= hero_box["x"] <= 22, f"hero left gutter drifted: {hero_box}"
 
     panel_box = await page.locator(".authority-panel").bounding_box()
     request_box = await page.locator(".request-panel").bounding_box()
