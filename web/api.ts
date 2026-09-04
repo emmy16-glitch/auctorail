@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -23,6 +24,7 @@ const TRUST_PROXY = process.env.PROOFGATE_TRUST_PROXY === "true";
 const LIVE_PER_HOUR = positiveInteger(process.env.PROOFGATE_LIVE_REQUESTS_PER_HOUR, 3);
 const POLICY_PER_MINUTE = positiveInteger(process.env.PROOFGATE_POLICY_REQUESTS_PER_MINUTE, 30);
 const LIVE_DAILY_BUDGET_RAW = unsignedEnv(process.env.PROOFGATE_LIVE_DAILY_BUDGET_RAW, 500_000n);
+const FROZEN_REQUEST_TTL_MS = 120_000;
 const ALLOWED_ORIGINS = new Set(
   (process.env.PROOFGATE_WEB_ORIGINS ?? "http://localhost:5173")
     .split(",")
@@ -41,8 +43,18 @@ interface IdempotentEntry {
   createdAt: number;
 }
 
+interface FrozenRequestEntry {
+  fingerprint: string;
+  issuedAt: string;
+  expiresAt: string;
+  createdAt: number;
+  validUntil: number;
+  consumedBy?: string;
+}
+
 const rateWindows = new Map<string, number[]>();
 const idempotentLiveRequests = new Map<string, IdempotentEntry>();
+const frozenRequests = new Map<string, FrozenRequestEntry>();
 let budgetDay = utcDay();
 let dailySpentRaw = 0n;
 let dailyReservedRaw = 0n;
@@ -123,6 +135,16 @@ function cleanupIdempotencyCache(): void {
   for (const [key] of oldest.slice(0, idempotentLiveRequests.size - 200)) idempotentLiveRequests.delete(key);
 }
 
+function cleanupFrozenRequests(): void {
+  const now = Date.now();
+  for (const [key, entry] of frozenRequests) {
+    if (entry.validUntil < now) frozenRequests.delete(key);
+  }
+  if (frozenRequests.size <= 200) return;
+  const oldest = [...frozenRequests.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+  for (const [key] of oldest.slice(0, frozenRequests.size - 200)) frozenRequests.delete(key);
+}
+
 function readMiners(): TelegraphMinerRecord[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(process.cwd(), "data", "miners.json"), "utf8"));
@@ -193,9 +215,11 @@ function commonRecord(input: {
   plan: ReturnType<typeof createAdaptiveEvidencePlan>;
   reference: string;
   freezeFingerprint: string;
+  freezeId?: string;
 }) {
   return {
     freezeFingerprint: input.freezeFingerprint,
+    ...(input.freezeId ? { freezeId: input.freezeId } : {}),
     riskTier: input.plan.riskTier,
     routing: {
       mode: "TELEGRAPH_AUTO_INTENT",
@@ -231,6 +255,7 @@ async function performLiveAuthorization(input: {
   plan: ReturnType<typeof createAdaptiveEvidencePlan>;
   reference: string;
   freezeFingerprint: string;
+  freezeId: string;
   privateKey: `0x${string}`;
   now: Date;
 }): Promise<ApiReply> {
@@ -321,7 +346,7 @@ const server = createServer(async (request, response) => {
       durationSeconds?: unknown;
       reason: unknown;
       reference?: unknown;
-      freezeFingerprint?: unknown;
+      freezeId?: unknown;
     };
     const mode = input.mode === undefined || input.mode === "policy" ? "policy" : input.mode === "live" ? "live" : null;
     if (!mode) return json(request, response, 400, { error: "mode_invalid" });
@@ -353,8 +378,28 @@ const server = createServer(async (request, response) => {
       reference
     });
 
-    if (mode === "live" && input.freezeFingerprint !== freezeFingerprint) {
-      return json(request, response, 409, { error: "frozen_request_mismatch" });
+    cleanupFrozenRequests();
+    let freezeId: string | undefined;
+    let issuedAt = new Date(now.getTime() - 60_000).toISOString();
+    let expiresAt = new Date(now.getTime() + durationSeconds * 1_000).toISOString();
+    let frozenEntry: FrozenRequestEntry | undefined;
+
+    if (mode === "live") {
+      if (typeof input.freezeId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.freezeId)) {
+        return json(request, response, 400, { error: "frozen_request_token_required" });
+      }
+      freezeId = input.freezeId;
+      frozenEntry = frozenRequests.get(freezeId);
+      if (!frozenEntry) return json(request, response, 409, { error: "frozen_request_invalid" });
+      if (frozenEntry.validUntil < now.getTime()) {
+        frozenRequests.delete(freezeId);
+        return json(request, response, 409, { error: "frozen_request_expired" });
+      }
+      if (frozenEntry.fingerprint !== freezeFingerprint) {
+        return json(request, response, 409, { error: "frozen_request_mismatch" });
+      }
+      issuedAt = frozenEntry.issuedAt;
+      expiresAt = frozenEntry.expiresAt;
     }
 
     const plan = createAdaptiveEvidencePlan(action);
@@ -370,11 +415,11 @@ const server = createServer(async (request, response) => {
       requiredIntents: [...ADAPTIVE_EVIDENCE_INTENTS],
       policyId: "payments.adaptive.v1",
       policyVersion: 1,
-      issuedAt: new Date(now.getTime() - 60_000).toISOString(),
-      expiresAt: new Date(now.getTime() + durationSeconds * 1_000).toISOString(),
+      issuedAt,
+      expiresAt,
       version: 1
     });
-    const common = commonRecord({ action, mandate, plan, reference, freezeFingerprint });
+    const common = commonRecord({ action, mandate, plan, reference, freezeFingerprint, ...(freezeId ? { freezeId } : {}) });
 
     const mandateEvaluation = evaluateMandate(mandate, action, AGENT_ID, now);
     if (!mandateEvaluation.valid) {
@@ -392,17 +437,27 @@ const server = createServer(async (request, response) => {
     }
 
     if (mode === "policy") {
+      freezeId = randomUUID();
+      const validUntil = Math.min(Date.parse(expiresAt), now.getTime() + FROZEN_REQUEST_TTL_MS);
+      frozenRequests.set(freezeId, {
+        fingerprint: freezeFingerprint,
+        issuedAt,
+        expiresAt,
+        createdAt: now.getTime(),
+        validUntil
+      });
       return json(request, response, 200, {
         status: "REQUIRES_INTELLIGENCE",
         decision: null,
         reason: "external_intelligence_required",
         policyId: "payments.adaptive.v1",
         policyVersion: 1,
-        ...common,
+        ...commonRecord({ action, mandate, plan, reference, freezeFingerprint, freezeId }),
         evidence: { status: "NOT_REQUESTED", spendRaw: "0" }
       });
     }
 
+    if (!freezeId || !frozenEntry) return json(request, response, 409, { error: "frozen_request_invalid" });
     if (!LIVE_ENABLED) return json(request, response, 503, { error: "live_authorization_disabled" });
     const privateKey = process.env.TELEGRAPH_EVM_PRIVATE_KEY as `0x${string}` | undefined;
     if (!privateKey) return json(request, response, 503, { error: "telegraph_credentials_unavailable" });
@@ -413,19 +468,25 @@ const server = createServer(async (request, response) => {
     }
 
     cleanupIdempotencyCache();
+    const idempotencyFingerprint = `${freezeId}:${freezeFingerprint}`;
     const existing = idempotentLiveRequests.get(idempotencyKey);
     if (existing) {
-      if (existing.fingerprint !== freezeFingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
+      if (existing.fingerprint !== idempotencyFingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
       const reply = await existing.promise;
       return json(request, response, reply.status, reply.body);
+    }
+
+    if (frozenEntry.consumedBy && frozenEntry.consumedBy !== idempotencyKey) {
+      return json(request, response, 409, { error: "frozen_request_consumed" });
     }
 
     if (!consumeRateLimit(`live:${identity}`, LIVE_PER_HOUR, 60 * 60_000)) {
       return json(request, response, 429, { error: "live_rate_limited" }, { "retry-after": "3600" });
     }
 
-    const promise = performLiveAuthorization({ action, mandate, plan, reference, freezeFingerprint, privateKey, now });
-    idempotentLiveRequests.set(idempotencyKey, { fingerprint: freezeFingerprint, promise, createdAt: Date.now() });
+    frozenEntry.consumedBy = idempotencyKey;
+    const promise = performLiveAuthorization({ action, mandate, plan, reference, freezeFingerprint, freezeId, privateKey, now });
+    idempotentLiveRequests.set(idempotencyKey, { fingerprint: idempotencyFingerprint, promise, createdAt: Date.now() });
     const reply = await promise;
     return json(request, response, reply.status, reply.body);
   } catch (error) {
