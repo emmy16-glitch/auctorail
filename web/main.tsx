@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { ExecutionScreen, type ExecutionPermitSummary, type ExecutionResponse, type ExecutionUiPhase } from "./ExecutionScreen";
 import "./styles.css";
 import "./checking-screen.css";
 
@@ -7,9 +8,11 @@ const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "
 const VENDOR_ADDRESS = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
 const AGENT_ID = "invoice-bot";
 const MAX_USDC = 10;
+const BASE_SEPOLIA_CHAIN_ID = 84532;
 const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
 
-type Phase = "idle" | "checking" | "ready" | "error";
+type CheckPhase = "checking" | "ready" | "error";
+type Phase = "idle" | CheckPhase | ExecutionUiPhase;
 type CheckStage = "rules" | "miners" | "decision";
 type Decision = "ALLOW" | "HOLD" | "BLOCK";
 
@@ -51,6 +54,13 @@ type AuthorizationResponse = {
     rejectedAttempts?: number;
     completedIntents?: string[];
   };
+  executionAuthorized?: boolean;
+  permit?: ExecutionPermitSummary | null;
+  execution?: {
+    status: "READY";
+    token: string;
+    endpoint: "/api/execute";
+  } | null;
 };
 
 type ApiError = { error?: string; detail?: string };
@@ -134,6 +144,12 @@ function friendlyError(code: string): string {
       return "Live checks are not enabled on this deployment.";
     case "telegraph_credentials_unavailable":
       return "The live Telegraph wallet is not connected yet.";
+    case "permit_signer_unavailable":
+      return "The production permit signer is unavailable. No Miner or vendor payment was started.";
+    case "permit_issuance_failed":
+      return "ProofGate could not issue a valid execution permit. The vendor payment was not started.";
+    case "executor_credentials_unavailable":
+      return "The protected Base Sepolia executor is unavailable. No Miner or vendor payment was started.";
     case "live_rate_limited":
       return "The live-check limit was reached. Try again later.";
     case "policy_rate_limited":
@@ -156,6 +172,29 @@ function friendlyError(code: string): string {
   }
 }
 
+function friendlyExecutionError(code: string): string {
+  switch (code) {
+    case "execution_session_invalid":
+    case "execution_session_expired":
+    case "execution_session_consumed":
+      return "The protected execution session is no longer usable. ProofGate will not create a replacement payment automatically.";
+    case "execution_rate_limited":
+      return "The protected executor reached its live rate limit. No automatic replacement transaction will be created.";
+    case "executor_credentials_unavailable":
+      return "The protected Base Sepolia executor is unavailable. No replacement transaction will be created automatically.";
+    case "proof_receipt_verification_failed":
+      return "Execution may have occurred, but ProofGate could not verify its receipt. Do not retry automatically.";
+    case "execution_response_mismatch":
+      return "The execution response did not match the exact authorized request. ProofGate will not retry automatically.";
+    default:
+      return "The execution request did not return a trustworthy final receipt. ProofGate will not retry automatically.";
+  }
+}
+
+function isExecutionPhase(phase: Phase): phase is ExecutionUiPhase {
+  return phase === "executing" || phase === "executed" || phase === "execution_failed" || phase === "execution_ambiguous";
+}
+
 function App() {
   const [limit, setLimit] = useState(5);
   const [durationIndex, setDurationIndex] = useState(2);
@@ -169,7 +208,11 @@ function App() {
   const [eventTimes, setEventTimes] = useState<EventTimes | null>(null);
   const [result, setResult] = useState<AuthorizationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [executionResult, setExecutionResult] = useState<ExecutionResponse | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [proofOpen, setProofOpen] = useState(false);
   const requestIdRef = useRef<string | null>(null);
+  const executionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const durationSeconds = DURATION_STEPS[durationIndex];
@@ -189,7 +232,11 @@ function App() {
     setEventTimes(null);
     setResult(null);
     setError(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
     requestIdRef.current = null;
+    executionIdRef.current = null;
     abortRef.current = null;
   }
 
@@ -197,7 +244,11 @@ function App() {
     if (phase !== "idle") return;
     setResult(null);
     setError(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
     requestIdRef.current = null;
+    executionIdRef.current = null;
   }
 
   function adjustLimit(delta: number) {
@@ -235,6 +286,83 @@ function App() {
     return body;
   }
 
+  async function executeAuthorized(liveResult: AuthorizationResponse): Promise<void> {
+    if (
+      liveResult.decision !== "ALLOW" ||
+      liveResult.executionAuthorized !== true ||
+      !liveResult.permit ||
+      !liveResult.execution ||
+      liveResult.execution.status !== "READY" ||
+      liveResult.execution.endpoint !== "/api/execute" ||
+      liveResult.permit.actionHash !== liveResult.action.hash
+    ) {
+      throw new Error("permit_issuance_failed");
+    }
+
+    setPhase("executing");
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
+    const executionId = executionIdRef.current ?? crypto.randomUUID();
+    executionIdRef.current = executionId;
+    let requestDispatched = false;
+
+    try {
+      requestDispatched = true;
+      const response = await fetch(`${API_BASE}/api/execute`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": executionId
+        },
+        body: JSON.stringify({ executionToken: liveResult.execution.token })
+      });
+      const body = await response.json() as ExecutionResponse & ApiError;
+
+      if (!response.ok) {
+        const code = body.error ?? "execution_failed";
+        setExecutionError(friendlyExecutionError(code));
+        setPhase("execution_ambiguous");
+        return;
+      }
+
+      const bindingsMatch =
+        body.actionHash === liveResult.action.hash &&
+        body.freezeFingerprint === liveResult.freezeFingerprint &&
+        body.permit.id === liveResult.permit.id &&
+        body.permit.hash === liveResult.permit.hash &&
+        body.network.chainId === BASE_SEPOLIA_CHAIN_ID &&
+        body.network.asset === "USDC" &&
+        body.payment.amount === liveResult.action.amount &&
+        body.payment.recipient.toLowerCase() === liveResult.action.recipient.toLowerCase();
+
+      if (!bindingsMatch) {
+        setExecutionError(friendlyExecutionError("execution_response_mismatch"));
+        setPhase("execution_ambiguous");
+        return;
+      }
+
+      setExecutionResult(body);
+      if (body.status === "EXECUTED" && body.transaction.status === "CONFIRMED" && body.transaction.transactionHash && body.receipt.hash) {
+        setPhase("executed");
+      } else if (body.status === "AMBIGUOUS") {
+        setExecutionError(body.error ?? friendlyExecutionError("execution_ambiguous"));
+        setPhase("execution_ambiguous");
+      } else {
+        setExecutionError(body.error ?? "The protected executor did not complete the authorized payment.");
+        setPhase("execution_failed");
+      }
+    } catch {
+      if (requestDispatched) {
+        setExecutionError("The execution request lost its trustworthy response after dispatch. The payment may have reached Base Sepolia, so ProofGate will not retry automatically.");
+        setPhase("execution_ambiguous");
+      } else {
+        setExecutionError("The protected execution request could not be started.");
+        setPhase("execution_failed");
+      }
+    }
+  }
+
   async function checkRequest() {
     if (!canCheck) return;
 
@@ -245,6 +373,9 @@ function App() {
     setEventTimes({ request: timeLabel() });
     setError(null);
     setResult(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    setProofOpen(false);
 
     try {
       const policyResponse = await fetch(`${API_BASE}/api/authorize`, {
@@ -298,8 +429,14 @@ function App() {
       setResult(liveResult);
       setCheckStage("decision");
       setEventTimes((current) => current ? { ...current, decision: timeLabel() } : { request: timeLabel(), decision: timeLabel() });
-      setPhase("ready");
       abortRef.current = null;
+
+      if (liveResult.decision === "ALLOW") {
+        await executeAuthorized(liveResult);
+        return;
+      }
+
+      setPhase("ready");
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       const code = caught instanceof Error ? caught.message : "authorization_failed";
@@ -321,6 +458,20 @@ function App() {
   const onSecondaryAction = phase === "checking" ? cancelCheck : clearCheckState;
   const secondaryDisabled = phase === "checking" && checkStage !== "rules";
   const secondaryLabel = phase === "checking" ? "CANCEL CHECK" : "BACK TO REQUEST";
+  const executionAuthorization = result?.permit ? {
+    action: {
+      hash: result.action.hash,
+      amount: result.action.amount,
+      recipient: result.action.recipient,
+      reason: result.action.reason,
+      reference: result.action.reference
+    },
+    permit: result.permit,
+    evidence: {
+      spendRaw: result.evidence.spendRaw,
+      bundleHash: result.evidence.bundleHash
+    }
+  } : null;
 
   return (
     <div className="app-page">
@@ -458,12 +609,22 @@ function App() {
             </div>
           </div>
         </main>
+      ) : isExecutionPhase(phase) && executionAuthorization ? (
+        <ExecutionScreen
+          phase={phase}
+          authorization={executionAuthorization}
+          response={executionResult}
+          error={executionError}
+          proofOpen={proofOpen}
+          onToggleProof={() => setProofOpen((open) => !open)}
+          onNewRequest={clearCheckState}
+        />
       ) : (
         <CheckingScreen
           amount={amount}
           reason={reason}
           reference={reference}
-          phase={phase}
+          phase={phase as CheckPhase}
           stage={checkStage}
           times={eventTimes}
           result={result}
@@ -481,7 +642,7 @@ function CheckingScreen(props: {
   amount: number;
   reason: string;
   reference: string;
-  phase: Exclude<Phase, "idle">;
+  phase: CheckPhase;
   stage: CheckStage;
   times: EventTimes | null;
   result: AuthorizationResponse | null;
@@ -512,7 +673,7 @@ function CheckingScreen(props: {
     ? error ?? "The check stopped without granting permission."
     : phase === "ready"
       ? decision === "ALLOW"
-        ? "The checks finished and permission can now be prepared. The requested payment has not been executed."
+        ? "The checks passed. ProofGate is issuing the exact-action execution permit."
         : "The checks finished without permission to execute the requested payment."
       : minersRunning
         ? "Independent evidence is being requested through Telegraph automatic Intent routing. Bounded x402 verification fees may be paid to real Miners. The requested payment has not been sent."
