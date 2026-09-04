@@ -6,11 +6,11 @@ import { createMandateContract, evaluateMandate } from "../src/core/mandate-cont
 import { evaluatePaymentsAdaptiveV1 } from "../src/policy/payments-adaptive-v1.js";
 import { ADAPTIVE_EVIDENCE_INTENTS, createAdaptiveEvidencePlan } from "../src/telegraph/adaptive-evidence-plan.js";
 import { collectAdaptiveEvidence } from "../src/telegraph/adaptive-orchestrator.js";
-import { createLiveIntentAcquirer } from "../src/telegraph/live-intent-client.js";
+import { createAutoRoutedLiveIntentAcquirer } from "../src/telegraph/auto-route-acquirer.js";
 import type { TelegraphMinerRecord } from "../src/telegraph/routed-evidence.js";
 
 const VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
-const AGENT_ID = "demo-agent";
+const AGENT_ID = "invoice-bot";
 const PORT = Number(process.env.PROOFGATE_WEB_API_PORT ?? 8787);
 const LIVE_ENABLED = process.env.PROOFGATE_LIVE_AUTHORIZATION_ENABLED === "true";
 const TRUST_PROXY = process.env.PROOFGATE_TRUST_PROXY === "true";
@@ -134,6 +134,19 @@ function parseUsdc(value: unknown, field: string): string {
   return raw.toString();
 }
 
+function parseAddress(value: unknown, fallback: string): string {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error("destination_invalid");
+  return value;
+}
+
+function parseDurationSeconds(value: unknown): number {
+  if (value === undefined) return 3_600;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error("duration_invalid");
+  if (value < 900 || value > 86_400) throw new Error("duration_out_of_range");
+  return value;
+}
+
 function requirementLabel(intent: string): string {
   if (intent === "FRAUD_DETECTION") return "Fraud intelligence";
   if (intent === "ONCHAIN_TX_LOOKUP") return "Transaction intelligence";
@@ -159,12 +172,16 @@ function commonRecord(input: {
 }) {
   return {
     riskTier: input.plan.riskTier,
+    routing: {
+      mode: "TELEGRAPH_AUTO_INTENT",
+      endpoint: "/v1/ask"
+    },
     action: {
       id: input.action.id,
       hash: input.action.actionHash,
       amount: (Number(input.action.payload.amountRaw) / 1_000_000).toFixed(2),
       amountRaw: input.action.payload.amountRaw,
-      recipient: VENDOR,
+      recipient: input.action.payload.destination,
       chainId: BASE_SEPOLIA_CHAIN_ID,
       chain: "Base Sepolia",
       asset: "USDC",
@@ -199,7 +216,7 @@ async function performLiveAuthorization(input: {
 
   dailyReservedRaw += plannedSpend;
   try {
-    const acquire = createLiveIntentAcquirer({
+    const acquire = createAutoRoutedLiveIntentAcquirer({
       privateKey: input.privateKey,
       miners: readMiners(),
       engineUrl: process.env.TELEGRAPH_ENGINE_URL,
@@ -269,12 +286,24 @@ const server = createServer(async (request, response) => {
       if (raw.length > 16_000) return json(request, response, 413, { error: "request_too_large" });
     }
 
-    const input = JSON.parse(raw) as { mode?: unknown; limit: unknown; amount: unknown; reason: unknown; reference?: unknown };
+    const input = JSON.parse(raw) as {
+      mode?: unknown;
+      agentId?: unknown;
+      limit: unknown;
+      amount: unknown;
+      destination?: unknown;
+      durationSeconds?: unknown;
+      reason: unknown;
+      reference?: unknown;
+    };
     const mode = input.mode === undefined || input.mode === "policy" ? "policy" : input.mode === "live" ? "live" : null;
     if (!mode) return json(request, response, 400, { error: "mode_invalid" });
+    if (input.agentId !== undefined && input.agentId !== AGENT_ID) return json(request, response, 400, { error: "agent_id_invalid" });
 
     const limitRaw = parseUsdc(input.limit, "limit");
     const amountRaw = parseUsdc(input.amount, "amount");
+    const destination = parseAddress(input.destination, VENDOR);
+    const durationSeconds = parseDurationSeconds(input.durationSeconds);
     const reason = typeof input.reason === "string" && input.reason.trim() ? input.reason.trim().slice(0, 256) : "Unspecified payment";
     const reference = typeof input.reference === "string" ? input.reference.slice(0, 200) : "";
     const now = new Date();
@@ -284,26 +313,26 @@ const server = createServer(async (request, response) => {
       chainId: BASE_SEPOLIA_CHAIN_ID,
       token: BASE_SEPOLIA_USDC,
       amountRaw,
-      destination: VENDOR,
+      destination,
       reason,
       policyId: "payments.adaptive.v1",
       policyVersion: 1
     });
     const plan = createAdaptiveEvidencePlan(action);
     const mandate = createMandateContract({
-      mandateId: "try-proofgate-mandate",
+      mandateId: "proofgate-live-mandate",
       principalId: "proofgate-user",
       agentId: AGENT_ID,
       allowedActionTypes: ["payment"],
       allowedChainIds: [BASE_SEPOLIA_CHAIN_ID],
       allowedAssets: [BASE_SEPOLIA_USDC],
-      allowedDestinations: [VENDOR],
+      allowedDestinations: [destination],
       maxPerActionRaw: limitRaw,
       requiredIntents: [...ADAPTIVE_EVIDENCE_INTENTS],
       policyId: "payments.adaptive.v1",
       policyVersion: 1,
       issuedAt: new Date(now.getTime() - 60_000).toISOString(),
-      expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+      expiresAt: new Date(now.getTime() + durationSeconds * 1_000).toISOString(),
       version: 1
     });
     const common = commonRecord({ action, mandate, plan, reference });
@@ -345,7 +374,7 @@ const server = createServer(async (request, response) => {
     }
 
     cleanupIdempotencyCache();
-    const fingerprint = `${action.actionHash}:${limitRaw}:${reference}`;
+    const fingerprint = `${action.actionHash}:${mandate.mandateHash}:${reference}`;
     const existing = idempotentLiveRequests.get(idempotencyKey);
     if (existing) {
       if (existing.fingerprint !== fingerprint) return json(request, response, 409, { error: "idempotency_key_conflict" });
@@ -368,7 +397,7 @@ const server = createServer(async (request, response) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`ProofGate web API listening on ${PORT}`);
-  console.log(`Live Telegraph authorization: ${LIVE_ENABLED ? "enabled" : "disabled"}`);
+  console.log(`Live Telegraph auto-route authorization: ${LIVE_ENABLED ? "enabled" : "disabled"}`);
 });
 
 process.on("SIGTERM", () => server.close());
