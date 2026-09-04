@@ -51,13 +51,20 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         try:
-            # Full first-screen fidelity + the wired Screen 1 → Screen 2 flow.
+            # Full first-screen fidelity + wired Screen 1 → Screen 2 live flow.
             await qa.mobile_flow(browser)
 
-            # Verify the unpaid policy preflight blocks before any live Miner/x402 call.
+            # Fail-closed correctness: no paid Miner call when policy blocks.
             await qa.policy_block_short_circuit(browser)
 
-            # Responsive coverage for both the setup screen and the live checking screen.
+            # Cancellation is only real while still in the unpaid policy phase.
+            await qa.cancel_during_policy_preflight(browser)
+
+            # Even a favorable-looking response is rejected if it no longer
+            # matches the preflight-frozen request fingerprint.
+            await qa.mismatched_live_response_fails_closed(browser)
+
+            # Responsive coverage for both setup and live checking surfaces.
             await qa.narrow_mobile_fit(browser)
             await qa.narrow_checking_fit(browser)
             await responsive_fit(browser, 360, 800, "first-screen-360-mobile.png")
