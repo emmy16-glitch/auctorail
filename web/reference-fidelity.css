@@ -40,6 +40,16 @@
     font-size: 9.15px;
   }
 
+  /* Reference lower stack begins ~5px later than the functional baseline. */
+  .hero-block {
+    margin-bottom: 22px;
+  }
+
+  .control-section {
+    padding-top: 5.5px;
+    padding-bottom: 5.5px;
+  }
+
   .check-button .arrow {
     right: 22px;
   }
@@ -48,9 +58,11 @@
     transform: translateX(-18px);
   }
 
+  /* Match the reference document glyph: wider, shorter, slightly lower. */
   .request-summary svg {
-    width: 26px;
-    height: 30px;
+    width: 30px;
+    height: 28px;
+    transform: translateY(3px);
   }
 
   .select-shell svg {
@@ -58,10 +70,12 @@
     height: 13px;
   }
 
+  /* Reference note starts closer to the left border and uses a slightly
+     tighter mono size so the first sentence remains on one line. */
   .safety-note {
     grid-template-columns: 27px 1fr;
     gap: 8px;
-    padding-left: 9px;
+    padding-left: 4px;
     padding-right: 9px;
   }
 
@@ -71,7 +85,7 @@
   }
 
   .safety-note.idle p::before {
-    font-size: 9.55px;
+    font-size: 9.1px;
     line-height: 1.35;
   }
 }
@@ -92,7 +106,7 @@
   .safety-note {
     grid-template-columns: 25px 1fr;
     gap: 7px;
-    padding-left: 8px;
+    padding-left: 4px;
     padding-right: 8px;
   }
 
