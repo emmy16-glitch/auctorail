@@ -9,9 +9,10 @@ ARTIFACTS = Path("playwright-artifacts")
 ARTIFACTS.mkdir(exist_ok=True)
 
 EXPECTED_VENDOR = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14"
+FREEZE_FINGERPRINT = "0x" + ("f" * 64)
 
 
-def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQUESTED"):
+def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQUESTED", freeze_fingerprint=FREEZE_FINGERPRINT):
     return {
         "status": status,
         "decision": decision,
@@ -19,10 +20,11 @@ def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQ
         "riskTier": "MEDIUM",
         "policyId": "payments.adaptive.v1",
         "policyVersion": 1,
+        "freezeFingerprint": freeze_fingerprint,
         "routing": {"mode": "TELEGRAPH_AUTO_INTENT", "endpoint": "/v1/ask"},
         "action": {
             "id": "act_qa",
-            "hash": "0xqa",
+            "hash": "0x" + ("a" * 64),
             "amount": amount,
             "amountRaw": str(int(float(amount) * 1_000_000)),
             "recipient": EXPECTED_VENDOR,
@@ -34,7 +36,7 @@ def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQ
         },
         "mandate": {
             "id": "proofgate-live-mandate",
-            "hash": "0xmandate",
+            "hash": "0x" + ("b" * 64),
             "maxPerAction": "5.00",
             "expiresAt": "2026-09-04T03:00:00.000Z",
         },
@@ -42,7 +44,7 @@ def common_response(*, status, decision, amount="2.00", evidence_status="NOT_REQ
             "status": evidence_status,
             "code": "adaptive_evidence_complete" if evidence_status == "COMPLETE" else None,
             "spendRaw": "1000" if evidence_status == "COMPLETE" else "0",
-            "bundleHash": "0xbundle" if evidence_status == "COMPLETE" else None,
+            "bundleHash": "0x" + ("c" * 64) if evidence_status == "COMPLETE" else None,
             "rejectedAttempts": 0,
             "completedIntents": ["FRAUD_DETECTION"] if evidence_status == "COMPLETE" else [],
         },
@@ -181,6 +183,7 @@ async def mobile_flow(browser):
         assert payload["reference"] == "INV-4471"
 
         if mode == "policy":
+            assert "freezeFingerprint" not in payload
             assert not route.request.headers.get("idempotency-key")
             await asyncio.sleep(0.12)
             await route.fulfill(
@@ -191,6 +194,7 @@ async def mobile_flow(browser):
             return
 
         assert mode == "live"
+        assert payload["freezeFingerprint"] == FREEZE_FINGERPRINT
         assert route.request.headers.get("idempotency-key")
         await asyncio.sleep(0.75)
         await route.fulfill(
@@ -295,6 +299,64 @@ async def policy_block_short_circuit(browser):
     await page.close()
 
 
+async def cancel_during_policy_preflight(browser):
+    page = await browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
+    call_modes = []
+
+    async def authorize(route):
+        payload = json.loads(route.request.post_data or "{}")
+        call_modes.append(payload["mode"])
+        assert payload["mode"] == "policy"
+        await asyncio.sleep(1.2)
+        await route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(common_response(status="REQUIRES_INTELLIGENCE", decision=None, amount="1.00")),
+        )
+
+    await page.route("**/api/authorize", authorize)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    await page.get_by_role("button", name="CHECK THIS REQUEST").click()
+    cancel = page.get_by_role("button", name="CANCEL CHECK")
+    await expect(cancel).to_be_enabled()
+    await cancel.click()
+    await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible()
+    await asyncio.sleep(0.15)
+    assert call_modes == ["policy"], f"cancelled preflight unexpectedly reached live call: {call_modes}"
+    await page.close()
+
+
+async def mismatched_live_response_fails_closed(browser):
+    page = await browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
+
+    async def authorize(route):
+        payload = json.loads(route.request.post_data or "{}")
+        if payload["mode"] == "policy":
+            await route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(common_response(status="REQUIRES_INTELLIGENCE", decision=None, amount="1.00")),
+            )
+            return
+        bad = common_response(
+            status="DECIDED",
+            decision="ALLOW",
+            amount="1.00",
+            evidence_status="COMPLETE",
+            freeze_fingerprint="0x" + ("e" * 64),
+        )
+        await route.fulfill(status=200, content_type="application/json", body=json.dumps(bad))
+
+    await page.route("**/api/authorize", authorize)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    await page.get_by_role("button", name="CHECK THIS REQUEST").click()
+    await expect(page.get_by_text("Stopped safely.", exact=True)).to_be_visible(timeout=2500)
+    await expect(page.get_by_text("The request changed after the rules check.", exact=False)).to_be_visible()
+    await expect(page.get_by_text("ALLOW", exact=True)).to_have_count(0)
+    await page.screenshot(path=str(ARTIFACTS / "second-screen-freeze-mismatch-mobile.png"), full_page=True)
+    await page.close()
+
+
 async def narrow_mobile_fit(browser):
     page = await browser.new_page(viewport={"width": 320, "height": 800}, device_scale_factor=1)
     await page.goto(BASE_URL, wait_until="networkidle")
@@ -326,6 +388,7 @@ async def narrow_checking_fit(browser):
                 body=json.dumps(common_response(status="REQUIRES_INTELLIGENCE", decision=None, amount="1.00")),
             )
             return
+        assert payload["freezeFingerprint"] == FREEZE_FINGERPRINT
         await asyncio.sleep(0.45)
         await route.fulfill(
             status=200,
@@ -363,6 +426,8 @@ async def main():
         try:
             await mobile_flow(browser)
             await policy_block_short_circuit(browser)
+            await cancel_during_policy_preflight(browser)
+            await mismatched_live_response_fails_closed(browser)
             await narrow_mobile_fit(browser)
             await narrow_checking_fit(browser)
             await desktop_fit(browser)
