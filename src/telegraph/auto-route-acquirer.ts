@@ -27,15 +27,33 @@ export function createAutoRoutedLiveIntentAcquirer(
 ) => Promise<LiveIntentAcquisitionResult> {
   const acquire = createLiveIntentAcquirer(options);
 
-  return (context) =>
-    acquire({
+  return (context) => {
+    const hasPriorMiner =
+      (context.priorMinerIds?.length ?? 0) > 0;
+
+    return acquire({
       ...context,
       requirement: {
         ...context.requirement,
         quorum: {
           ...context.requirement.quorum,
-          minimumDistinctMiners: 1
+
+          // Attempt one remains on Telegraph's ranked /v1/ask route.
+          // After an accepted or rejected provider has already been seen,
+          // transport may directly target another ranked unused Miner.
+          //
+          // This is routing-only. collectAdaptiveEvidence still evaluates
+          // the untouched original requirement and therefore does not
+          // weaken Auctorail's authorization quorum.
+          minimumDistinctMiners:
+            hasPriorMiner
+              ? Math.max(
+                  2,
+                  context.requirement.quorum.minimumDistinctMiners
+                )
+              : 1
         }
       }
     });
+  };
 }
