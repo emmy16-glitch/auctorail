@@ -52,11 +52,25 @@ export interface AdaptiveEvidencePlan {
     "DISTINCT_MINER_IDS";
 }
 
-const ONE_USDC =
-  1_000_000n;
-
+/*
+ * These are ProofGate's default consequence bands, not universal financial
+ * thresholds. The principal-created Mandate remains the real authority cap.
+ * The public hackathon web path is intentionally capped lower again by its API.
+ *
+ * Rationale:
+ * - <= $5 is the low-consequence demo/automation band: one strong, bound Miner
+ *   result is enough, but transport/schema failures get bounded retries.
+ * - > $5 to $50 adds independent provider diversity and transaction context.
+ * - > $50 is high consequence and requires the strongest evidence plan. The
+ *   current payments.adaptive.v1 autonomous execution ceiling remains $10, so
+ *   this HIGH plan is intentionally not enough by itself to authorize a large
+ *   transfer; a future/human-approved policy must explicitly raise authority.
+ */
 const FIVE_USDC =
   5_000_000n;
+
+const FIFTY_USDC =
+  50_000_000n;
 
 function quorum(
   minimumDistinctMiners: number,
@@ -98,11 +112,11 @@ export function classifyActionRisk(
   const amount =
     BigInt(action.payload.amountRaw);
 
-  if (amount <= ONE_USDC) {
+  if (amount <= FIVE_USDC) {
     return "LOW";
   }
 
-  if (amount <= FIVE_USDC) {
+  if (amount <= FIFTY_USDC) {
     return "MEDIUM";
   }
 
@@ -127,7 +141,12 @@ export function createAdaptiveEvidencePlan(
           requirement(
             "FRAUD_DETECTION",
             0.70,
-            quorum(1, 1, 0.70, 1, null)
+            // One valid result is sufficient for <= $5, but allow a small
+            // bounded retry window so one unusable route does not make the
+            // policy artificially unavailable. Duplicate Miners still do not
+            // count, explicit negatives still block, and exact binding remains
+            // mandatory.
+            quorum(1, 1, 0.70, 3, 0.90)
           )
         ]
       : riskTier === "MEDIUM"
@@ -161,19 +180,22 @@ export function createAdaptiveEvidencePlan(
             )
           ];
 
+  // Telegraph engine calls are typically around $0.01, but pricing is
+  // dynamic. Budgets therefore cover the bounded attempt count rather than a
+  // single happy-path request while still preventing runaway x402 spend.
   const maxEvidenceSpendRaw =
     riskTier === "LOW"
-      ? "15000"
+      ? "35000"
       : riskTier === "MEDIUM"
-        ? "50000"
-        : "70000";
+        ? "60000"
+        : "100000";
 
   const maxEvidenceLatencyMs =
     riskTier === "LOW"
-      ? 15_000
+      ? 35_000
       : riskTier === "MEDIUM"
-        ? 35_000
-        : 60_000;
+        ? 60_000
+        : 90_000;
 
   return {
     schemaVersion:

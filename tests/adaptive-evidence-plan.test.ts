@@ -35,10 +35,10 @@ describe(
   "adaptive evidence planning",
   () => {
     it(
-      "uses one fraud Miner for low-risk payments",
+      "keeps payments through 5 USDC in the low-consequence band with bounded route retries",
       () => {
         const candidate =
-          action("1000000");
+          action("5000000");
 
         const plan =
           createAdaptiveEvidencePlan(
@@ -61,22 +61,24 @@ describe(
           minimumDistinctMiners: 1,
           minimumPositiveResults: 1,
           minimumPositiveConfidence: 0.70,
-          maxAttempts: 1,
-          negativeVetoConfidence: null
+          maxAttempts: 3,
+          negativeVetoConfidence: 0.90
         });
         expect(plan.actionHash)
           .toBe(candidate.actionHash);
         expect(plan.maxEvidenceSpendRaw)
-          .toBe("15000");
+          .toBe("35000");
+        expect(plan.maxEvidenceLatencyMs)
+          .toBe(35000);
       }
     );
 
     it(
-      "escalates medium-risk payments to two distinct fraud Miners plus transaction intelligence",
+      "escalates payments above 5 through 50 USDC to two distinct fraud Miners plus transaction intelligence",
       () => {
         const plan =
           createAdaptiveEvidencePlan(
-            action("5000000")
+            action("5000001")
           );
 
         expect(plan.riskTier)
@@ -97,16 +99,18 @@ describe(
           negativeVetoConfidence: 0.90
         });
         expect(plan.maxEvidenceSpendRaw)
-          .toBe("50000");
+          .toBe("60000");
+        expect(plan.maxEvidenceLatencyMs)
+          .toBe(60000);
       }
     );
 
     it(
-      "escalates high-risk payments to 2-of-3 fraud quorum plus two independent intents",
+      "reserves the strongest evidence plan for payments above 50 USDC",
       () => {
         const plan =
           createAdaptiveEvidencePlan(
-            action("5000001")
+            action("50000001")
           );
 
         expect(plan.riskTier)
@@ -128,7 +132,9 @@ describe(
           negativeVetoConfidence: 0.90
         });
         expect(plan.maxEvidenceSpendRaw)
-          .toBe("70000");
+          .toBe("100000");
+        expect(plan.maxEvidenceLatencyMs)
+          .toBe(90000);
         expect(plan.providerDiversityRule)
           .toBe("DISTINCT_MINER_IDS");
       }
@@ -139,15 +145,15 @@ describe(
       () => {
         const low =
           createAdaptiveEvidencePlan(
-            action("1000000")
+            action("5000000")
           );
         const medium =
           createAdaptiveEvidencePlan(
-            action("1000001")
+            action("7000000")
           );
         const high =
           createAdaptiveEvidencePlan(
-            action("9000000")
+            action("70000000")
           );
 
         expect(

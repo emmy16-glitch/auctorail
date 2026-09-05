@@ -4,15 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#fbfbfa" />
-    <meta name="description" content="ProofGate checks delegated authority and the external evidence required before an autonomous action receives permission." />
+    <meta name="description" content="Auctorail proves delegated authority and required evidence before autonomous agents can execute." />
     <link rel="stylesheet" href="/web/reference-fidelity.css" />
-    <title>ProofGate — Proof before permission.</title>
+    <title>Auctorail — Prove authority before execution.</title>
   </head>
   <body>
     <div id="root"></div>
+    <div id="auctorail-home-root"></div>
     <script type="module" src="/web/main.tsx"></script>
-    <script type="module" src="/web/surface-router.tsx"></script>
-    <!-- Loaded after the Vite modules so responsive overrides remain last in the cascade. -->
+    <script type="module" src="/web/home-entry.tsx"></script>
+    <script type="module" src="/web/brand-compat.ts"></script>
     <link rel="stylesheet" href="/web/responsive-layout.css" />
   </body>
 </html>

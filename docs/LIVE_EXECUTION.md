@@ -1,12 +1,14 @@
-# ProofGate Canonical Live Execution
+# Auctorail — Canonical Live Execution
 
-This document records the canonical end-to-end hackathon execution completed on Base Sepolia on 2026-09-02.
+This document records the canonical end-to-end hackathon execution completed on Base Sepolia on **2026-09-02**.
 
-It is intended to give reviewers one place to verify the exact action, Telegraph evidence, policy result, permit, on-chain transaction, and Proof Receipt.
+It gives reviewers one place to verify the exact protected action, genuine Telegraph evidence, deterministic policy result, one-use permit, on-chain transaction, and Proof Receipt.
+
+The execution predates the Auctorail rename, so some immutable historical identifiers still contain the previous `ProofGate` name. They are preserved intentionally.
 
 ## Result
 
-ProofGate successfully authorized and executed an autonomous payment of **1 Base Sepolia USDC** to the canonical `ProofGateVendor` contract.
+Auctorail's authorization boundary successfully authorized and executed an autonomous payment of **1 Base Sepolia USDC** to the already-deployed historical `ProofGateVendor` contract.
 
 - Network: Base Sepolia (`84532`)
 - Token: Base Sepolia USDC
@@ -23,7 +25,7 @@ https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4
 
 ## Authorization chain
 
-### Mandate
+### 1. Principal mandate
 
 - Mandate ID: `treasury-demo-attested-v1`
 - Principal: `company-demo`
@@ -31,9 +33,9 @@ https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4
 - Mandate hash: `0x052a7e9a3ab0398f9636c795550c89b41eff82aad95cb86fd4c477ad084f5687`
 - Policy: `payments.attested-vendor.v1`
 
-The Mandate restricted the agent to the delegated payment envelope before Telegraph proof was requested.
+The mandate restricted the agent to the delegated payment envelope before Telegraph proof was requested.
 
-### Exact Action Contract
+### 2. Exact frozen action
 
 - Action hash: `0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4`
 - Chain: Base Sepolia (`84532`)
@@ -42,15 +44,15 @@ The Mandate restricted the agent to the delegated payment envelope before Telegr
 - Destination: `0xb38d0405df1b15961aef29c7c45f2ed285822c14`
 - Reason: `Invoice INV-1042`
 
-Changing a protected semantic field such as amount, recipient, chain, token or policy changes the action hash and invalidates authorization.
+Changing a protected semantic field such as amount, recipient, chain, token or policy changes the action commitment and invalidates the old authorization.
 
-### Live Telegraph evidence
+### 3. Genuine Telegraph evidence
 
 Fresh Telegraph evidence was obtained for the exact canonical vendor and chain.
 
 - Serving Miner: `Refut On-Chain Risk`
 - Miner ID: `95822412`
-- Required intent: `FRAUD_DETECTION`
+- Required Intent: `FRAUD_DETECTION`
 - Miner verdict: `ALLOW`
 - Confidence: `0.7`
 - Applicability: `APPLICABLE`
@@ -58,39 +60,41 @@ Fresh Telegraph evidence was obtained for the exact canonical vendor and chain.
 - Raw response hash: `0x442bc3463cae1c9f8ba9a5fce124ffd96cec720f0f24a41dc322b3b905cc361d`
 - Evidence artifact: `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
 
-The live Telegraph x402 challenge selected an approved Base Sepolia USDC lane with a proof charge of `10000` minor units (`0.01 USDC`). ProofGate validated the network, asset, amount cap and dynamic `payTo` address before the paid request.
+The live Telegraph x402 challenge selected an approved Base Sepolia USDC lane with a proof charge of `10000` minor units (`0.01 USDC`). The implementation validated the network, asset, amount cap and dynamic `payTo` address before the paid request.
 
-### Vendor runtime attestation
+### 4. Vendor runtime attestation
 
-ProofGate independently verified the deployed vendor runtime before execution.
+The deployed vendor runtime was independently verified before execution.
 
 - Runtime Keccak-256: `0x12c20655de1ed03a8e646cb98f8ce51e033ec28dc38b7c9383b8f96d02d07a93`
 - Attestation hash: `0x4d63927d1dc90819efb71138cbabf9fd1439551257f11c92f2a1842e391c7922`
 - Attested at Base Sepolia block: `46301204`
 - Artifact: `data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
 
-### Deterministic policy decision
+### 5. Deterministic policy decision
 
-Policy result:
+The historical policy output was:
 
 ```text
 PROOFGATE: ALLOW
 Reason: composite_attested_vendor_checks_passed
 ```
 
+`PROOFGATE` is shown here because that exact string belongs to the preserved historical artifact generated before the product was renamed Auctorail.
+
 Every required mandate, chain, asset, destination, amount, evidence, Miner-profile, confidence, signal-hash, freshness and vendor-runtime check passed.
 
-A favorable Miner verdict alone did not create authorization. The ProofGate policy engine combined the Miner evidence with delegated authority and the exact runtime attestation.
+A favorable Miner verdict alone did not create authorization. The authorization engine combined the Miner evidence with delegated authority and the exact runtime attestation.
 
-### One-use permit
+### 6. One-use permit
 
 - Permit ID: `a1b4e53c-0e0e-4504-b0b0-a05ec80093bb`
 - Decision hash: `0x5f159b8bac7fa9807347decad0f8875fd3b5b4a7e41dbd3475c82d54cb0f054e`
 - Permit expiry window: 30 seconds
 
-The permit was bound to the exact Mandate, Action Contract and decision.
+The permit was bound to the exact mandate, frozen action and decision.
 
-### Controlled execution
+### 7. Controlled execution
 
 Execution result:
 
@@ -101,28 +105,28 @@ Execution code: executed
 Transaction: 0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 ```
 
-The Base Sepolia executor constructed the ERC-20 transfer from the authorized Action Contract and allowed only one irreversible broadcast attempt. Confirmation reads may fail over across RPC providers, but transaction semantics cannot change during failover.
+The Base Sepolia executor constructed the ERC-20 transfer from the authorized action and allowed only one irreversible broadcast attempt. Confirmation reads may fail over across RPC providers, but transaction semantics cannot change during failover.
 
-### Proof Receipt
+### 8. Proof Receipt
 
 - Receipt ID: `878d4350-85c8-44dd-94c2-257641cd7c0c`
 - Receipt hash: `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
 - Artifact: `data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
 
-The receipt binds the Mandate, Action Contract, Telegraph evidence, policy decision, permit, vendor runtime attestation and execution result into one tamper-evident artifact.
+The receipt binds the mandate, action, Telegraph evidence, policy decision, permit, vendor runtime attestation and execution result into one tamper-evident artifact.
 
-## What this live execution proves
+## What this proves
 
-This execution demonstrates the core ProofGate authorization boundary with real external effects:
+This execution demonstrates a real Auctorail authorization boundary with a real external effect:
 
 ```text
-MANDATE
+DELEGATED AUTHORITY
   ↓
-EXACT ACTION
+EXACT FROZEN ACTION
   ↓
-LIVE TELEGRAPH EVIDENCE
+GENUINE TELEGRAPH EVIDENCE
   ↓
-DETERMINISTIC POLICY ALLOW
+DETERMINISTIC ALLOW
   ↓
 ONE-USE PERMIT
   ↓
@@ -133,10 +137,20 @@ VERIFIABLE PROOF RECEIPT
 
 It is not a visual simulation and it does not reuse historical evidence for a different destination.
 
-## Scope note
+## What it does not prove
 
-The canonical live transaction used ProofGate's local/demo permit-signing and filesystem-backed permit-consumption compatibility path.
+This historical transaction predates later Auctorail work.
 
-The repository separately contains production-oriented hardening for Ed25519 signing and key lifecycle, shared PostgreSQL permit claims, durable execution state, transaction-intent binding, mandate status authority, cumulative spend authority and an execution kill switch.
+Do not claim that this transaction exercised:
 
-Those production-oriented controls are covered by the codebase and automated tests, but should not be described as having been exercised by this specific live transaction unless a separate execution explicitly runs through that deployment path.
+- the later HIGH three-distinct-Miner quorum path;
+- the later general action-adapter architecture;
+- the later production-oriented Ed25519/PostgreSQL deployment path.
+
+Those controls exist separately in the current code/tests, but this exact transaction should only be used to prove the live Telegraph + protected execution boundary that it actually exercised.
+
+## Historical-name compatibility
+
+The product is now **Auctorail**.
+
+The deployed `ProofGateVendor` contract name, saved evidence files, receipts, hashes and historical output strings are intentionally unchanged. They are immutable proof/deployment artifacts from before the rename. Rewriting them for branding would reduce the trustworthiness of the recorded proof.

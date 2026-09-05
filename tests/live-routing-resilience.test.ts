@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,8 +19,9 @@ import {
   adaptiveEvidence
 } from "./helpers/adaptive-fixtures.js";
 
-const PRIVATE_KEY =
-  `0x${"1".repeat(64)}` as `0x${string}`;
+function testPrivateKey(): `0x${string}` {
+  return `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
+}
 
 function routedMiner() {
   return {
@@ -72,7 +74,7 @@ describe("live Telegraph routing resilience", () => {
 
     try {
       const acquire = createLiveIntentAcquirer({
-        privateKey: PRIVATE_KEY,
+        privateKey: testPrivateKey(),
         miners: [routedMiner()],
         evidenceDirectory: directory,
         fetchImpl: fetchImpl as typeof fetch
@@ -131,7 +133,7 @@ describe("live Telegraph routing resilience", () => {
     }
   });
 
-  it("charges a settled wrong-Intent attempt to the acquisition budget, excludes it from quorum, and continues", async () => {
+  it("charges a settled wrong-Intent attempt to the medium-risk acquisition budget, excludes it from quorum, and continues", async () => {
     const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const seenPriorMinerIds: string[][] = [];
@@ -177,8 +179,8 @@ describe("live Telegraph routing resilience", () => {
     );
 
     expect(result.status).toBe("COMPLETE");
-    expect(result.actualEvidenceSpendRaw).toBe("60000");
-    expect(result.bundle.totalEvidenceSpendRaw).toBe("50000");
+    expect(result.actualEvidenceSpendRaw).toBe("40000");
+    expect(result.bundle.totalEvidenceSpendRaw).toBe("30000");
     expect(result.rejectedAttempts).toEqual([
       expect.objectContaining({
         intent: "FRAUD_DETECTION",
@@ -194,8 +196,7 @@ describe("live Telegraph routing resilience", () => {
     );
     expect(fraudItems.map((item) => item.attempt)).toEqual([
       2,
-      3,
-      4
+      3
     ]);
     expect(
       seenPriorMinerIds[1]

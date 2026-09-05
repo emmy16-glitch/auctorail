@@ -31,7 +31,7 @@ function rehash(bundle: EvidenceBundle): void {
 
 describe("adaptive EvidenceBundle", () => {
   it("creates a deterministic tamper-evident bundle", () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const inputs = adaptiveQuorumInputs(
       action,
@@ -69,7 +69,7 @@ describe("adaptive EvidenceBundle", () => {
   });
 
   it("allows repeated Intent evidence on distinct attempts and commits provider diversity", () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const bundle = createEvidenceBundle(
       action,
@@ -93,7 +93,7 @@ describe("adaptive EvidenceBundle", () => {
   });
 
   it("rejects duplicate attempt identities for the same Intent", () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
 
     expect(() =>
@@ -135,7 +135,7 @@ describe("adaptive EvidenceBundle", () => {
   });
 
   it("does not convert repeated results from one Miner into independent votes", () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const bundle = createEvidenceBundle(
       action,

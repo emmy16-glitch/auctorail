@@ -1,4 +1,4 @@
-name: ProofGate UI Playwright
+name: Auctorail UI Playwright
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: proofgate-ui-${{ github.ref }}
+  group: auctorail-ui-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  three-screen-flow:
+  final-product-flow:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -45,30 +45,58 @@ jobs:
           python -m pip install --disable-pip-version-check playwright==1.55.0
           python -m playwright install --with-deps chromium
 
-      - name: Start ProofGate UI
+      - name: Start unified Auctorail dev server
         run: |
-          npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/proofgate-vite.log 2>&1 &
-          echo $! > /tmp/proofgate-vite.pid
+          npm run dev -- --host 127.0.0.1 --port 4173 > /tmp/auctorail-dev.log 2>&1 &
+          echo $! > /tmp/auctorail-dev.pid
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:4173 >/dev/null; then exit 0; fi
             sleep 1
           done
-          cat /tmp/proofgate-vite.log
+          cat /tmp/auctorail-dev.log
           exit 1
 
-      - name: Run full Screen 1 to Screen 3 Playwright QA
-        run: python qa/three-screen-playwright-runner.py
+      - name: Verify bundled local APIs
+        run: |
+          auth_ready=false
+          for i in {1..30}; do
+            if curl -fsS -o /dev/null -X OPTIONS http://127.0.0.1:4173/api/authorize; then
+              auth_ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$auth_ready" != "true" ]; then
+            echo "Authorization API did not become ready."
+            cat /tmp/auctorail-dev.log
+            exit 1
+          fi
 
-      - name: Run truthful authorization error-state audit
-        run: python qa/error-state-fidelity.py
+          lab_ready=false
+          for i in {1..30}; do
+            if curl -fsS -X POST http://127.0.0.1:4173/api/security-lab \
+              -H 'content-type: application/json' -d '{}' > /tmp/security-lab.json; then
+              lab_ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$lab_ready" != "true" ]; then
+            echo "Security Lab API did not become ready."
+            cat /tmp/auctorail-dev.log
+            exit 1
+          fi
 
-      - name: Run dynamic limit-warning audit
-        run: python qa/limit-warning-fidelity.py
+          # Historical schema identifier is intentionally stable across the rename.
+          node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("/tmp/security-lab.json","utf8"));if(r.schemaVersion!=="proofgate.attack-lab.v1"||r.allPassed!==true||r.total!==10)process.exit(1)'
 
-      - name: Upload UI screenshots
+      - name: Run final landing, demo, live, SDK and Security Lab audit
+        run: python qa/auctorail-final-playwright.py
+
+      - name: Upload Auctorail UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: proofgate-three-screen-playwright
+          name: auctorail-final-playwright
           path: playwright-artifacts/
           if-no-files-found: warn

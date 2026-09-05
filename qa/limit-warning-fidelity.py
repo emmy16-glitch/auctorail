@@ -11,13 +11,15 @@ async def main():
         page = await browser.new_page(viewport={"width": 390, "height": 844})
         await page.goto(BASE_URL, wait_until="networkidle")
 
-        await page.get_by_role("button", name="Current request").click()
+        await page.get_by_role("button", name="CURRENT REQUEST", exact=False).click()
+        await expect(page.get_by_text("AGENT REQUEST", exact=True)).to_be_visible()
+        await page.get_by_role("button", name="EDIT TEST REQUEST").click()
         amount = page.locator("#request-amount")
         await amount.fill("6.00")
-        await page.get_by_role("button", name="DONE").click()
+        await page.get_by_role("button", name="DONE EDITING").click()
 
         warning = page.get_by_text(
-            "This request is above the current limit. ProofGate will block it before any Miner is paid.",
+            "This request is above the current maximum. ProofGate will block it locally before any Miner is paid.",
             exact=True,
         )
         await expect(warning).to_be_visible()

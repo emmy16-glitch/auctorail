@@ -228,7 +228,8 @@ async def assert_screen2_running(page):
     await expect(page.get_by_text("RULES CHECKED", exact=True)).to_be_visible()
     await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_be_visible()
     await expect(page.get_by_text("DECISION", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Bounded x402 verification fees", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Telegraph is routing the required intelligence to real Miners", exact=False)).to_be_visible()
+    await expect(page.get_by_text("vendor payment has not started", exact=False)).to_be_visible()
     await assert_no_overflow(page, "Screen 2")
     heading_family = await css(page.get_by_role("heading", name="CHECKING REQUEST"), "font-family")
     assert "Courier New" in heading_family
@@ -238,6 +239,11 @@ async def assert_screen2_running(page):
     cancel = page.get_by_role("button", name="CANCEL CHECK")
     await expect(cancel).to_be_disabled()
     await assert_target(cancel)
+
+    for stage in ["01", "02", "03", "04"]:
+        trigger = page.locator(f'[data-stage="{stage}"] .timeline-disclosure-trigger')
+        await expect(trigger).to_be_visible()
+        await expect(trigger).to_have_attribute("aria-expanded", "false")
 
 
 async def assert_screen3_running(page):

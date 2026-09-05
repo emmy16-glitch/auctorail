@@ -48,7 +48,7 @@ function decide(
 }
 
 describe("payments.adaptive.v1", () => {
-  it("allows complete LOW and HIGH evidence bundles", () => {
+  it("allows complete LOW and MEDIUM evidence bundles within the autonomous ceiling", () => {
     expect(
       decide(
         adaptiveContext("1000000")
@@ -63,7 +63,7 @@ describe("payments.adaptive.v1", () => {
   });
 
   it("HOLDs when a required medium-risk Intent is missing after fraud quorum is satisfied", () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const mandate = adaptiveMandate();
     const fraudOnly = adaptiveQuorumInputs(
@@ -100,7 +100,7 @@ describe("payments.adaptive.v1", () => {
     const context = adaptiveContext(
       "7000000",
       {
-        WALLET_BALANCE_CHECK: {
+        ONCHAIN_TX_LOOKUP: {
           label: "HIGH_RISK"
         }
       }
@@ -149,7 +149,7 @@ describe("payments.adaptive.v1", () => {
       "7000000",
       {
         FRAUD_DETECTION: {
-          confidence: 0.79
+          confidence: 0.74
         }
       }
     );
@@ -172,7 +172,7 @@ describe("payments.adaptive.v1", () => {
             action,
             "FRAUD_DETECTION"
           ),
-          "15001"
+          "35001"
         )
       ],
       { now: ADAPTIVE_TEST_NOW }
@@ -196,7 +196,7 @@ describe("payments.adaptive.v1", () => {
   });
 
   it("BLOCKs required Intents that the principal did not delegate", () => {
-    const context = adaptiveContext("3000000");
+    const context = adaptiveContext("7000000");
     const mandate = adaptiveMandate({
       requiredIntents: ["FRAUD_DETECTION"]
     });
@@ -231,13 +231,13 @@ describe("payments.adaptive.v1", () => {
             minimumDistinctMiners: 1,
             minimumPositiveResults: 1,
             minimumPositiveConfidence: 0.70,
-            maxAttempts: 1,
-            negativeVetoConfidence: null
+            maxAttempts: 3,
+            negativeVetoConfidence: 0.90
           }
         }
       ],
-      maxEvidenceSpendRaw: "15000",
-      maxEvidenceLatencyMs: 15000
+      maxEvidenceSpendRaw: "35000",
+      maxEvidenceLatencyMs: 35000
     };
     const bundle = createEvidenceBundle(
       action,
@@ -292,6 +292,40 @@ describe("payments.adaptive.v1", () => {
     expect(decision.decision).toBe("BLOCK");
     expect(decision.reason).toBe(
       "adaptive_bundle_integrity_failed"
+    );
+  });
+
+  it("does not let a high-consequence plan bypass the v1 autonomous payment ceiling", () => {
+    const action = adaptiveAction("70000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const mandate = adaptiveMandate({ maxPerActionRaw: "100000000" });
+    const bundle = createEvidenceBundle(
+      action,
+      plan,
+      adaptiveQuorumInputs(action, plan),
+      { now: ADAPTIVE_TEST_NOW }
+    );
+
+    const decision = evaluatePaymentsAdaptiveV1(
+      mandate,
+      action,
+      plan,
+      bundle,
+      {
+        agentId: ADAPTIVE_TEST_AGENT,
+        now: ADAPTIVE_TEST_NOW
+      }
+    );
+
+    expect(plan.riskTier).toBe("HIGH");
+    expect(decision.decision).toBe("BLOCK");
+    expect(decision.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "adaptive_autonomous_amount_limit",
+          status: "BLOCK"
+        })
+      ])
     );
   });
 });

@@ -1,69 +1,84 @@
-# Integrating ProofGate into another autonomous agent
+# Integrating Auctorail into an autonomous agent
 
-ProofGate belongs **between an autonomous agent and a consequential tool**.
+Auctorail belongs **between an autonomous agent and a consequential tool**.
 
-The agent supplies a proposal. The trusted host owns authority, evidence acquisition, policy, Permit signing, replay state, kill switch and execution.
+The agent proposes. The trusted host owns authority, evidence acquisition, policy, permit signing, replay state, kill-switch state and execution.
 
 ```text
-Autonomous Agent
-      |
-      | proposal only
-      v
-Trusted ProofGate host
-      |
-      +-- standing principal Mandate
-      +-- trusted Action Adapter
-      +-- canonical frozen action
-      +-- required evidence / Telegraph routing
-      +-- deterministic checks
-      +-- signed one-use Permit
-      +-- replay store + kill switch
-      |
-      v
-Controlled adapter execution
-      |
-      v
-External effect
+AUTONOMOUS AGENT
+      │
+      │ proposal only
+      ▼
+TRUSTED AUCTORAIL HOST
+      │
+      ├─ principal Mandate
+      ├─ trusted Action Adapter
+      ├─ frozen action
+      ├─ Telegraph / trusted evidence
+      ├─ deterministic policy
+      ├─ one-use authority
+      ├─ replay store
+      └─ kill switch
+      │
+      ▼
+PROTECTED EXECUTOR / ADAPTER
+      │
+      ▼
+EXTERNAL EFFECT
 ```
 
-The agent must not have a second direct route around this boundary.
+The most important deployment rule is that the agent must not have a second unrestricted route to the protected tool.
 
-## 1. Choose the integration mode
+> **Naming note:** the current product is Auctorail. Historical source identifiers such as `proofgate.action.v2`, `src/sdk/proofgate.ts`, and the TypeScript interface name `ProofGateActionAdapter` are retained for compatibility.
 
-ProofGate exposes two useful paths.
+---
 
-### Existing adaptive payment SDK
+## 1. Choose the integration path
 
-Use `src/sdk/proofgate.ts` when the protected action is the implemented Base Sepolia USDC payment flow. It includes adaptive Telegraph planning, x402 evidence acquisition, Evidence Bundles and the payment Permit/executor path.
+There are two practical paths in this repository.
 
-### General v1.2 Action Adapter SDK
+### Payment path
 
-Use `src/sdk/action-adapter.ts` when you want ProofGate to authorize another kind of consequential action.
+Use the existing payment authorization stack when you want to protect the implemented Base Sepolia USDC flow.
 
-The generic path provides:
+Relevant pieces include:
 
-- `proofgate.action.v2`
-- `proofgate.mandate.v2`
-- `proofgate.decision.v2`
-- `proofgate.permit.v2`
-- `ActionAdapterRegistry`
-- trusted evidence-coverage enforcement
-- execution-time Mandate revalidation
-- fail-closed execution kill switch
-- atomic single-use replay protection
-- `AMBIGUOUS` handling for uncertain external effects
+- `src/sdk/proofgate.ts` — historical internal payment SDK file;
+- `src/telegraph/adaptive-evidence-plan.ts` — LOW/MEDIUM/HIGH evidence planning;
+- `src/policy/payments-adaptive-v1.ts` — adaptive payment policy;
+- `src/executor/base-sepolia-usdc.ts` — protected payment execution;
+- `src/receipt/proof-receipt.ts` — payment proof receipt.
+
+The repository-local public-facing hackathon package is under `packages/sdk/` and exports `Auctorail`.
+
+### Generic action path
+
+Use `src/sdk/action-adapter.ts` when you want to protect another consequential action.
+
+The generic core provides:
+
+- `proofgate.action.v2`;
+- `proofgate.mandate.v2`;
+- `proofgate.decision.v2`;
+- `proofgate.permit.v2`;
+- `ActionAdapterRegistry`;
+- trusted evidence-coverage enforcement;
+- execution-time Mandate revalidation;
+- fail-closed kill-switch behavior;
+- atomic one-use replay protection;
+- `AMBIGUOUS` handling for uncertain external effects.
+
+---
 
 ## 2. What an Action Adapter is
 
-An adapter is **trusted application code** that knows the semantics of one external action.
+An Action Adapter is **trusted application code** that understands one kind of external effect.
+
+For example, a GitHub merge adapter knows how to freeze a merge proposal, what evidence it needs, and how to execute the merge only after Auctorail authorizes it.
 
 ```ts
-import {
-  createGeneralAction
-} from "../src/core/general-action.js";
-import type {
-  ProofGateActionAdapter
-} from "../src/sdk/action-adapter.js";
+import { createGeneralAction } from "../src/core/general-action.js";
+import type { ProofGateActionAdapter } from "../src/sdk/action-adapter.js";
 
 interface MergeProposal {
   target: string;
@@ -92,40 +107,27 @@ const mergeAdapter: ProofGateActionAdapter<
     });
   },
 
-  requiredIntents(_action) {
+  requiredIntents() {
     return ["CI_STATUS", "SECURITY_SCAN"];
   },
 
-  async evaluateTrusted({
-    action,
-    requiredIntents
-  }) {
-    // This runs inside the trusted host, not in the agent prompt.
-    // Obtain/verify the real evidence appropriate to this adapter.
+  async evaluateTrusted({ action }) {
     const evidence = await verifyMergeEvidence(action);
 
     return {
-      evidenceCommitmentHash:
-        evidence.commitmentHash,
-      coveredIntents: [
-        "CI_STATUS",
-        "SECURITY_SCAN"
-      ],
+      evidenceCommitmentHash: evidence.commitmentHash,
+      coveredIntents: ["CI_STATUS", "SECURITY_SCAN"],
       checks: [
         {
           name: "ci_status",
-          status: evidence.ciPassed
-            ? "PASS"
-            : "BLOCK",
+          status: evidence.ciPassed ? "PASS" : "BLOCK",
           reason: evidence.ciPassed
             ? "Required CI passed."
             : "Required CI failed."
         },
         {
           name: "security_scan",
-          status: evidence.securityPassed
-            ? "PASS"
-            : "BLOCK",
+          status: evidence.securityPassed ? "PASS" : "BLOCK",
           reason: evidence.securityPassed
             ? "Required security scan passed."
             : "Security scan found a blocking issue."
@@ -135,99 +137,85 @@ const mergeAdapter: ProofGateActionAdapter<
   },
 
   async execute(action) {
-    // Derive the actual side-effect fields from action.parameters/target.
-    // Never accept replacement execution values from the agent here.
     return performMerge(action);
   }
 };
 ```
 
-The sample action names are examples. ProofGate does not ship a production GitHub merge connector in v1.2.
+This GitHub example demonstrates the adapter contract only. The repository does **not** claim a production GitHub merge connector.
 
-## 3. Register the trusted adapter
+---
+
+## 3. Register only trusted adapters
 
 ```ts
-import {
-  ActionAdapterRegistry
-} from "../src/sdk/action-adapter.js";
+import { ActionAdapterRegistry } from "../src/sdk/action-adapter.js";
 
 const registry = new ActionAdapterRegistry();
 registry.register(mergeAdapter);
 ```
 
-The registry prevents duplicate registration for the same action-type/policy/version tuple.
+Registration binds an action type to a policy ID/version and trusted implementation.
 
-When authorizing, ProofGate also verifies that `freeze()` returns the exact type/policy/version that was registered. A mismatched frozen contract fails before Permit creation.
+Auctorail also checks that `freeze()` returns the same type/policy/version that was registered. An adapter cannot register one policy and freeze an action under another one without failing the authorization path.
 
-## 4. Create a principal Mandate
+Do not register arbitrary third-party adapter code without review. The adapter executes inside the trusted host boundary.
 
-The principal creates standing authority outside the agent-controlled reasoning context.
+---
+
+## 4. Create the principal Mandate outside the agent prompt
+
+The principal's authority must exist independently of the agent's current request.
 
 ```ts
-import {
-  createGeneralMandate
-} from "../src/core/general-mandate.js";
+import { createGeneralMandate } from "../src/core/general-mandate.js";
 
 const mandate = createGeneralMandate({
   mandateId: "engineering-agent-sept-2026",
   principalId: "acme-engineering",
   agentId: "coding-agent",
 
-  allowedActionTypes: [
-    "github.merge"
-  ],
-
-  allowedTargets: [
-    "github:acme/production#42"
-  ],
-
-  requiredIntents: [
-    "CI_STATUS",
-    "SECURITY_SCAN"
-  ],
+  allowedActionTypes: ["github.merge"],
+  allowedTargets: ["github:acme/production#42"],
+  requiredIntents: ["CI_STATUS", "SECURITY_SCAN"],
 
   policyId: "github.merge.v1",
   policyVersion: 1,
   status: "ACTIVE",
   issuedAt: new Date().toISOString(),
-  expiresAt:
-    new Date(Date.now() + 60 * 60 * 1000)
-      .toISOString(),
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   version: 1
 });
 ```
 
-The general Mandate binds exact agent identity, allowed action type, exact targets, delegated evidence classes, policy/version and lifecycle.
+The agent should not be allowed to silently create a new Mandate with a larger target set, longer expiry or broader action scope just because its prompt asks for it.
 
-## 5. Authorize the agent proposal
+---
+
+## 5. Authorize the proposal
 
 ```ts
-import {
-  authorizeRegisteredAction
-} from "../src/sdk/action-adapter.js";
+import { authorizeRegisteredAction } from "../src/sdk/action-adapter.js";
 
-const authorization =
-  await authorizeRegisteredAction({
-    registry,
-    adapterType: "github.merge",
-    policyId: "github.merge.v1",
-    policyVersion: 1,
+const authorization = await authorizeRegisteredAction({
+  registry,
+  adapterType: "github.merge",
+  policyId: "github.merge.v1",
+  policyVersion: 1,
 
-    // This is the only part supplied by the agent.
-    proposal: {
-      target: "github:acme/production#42",
-      branch: "main",
-      sha: "abc123..."
-    },
+  proposal: {
+    target: "github:acme/production#42",
+    branch: "main",
+    sha: "abc123..."
+  },
 
-    mandate,
-    agentId: "coding-agent",
-    signer: permitSigner,
-    ttlSeconds: 30
-  });
+  mandate,
+  agentId: "coding-agent",
+  signer: permitSigner,
+  ttlSeconds: 30
+});
 
 if (!authorization.permit) {
-  // HOLD/BLOCK = no executable authority.
   console.error(
     authorization.decision.decision,
     authorization.decision.reason
@@ -236,63 +224,61 @@ if (!authorization.permit) {
 }
 ```
 
-### What happens inside this call
+### What Auctorail checks before a permit can exist
 
-1. resolve the trusted adapter;
-2. freeze/canonicalize the proposal;
-3. verify adapter type/policy consistency;
-4. evaluate the principal Mandate;
-5. derive adapter-required Intents;
-6. verify every required Intent was delegated;
-7. **stop before `evaluateTrusted()` if authority already fails**;
-8. run trusted evidence verification;
-9. require exact `coveredIntents` accounting;
-10. reject unrequested Intent claims;
-11. require an evidence commitment when evidence is required;
-12. require trusted checks when evidence is required;
-13. create the canonical decision;
-14. mint a short-lived Permit only when every check is `PASS`.
+The generic authorization path:
 
-Checking Mandate scope before evidence acquisition matters: an unauthorized proposal cannot burn paid Telegraph/x402 verification budget first and then discover it was never permitted anyway.
+1. resolves the trusted adapter;
+2. freezes/canonicalizes the proposal;
+3. verifies adapter type and policy metadata;
+4. evaluates the principal Mandate;
+5. derives adapter-required evidence Intents;
+6. verifies those Intents were delegated;
+7. stops before trusted evidence work if authority already fails;
+8. runs trusted evidence verification;
+9. requires exact evidence-coverage accounting;
+10. rejects unrequested claimed Intents;
+11. requires an evidence commitment when evidence is required;
+12. requires trusted checks when evidence is required;
+13. creates the decision;
+14. mints short-lived authority only when every required check passes.
 
-## 6. Evidence commitment rules
+Checking authority before paid evidence acquisition matters because an undelegated proposal should not be able to burn the principal's Telegraph/x402 budget.
 
-`evaluateTrusted()` must not simply return `checks: PASS`.
+---
 
-When external evidence is required it must return:
+## 6. Evidence commitments: integrity is not authenticity
+
+When external evidence is required, `evaluateTrusted()` should return something like:
 
 ```ts
 {
-  evidenceCommitmentHash: "0x...64 hex chars...",
-  coveredIntents: ["..."],
+  evidenceCommitmentHash: "0x...",
+  coveredIntents: ["CI_STATUS", "SECURITY_SCAN"],
   checks: [/* deterministic trusted checks */]
 }
 ```
 
-ProofGate enforces:
+Auctorail treats missing required evidence conservatively:
 
-- missing required Intent coverage → `HOLD`
-- unrequested Intent coverage → `BLOCK`
-- required evidence with no commitment → `HOLD`
-- required evidence with no trusted checks → `HOLD`
-- un-delegated adapter-required Intent → `BLOCK`
+```text
+missing required Intent coverage  → HOLD
+required evidence, no commitment  → HOLD
+required evidence, no trusted check → HOLD
+undelegated required Intent        → BLOCK
+unrequested claimed Intent         → BLOCK
+```
 
-The commitment may reference a Telegraph Evidence Bundle or another adapter-specific trusted evidence structure.
+A hash proves integrity of what was committed. It does **not** prove that the source was genuine.
 
-### Important authenticity rule
+For Telegraph-backed integrations, the trusted host must own the actual routing/x402/provenance checks. Do not let the model fabricate an “evidence bundle” and then treat its hash as authenticated proof.
 
-A commitment hash proves integrity of whatever was committed. It does **not** prove the source was authentic.
+---
 
-Your trusted adapter must establish source authenticity before returning its evidence commitment/checks.
-
-For Telegraph-backed adapters this means the trusted host should own the actual Telegraph routing/x402/provenance verification. Do not ask the autonomous model to fabricate or submit its own “proof bundle.”
-
-## 7. Execute through the controlled boundary
+## 7. Execute only through the controlled boundary
 
 ```ts
-import {
-  executeRegisteredAction
-} from "../src/sdk/action-adapter.js";
+import { executeRegisteredAction } from "../src/sdk/action-adapter.js";
 
 const execution = await executeRegisteredAction({
   registry,
@@ -305,41 +291,43 @@ const execution = await executeRegisteredAction({
 });
 ```
 
-Before the adapter callback runs, ProofGate:
+Before `adapter.execute()` runs, Auctorail:
 
-1. checks the execution kill switch;
-2. fails closed if kill-switch state is unavailable;
-3. verifies decision integrity/semantics;
-4. re-evaluates the Mandate **at execution time**;
-5. verifies Permit signature/bindings/time;
-6. atomically consumes `permitId + nonce`;
-7. only then calls `adapter.execute()`.
+1. checks kill-switch state;
+2. fails closed if authoritative kill-switch state cannot be read;
+3. verifies decision integrity and semantics;
+4. re-evaluates the Mandate at execution time;
+5. verifies permit signature, bindings and time window;
+6. atomically consumes the permit ID + nonce;
+7. only then calls the trusted adapter.
 
-This means a still-live Permit cannot be used after its Mandate has already expired.
+This prevents a still-live permit from being used after the underlying Mandate has expired or been revoked.
 
-## 8. Replay and ambiguous effects
+---
 
-After the Permit is claimed, a thrown external call is treated as:
+## 8. Replay and ambiguous external effects
+
+A permit is designed for one protected execution attempt through the supported executor path.
+
+After the permit has been claimed, an external call that throws may be ambiguous:
 
 ```text
+remote system may have completed effect
+        +
+local connection failed
+        =
 AMBIGUOUS
 ```
 
-not:
+Do not automatically retry an irreversible effect in this state. The permit remains consumed. Reconcile the remote system first, then create a new authorization only if a new action is actually needed.
 
-```text
-FAILED → retry automatically
-```
+For multi-worker deployments, use the shared PostgreSQL permit-consumption store instead of independent local files.
 
-Why? A remote API may have completed the side effect before the connection failed.
+---
 
-The Permit remains consumed. The adapter/integration must reconcile the external system before any new authorization is created.
+## 9. Kill switch
 
-For multiple application workers, use the shared PostgreSQL `PermitConsumptionStore` rather than independent local filesystem stores.
-
-## 9. Execution kill switch
-
-The generic executor requires an `ExecutionKillSwitch`.
+The generic executor expects an authoritative kill-switch source.
 
 ```ts
 const executionKillSwitch = {
@@ -349,143 +337,170 @@ const executionKillSwitch = {
 };
 ```
 
-If it returns `true`, execution is blocked before Permit claim.
+If execution is disabled, the effect is blocked before permit claim.
 
-If reading it throws, execution also fails closed.
+If the state cannot be read, the safe behavior is to fail closed rather than assume execution is allowed.
 
-The repository includes `DurableExecutionKillSwitch`, whose state-store failure is intentionally treated as disabled.
+---
 
-## 10. Production signing
+## 10. Signing and secrets
 
-- local/test/demo can use the HMAC development signer;
-- `NODE_ENV=production` rejects HMAC Permit minting;
-- use Ed25519 or a KMS/HSM-compatible signer in production;
-- keep signing keys outside the autonomous agent process.
+Keep permit-signing and execution credentials outside the autonomous agent's prompt/data boundary.
 
-## 11. Adapter security responsibilities
+Current repository behavior distinguishes development from production-oriented signing:
 
-ProofGate protects the authorization boundary, but the adapter is trusted code.
+- development/test code may use local HMAC signing;
+- production guards reject HMAC permit minting;
+- production deployments should use Ed25519 or a KMS/HSM-compatible signer;
+- live Telegraph/x402 and execution-wallet private keys remain server-side.
 
-An adapter must:
+The repository-local `@auctorail/sdk` package contains no private keys or Miner credentials.
 
-- derive external side-effect fields from the frozen `GeneralActionEnvelope`;
-- never accept replacement target/parameters from the agent during execution;
-- obtain evidence inside a trusted boundary;
-- commit exactly the evidence its checks rely on;
-- map external uncertainty to `HOLD`, not optimistic `PASS`;
-- return `BLOCK` for known policy/security failures;
-- provide reconciliation logic for irreversible or non-idempotent external effects;
-- keep credentials outside agent-controlled prompts/data.
+---
 
-ProofGate v1.2 does **not** sandbox malicious adapter code. Do not register arbitrary third-party adapters without review.
+## 11. Telegraph-backed custom adapters
 
-## 12. Telegraph-backed custom adapters
-
-The v1.2 architecture allows a custom adapter to use Telegraph too.
+A custom adapter may use Telegraph as its evidence source.
 
 Conceptually:
 
 ```text
-Adapter requiredIntents(action)
-          ↓
-Trusted host sends Telegraph Intent request(s)
-          ↓
+adapter.requiredIntents(action)
+        ↓
+trusted host requests Telegraph Intent(s)
+        ↓
 Telegraph routes to Miner(s)
-          ↓
-Host verifies provider + evidence provenance
-          ↓
-Host creates evidence commitment
-          ↓
-Adapter returns exact coveredIntents + checks
-          ↓
-ProofGate decision / Permit
+        ↓
+host verifies provider + provenance + binding
+        ↓
+host commits accepted evidence
+        ↓
+adapter returns coveredIntents + checks
+        ↓
+Auctorail ALLOW / HOLD / BLOCK
+        ↓
+permit only on ALLOW
 ```
 
-If same-Intent provider diversity matters, use the quorum primitives in:
+If same-Intent provider diversity matters, reuse the quorum primitives in:
 
 - `src/telegraph/evidence-quorum.ts`
 - `src/telegraph/adaptive-orchestrator.ts`
 - `src/telegraph/evidence-bundle.ts`
 
-The current built-in live quorum wiring is implemented concretely for the adaptive payment evidence path.
+The current built-in live distinct-Miner quorum wiring is concretely implemented for the adaptive payment path.
 
-## 13. Existing adaptive payment integration
+---
 
-For Base Sepolia USDC, the recommended higher-level path remains:
+## 12. Existing adaptive payment integration
 
-```ts
-const result = await authorizePaymentWithEvidence({
-  proposal: agentProposal,
-  mandate: principalMandate,
-  agentId: "treasury-agent",
-  acquire: trustedTelegraphIntentAcquirer,
-  signer: permitSigner
-});
-```
+The payment path is the first real protected external effect demonstrated publicly.
 
-The payment adapter provides:
+It provides:
 
-- consequence-derived LOW/MEDIUM/HIGH planning
-- multiple Telegraph Intents
-- distinct-Miner fraud quorum for MEDIUM/HIGH
-- x402 per-request and aggregate evidence budgets
-- canonical Evidence Bundle
-- payment-specific policy
-- payment Permit/execution/receipt path
+- consequence-derived LOW/MEDIUM/HIGH evidence planning;
+- multiple Telegraph Intents at higher consequence;
+- distinct-Miner fraud quorum;
+- bounded x402 per-request and aggregate evidence spend;
+- evidence bundles and decision commitments;
+- payment-specific policy;
+- one-use permit/execution path;
+- payment receipt verification.
 
-See README and `ARCHITECTURE.md` for the exact quorum table.
+See:
 
-## 14. Evaluate-only HTTP gateway
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`RISK_POLICY.md`](RISK_POLICY.md)
+- [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md)
+- [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md)
+
+---
+
+## 13. Repository-local SDK
+
+The hackathon package can be installed directly from the repository:
 
 ```bash
-npm run gateway:serve
+npm install ./packages/sdk
 ```
 
-The existing gateway is intentionally **non-authoritative**. It does not:
+Example:
 
-- accept wallet/signing private keys;
-- purchase evidence;
-- mint executable authority;
-- consume Permits;
-- execute external effects.
+```js
+import { Auctorail } from "@auctorail/sdk";
 
-It is a planning/evaluation surface, not the generic production Permit service.
+const rail = new Auctorail({
+  baseUrl: "http://127.0.0.1:8787"
+});
 
-## 15. Integration checklist
+const auth = await rail.authorize({
+  agent: "invoice-bot",
+  amount: "1.00",
+  recipient: "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
+  reason: "Supplier invoice #4471",
+  reference: "INV-4471",
+  live: false
+});
+
+console.log(auth.decision);
+```
+
+Use `live: false` when you want local policy preflight without making a paid live Telegraph request.
+
+Do not advertise `@auctorail/sdk` as a public npm release until it is actually published.
+
+---
+
+## 14. Adapter security checklist
 
 Do:
 
 - create Mandates outside agent-controlled reasoning;
 - register only reviewed trusted adapters;
-- freeze action semantics before evidence acquisition;
+- freeze exact action semantics before evidence acquisition;
 - check authority before spending on evidence;
-- explicitly account for every required Intent;
-- keep evidence acquisition and Permit signing inside the trusted host;
+- keep evidence acquisition and permit signing in the trusted host;
+- account for every required Intent;
+- derive execution parameters from the frozen action;
 - use shared atomic replay state across workers;
 - require a fail-closed kill switch;
 - revalidate current authority immediately before execution;
-- derive side-effect parameters from the frozen action;
-- reconcile `AMBIGUOUS` effects instead of blind retry;
-- preserve evidence/decision/Permit audit material.
+- reconcile ambiguous effects instead of blindly retrying;
+- preserve receipt/evidence/decision material for audit.
 
 Do not:
 
-- let the agent create its own Mandate;
-- let the agent choose its own authoritative risk tier/quorum thresholds;
-- treat Miner `ALLOW` as permission;
+- let the agent create its own authoritative Mandate;
+- let the agent choose authoritative risk/quorum thresholds;
+- treat a Miner `ALLOW` as permission;
 - count repeated responses from the same Miner as independent providers;
-- allow low-confidence positive votes to satisfy a higher confidence quorum;
 - average away explicit negative evidence;
-- accept arbitrary agent-supplied evidence JSON as authenticated proof;
-- let an undelegated action consume paid evidence budget;
-- expose signer/tool credentials to the agent;
+- accept arbitrary agent-supplied JSON as authenticated Telegraph proof;
+- expose signer or execution credentials to the agent;
 - give the agent a bypass around the controlled executor;
-- blindly retry an irreversible ambiguous effect.
+- automatically retry an irreversible ambiguous effect.
 
-## Current scope, precisely
+---
 
-ProofGate's **authorization core is now action-general** through trusted adapters.
+## 15. Current scope
 
-The only publicly demonstrated real protected external effect remains the v1.0 Base Sepolia USDC payment. v1.2 does not claim that GitHub/cloud/database examples have been live-deployed or production audited.
+Auctorail's authorization core is action-general through trusted adapters.
 
-That distinction is deliberate: the architecture is reusable, while real integrations must still implement and validate their own trusted adapter semantics.
+What is demonstrated today:
+
+- a real protected Base Sepolia USDC execution;
+- genuine Telegraph/x402 evidence in the payment lane;
+- consequence-adaptive distinct-Miner quorum logic;
+- Content Trust policy and verifiable content receipts;
+- deterministic Security Lab and fuzz validation;
+- a repository-local SDK.
+
+What is not claimed:
+
+- production GitHub/cloud/database adapters;
+- a public hosted developer-authentication boundary;
+- arbitrary untrusted adapter sandboxing;
+- a public npm release;
+- an independent production security audit.
+
+For the documentation source-of-truth order, see [`README.md`](README.md).

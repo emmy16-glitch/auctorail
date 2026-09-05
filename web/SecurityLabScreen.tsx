@@ -41,7 +41,7 @@ const PRESETS: AttackPreset[] = [
   { id: "permit_replay", category: "permit", label: "Replay consumed permit", description: "Reuse a permit after the authorized action has already consumed it.", original: "Fresh permit", mutated: "Consumed permit", boundary: "Permit", stoppedAt: "Consumption guard" },
   { id: "permit_forgery", category: "permit", label: "Forge permit signature", description: "Alter the HMAC signature on an otherwise valid permit.", original: "Valid signature", mutated: "Forged signature", boundary: "Permit", stoppedAt: "Signature verification" },
   { id: "expired_permit", category: "permit", label: "Use expired permit", description: "Attempt execution after the permit's 30-second TTL.", original: "Within 30s TTL", mutated: "31s after mint", boundary: "Permit", stoppedAt: "Expiry validation" },
-  { id: "evidence_subject_swap", category: "evidence", label: "Swap evidence subject", description: "Replace vendor evidence with evidence bound to another address.", original: "ProofGate Vendor", mutated: "Different vendor", boundary: "Evidence", stoppedAt: "Evidence binding" },
+  { id: "evidence_subject_swap", category: "evidence", label: "Swap evidence subject", description: "Replace vendor evidence with evidence bound to another address.", original: "Auctorail Vendor", mutated: "Different vendor", boundary: "Evidence", stoppedAt: "Evidence binding" },
   { id: "negative_miner", category: "evidence", label: "Force negative Miner verdict", description: "Keep runtime proof valid while the deterministic Telegraph verdict becomes BLOCK.", original: "Miner: ALLOW", mutated: "Miner: BLOCK", boundary: "Evidence", stoppedAt: "Policy evaluation" },
   { id: "runtime_attestation_tamper", category: "evidence", label: "Tamper runtime attestation", description: "Alter pinned runtime evidence while Telegraph still reports ALLOW.", original: "Pinned runtime", mutated: "Modified runtime", boundary: "Evidence", stoppedAt: "Runtime attestation" },
   { id: "receipt_tamper", category: "receipt", label: "Modify transaction hash", description: "Change the transaction hash inside a completed Proof Receipt.", original: "Signed receipt hash", mutated: "Altered tx hash", boundary: "Receipt", stoppedAt: "Receipt verification" }
@@ -112,13 +112,13 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
     <main className="lab-workbench" data-testid="security-lab-screen">
       <header className="lab-intro">
         <div>
-          <span className="lab-kicker">SECURITY LAB</span>
-          <h1>Try to break ProofGate.</h1>
-          <p>Mutate a valid authorization and see exactly where ProofGate stops it. Learn by doing.</p>
+          <span className="lab-kicker">SECURITY LAB · DETERMINISTIC</span>
+          <h1>Try to break Auctorail.</h1>
+          <p>Mutate a valid authorization and see exactly where Auctorail stops it. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
         </div>
         <aside className="lab-safety">
           <span className="lab-flask" aria-hidden="true">△</span>
-          <div><strong>A SAFE, OFFLINE TEST ENVIRONMENT</strong><p>The lab is isolated from CHECK. No real payments are made. Every result comes from the deterministic attack harness.</p></div>
+          <div><strong>SAFE · OFFLINE · ZERO REAL PAYMENTS</strong><p>The lab is isolated from LIVE CHECK. No Telegraph/x402 purchase or blockchain write is made. Every result comes from the deterministic attack harness.</p></div>
         </aside>
       </header>
 
@@ -132,8 +132,8 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
             </button>;
           })}
           <div className="lab-examples">
-            <span className="section-label">EXAMPLES</span>
-            <p>Common attack patterns</p><p>How protections work</p><p>Technical reference</p>
+            <span className="section-label">JUDGE QUICK PATH</span>
+            <p>1. Modify payment amount</p><p>2. Replay consumed permit</p><p>3. Remove / corrupt evidence</p>
           </div>
         </aside>
 
@@ -143,10 +143,10 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
             <label className="attack-type"><span>ATTACK TYPE</span><select value={selected.id} onChange={(e) => setPresetId(e.target.value)}>{presets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <div className="attack-description">{selected.description}</div>
             <div className="mutation-grid">
-              <div className="mutation-card original"><span>ORIGINAL REQUEST (AUTHORIZED)</span><dl><dt>State</dt><dd>{selected.original}</dd><dt>Recipient</dt><dd>ProofGate Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
-              <div className="mutation-card mutated"><span>MUTATED REQUEST (ATTACK)</span><dl><dt>State</dt><dd>{selected.mutated}</dd><dt>Recipient</dt><dd>ProofGate Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
+              <div className="mutation-card original"><span>ORIGINAL REQUEST (AUTHORIZED)</span><dl><dt>State</dt><dd>{selected.original}</dd><dt>Recipient</dt><dd>Auctorail Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
+              <div className="mutation-card mutated"><span>MUTATED REQUEST (ATTACK)</span><dl><dt>State</dt><dd>{selected.mutated}</dd><dt>Recipient</dt><dd>Auctorail Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
             </div>
-            <div className="builder-note"><strong>CONTROLLED MUTATION</strong><p>You are mutating a valid deterministic authorization. ProofGate will execute the real attack-harness check for this boundary.</p></div>
+            <div className="builder-note"><strong>CONTROLLED MUTATION</strong><p>You are mutating a valid deterministic authorization. Auctorail runs the real local attack-harness check for this boundary; no live external effect is attempted.</p></div>
             <button className="run-attack" onClick={runAttack} disabled={running} type="button"><span>{running ? "RUNNING ATTACK..." : "RUN ATTACK"}</span><b>→</b></button>
           </div>
         </section>
@@ -154,13 +154,13 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         <aside className="last-result hard-shadow">
           <div className="result-heading">LAST RESULT</div>
           {lastResult && lastPreset ? <>
-            <div className={`result-status ${lastResult.passed ? "blocked" : "failed"}`}><span>✓</span><div><strong>{lastResult.passed ? "ATTACK BLOCKED" : "ATTACK SUCCEEDED"}</strong><p>{lastResult.passed ? "ProofGate stopped this mutated request." : "The expected boundary did not hold."}</p></div></div>
+            <div className={`result-status ${lastResult.passed ? "blocked" : "failed"}`}><span>✓</span><div><strong>{lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}</strong><p>{lastResult.passed ? "Auctorail stopped this mutated request before protected execution." : "The expected security boundary did not hold."}</p></div></div>
             <dl className="result-facts"><dt>BOUNDARY</dt><dd>{lastPreset.boundary}</dd><dt>REASON</dt><dd>{lastResult.observed}</dd><dt>STOPPED AT</dt><dd>{lastPreset.stoppedAt}</dd><dt>TIME</dt><dd>{lastTime}</dd></dl>
             <div className="compare-row"><div><span>EXPECTED</span><strong>{lastResult.expected}</strong></div><div><span>OBSERVED</span><strong>{lastResult.observed}</strong></div></div>
-            <div className="result-explain"><strong>EXPLANATION</strong><p>The mutated state no longer matches the signed authorization or protected integrity boundary, so protected execution is rejected.</p></div>
+            <div className="result-explain"><strong>WHY IT MATTERS</strong><p>The mutated state no longer matches the authorized integrity boundary, so no protected execution authority is accepted.</p></div>
             <details className="technical-trace"><summary>VIEW TECHNICAL TRACE ↓</summary><pre>{JSON.stringify(lastResult, null, 2)}</pre></details>
             <button className="try-again" type="button" onClick={() => { setLastResult(null); setLastPreset(null); }}>TRY ANOTHER MUTATION ↻</button>
-          </> : <div className="empty-result"><strong>NO ATTACK RUN YET</strong><p>Configure a mutation and run it. The exact boundary result will appear here.</p></div>}
+          </> : <div className="empty-result"><strong>NO ATTACK RUN YET</strong><p>Choose a mutation and run it. The exact enforcement boundary will appear here.</p></div>}
         </aside>
       </div>
 
@@ -172,8 +172,8 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
           {recent.length ? <div className="recent-list">{recent.map((item) => <div key={item.id}><span>{item.attack}</span><b>{item.passed ? "BLOCKED" : "FAILED"}</b></div>)}</div> : <p className="recent-empty">Run an attack or the full suite to populate deterministic results.</p>}
         </section>
         <section className="suite-card">
-          <div><strong>⚡ RUN FULL ATTACK SUITE</strong><p>Execute all deterministic adversarial tests against the gate.</p><button onClick={runFullSuite} disabled={runningSuite} type="button">{runningSuite ? "RUNNING SUITE..." : "RUN SUITE →"}</button></div>
-          <aside className={report?.allPassed ? "suite-score passed" : "suite-score"}><b>{report ? `${report.passed}/${report.total}` : "—/—"}</b><strong>{report?.allPassed ? "GATE HELD" : "AWAITING RUN"}</strong><span>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</span></aside>
+          <div><strong>⚡ RUN FULL ATTACK SUITE</strong><p>Execute every deterministic adversarial test against the authorization boundary.</p><button onClick={runFullSuite} disabled={runningSuite} type="button">{runningSuite ? "RUNNING SUITE..." : "RUN SUITE →"}</button></div>
+          <aside className={report?.allPassed ? "suite-score passed" : "suite-score"}><b>{report ? `${report.passed}/${report.total}` : "—/—"}</b><strong>{report?.allPassed ? "RAIL HELD" : "AWAITING RUN"}</strong><span>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</span></aside>
         </section>
       </div>
     </main>

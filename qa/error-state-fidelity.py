@@ -17,6 +17,7 @@ def reply(*, fingerprint=FREEZE, status="REQUIRES_INTELLIGENCE", decision=None, 
         "policyId": "payments.adaptive.v1",
         "policyVersion": 1,
         "freezeFingerprint": fingerprint,
+        "routing": {"mode": "TELEGRAPH_AUTO_INTENT", "endpoint": "/v1/ask"},
         "action": {
             "id": "act_error_state",
             "hash": "0x" + ("a" * 64),
@@ -46,6 +47,15 @@ async def assert_no_overflow(page, label):
     assert overflow <= 1, f"{label} overflow: {overflow}px"
 
 
+async def open_stage(page, number):
+    trigger = page.locator(f'[data-stage="{number}"] .timeline-disclosure-trigger')
+    await expect(trigger).to_be_visible()
+    await trigger.click()
+    details = page.get_by_test_id(f"timeline-detail-{number}")
+    await expect(details).to_be_visible()
+    return details
+
+
 async def miner_result_mismatch(browser):
     page = await browser.new_page(viewport={"width": 390, "height": 844})
 
@@ -59,9 +69,6 @@ async def miner_result_mismatch(browser):
             )
             return
 
-        # A favorable-looking response is deliberately bound to the wrong
-        # preflight fingerprint. The UI must fail closed and describe the
-        # Miner stage as stopped, never as still running or waiting on rules.
         await route.fulfill(
             status=200,
             content_type="application/json",
@@ -83,11 +90,17 @@ async def miner_result_mismatch(browser):
     await expect(page.get_by_text("RULES CHECKED", exact=True)).to_be_visible()
     await expect(page.get_by_text("REAL CHECKS STOPPED", exact=True)).to_be_visible()
     await expect(
-        page.get_by_text("Live Miner verification did not produce a trusted result", exact=True)
+        page.get_by_text("Live verification did not produce a trusted result", exact=True)
     ).to_be_visible()
     await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_have_count(0)
-    await expect(page.get_by_text("Waiting for authorization rules", exact=True)).to_have_count(0)
     await expect(page.get_by_text("ALLOW", exact=True)).to_have_count(0)
+
+    details = await open_stage(page, "03")
+    await expect(details.get_by_text("WHY IT STOPPED", exact=True)).to_be_visible()
+    await expect(details.get_by_text("The request changed after the rules check", exact=False)).to_be_visible()
+    await details.locator("summary").click()
+    await expect(details.get_by_text("frozen_request_mismatch", exact=True)).to_be_visible()
+    await expect(details.get_by_text("Permit issued", exact=True)).to_be_visible()
     await assert_no_overflow(page, "Miner-error state")
     await page.screenshot(path="playwright-artifacts/ui-fidelity-error-390.png", full_page=True)
     await page.close()
@@ -113,14 +126,58 @@ async def policy_failure_before_miners(browser):
 
     await expect(page.get_by_text("Stopped safely.", exact=True)).to_be_visible(timeout=2500)
     await expect(page.get_by_text("RULES STOPPED", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Authorization rules did not complete", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Permission check did not complete", exact=True)).to_be_visible()
     await expect(page.get_by_text("REAL CHECKS NOT STARTED", exact=True)).to_be_visible()
     await expect(page.get_by_text("Rules did not complete, so no Miner call was made", exact=True)).to_be_visible()
     await expect(page.get_by_text("RULES CHECKED", exact=True)).to_have_count(0)
     await expect(page.get_by_text("REAL CHECKS RUNNING", exact=True)).to_have_count(0)
+
+    details = await open_stage(page, "03")
+    await expect(details.get_by_text("WHY IT DIDN'T START", exact=True)).to_be_visible()
+    await details.locator("summary").click()
+    await expect(details.get_by_text("Telegraph call", exact=True)).to_be_visible()
+    await expect(details.get_by_text("NOT SENT", exact=True)).to_be_visible()
     assert modes == ["policy"], f"live call dispatched after policy failure: {modes}"
     await assert_no_overflow(page, "policy-error state")
     await page.screenshot(path="playwright-artifacts/ui-fidelity-policy-error-390.png", full_page=True)
+    await page.close()
+
+
+async def live_quota_is_explained_as_proofgate_limit(browser):
+    page = await browser.new_page(viewport={"width": 390, "height": 844})
+    modes = []
+
+    async def authorize(route):
+        payload = json.loads(route.request.post_data or "{}")
+        modes.append(payload["mode"])
+        if payload["mode"] == "policy":
+            await route.fulfill(status=200, content_type="application/json", body=json.dumps(reply()))
+            return
+        await route.fulfill(
+            status=429,
+            content_type="application/json",
+            body=json.dumps({"error": "live_rate_limited"}),
+        )
+
+    await page.route("**/api/authorize", authorize)
+    await page.goto(BASE_URL, wait_until="networkidle")
+    await page.get_by_role("button", name="CHECK THIS REQUEST").click()
+
+    await expect(page.get_by_text("Live verification paused.", exact=True)).to_be_visible(timeout=2500)
+    await expect(page.get_by_text("ProofGate paused new live Miner calls", exact=False)).to_be_visible()
+    await expect(page.get_by_text("LIVE CHECK NOT STARTED", exact=True)).to_be_visible()
+    await expect(page.get_by_text("ProofGate stopped this attempt before a Miner call", exact=True)).to_be_visible()
+
+    details = await open_stage(page, "03")
+    await expect(details.get_by_text("WHY IT DIDN'T START", exact=True)).to_be_visible()
+    await details.locator("summary").click()
+    await expect(details.get_by_text("ProofGate deployment safety quota", exact=True)).to_be_visible()
+    await expect(details.get_by_text("Telegraph call", exact=True)).to_be_visible()
+    await expect(details.get_by_text("NOT SENT", exact=True)).to_be_visible()
+    await expect(details.get_by_text("Vendor execution", exact=True)).to_be_visible()
+    assert modes == ["policy", "live"]
+    await assert_no_overflow(page, "quota-error state")
+    await page.screenshot(path="playwright-artifacts/ui-fidelity-live-quota-390.png", full_page=True)
     await page.close()
 
 
@@ -130,6 +187,7 @@ async def main():
         try:
             await miner_result_mismatch(browser)
             await policy_failure_before_miners(browser)
+            await live_quota_is_explained_as_proofgate_limit(browser)
         finally:
             await browser.close()
 

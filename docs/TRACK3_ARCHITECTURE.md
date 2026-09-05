@@ -2,7 +2,7 @@
 
 ProofGate is a **consumption-side application** on Telegraph. It is not a Miner and it does not try to rank providers itself.
 
-Its job is to turn a bounded principal mandate plus real Telegraph intelligence into an enforceable machine authorization decision, then allow the protected action to execute only when that decision is valid.
+Its job is to turn a bounded principal Mandate plus real Telegraph intelligence into an enforceable machine authorization decision, then allow the protected action to execute only when that decision is valid.
 
 ## Product thesis
 
@@ -10,7 +10,7 @@ Its job is to turn a bounded principal mandate plus real Telegraph intelligence 
 
 An agent may decide what it wants to do. ProofGate decides whether that exact action is authorized to happen.
 
-Telegraph supplies ranked external intelligence. ProofGate consumes that intelligence, applies deterministic authorization policy, issues an exact-action Permit only for an `ALLOW`, executes through a protected adapter, and writes a verifiable receipt.
+Telegraph supplies ranked external intelligence. ProofGate consumes that intelligence, applies deterministic authorization policy, issues an exact-action Permit only for an `ALLOW`, executes through a protected adapter, and records verifiable proof afterward.
 
 ## End-to-end Track 3 flow
 
@@ -29,6 +29,10 @@ POLICY PREFLIGHT
   no paid Miner request yet
         |
         | inside authority
+        v
+CONSEQUENCE-ADAPTIVE EVIDENCE PLAN
+  derived from exact frozen action
+        |
         v
 SCREEN 2 — LIVE VERIFICATION
   ProofGate declares required Telegraph Intents
@@ -70,6 +74,22 @@ VERIFIABLE PROOFGATE RECEIPT
   decision lineage + evidence + Permit + execution
 ```
 
+## Evidence strength is not spending authority
+
+ProofGate keeps evidence requirements and principal authority separate.
+
+Current product-default payment evidence bands are:
+
+| Evidence tier | Proposed amount | Required Telegraph evidence |
+| --- | ---: | --- |
+| LOW | `<= 5 USDC` | 1 confidence-qualified `FRAUD_DETECTION` Miner; bounded retries only for unusable routes |
+| MEDIUM | `> 5 to 50 USDC` | 2 distinct positive fraud Miners + `ONCHAIN_TX_LOOKUP` |
+| HIGH | `> 50 USDC` | 3 distinct fraud Miners / 2 positive + `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` |
+
+These are consequence-adaptive **evidence defaults**, not universal financial-risk laws. The complete thresholds, confidence floors, deadlines and x402 budgets are documented in [`RISK_POLICY.md`](./RISK_POLICY.md).
+
+The current `payments.adaptive.v1` autonomous execution ceiling remains **10 USDC per action**. Therefore a HIGH evidence plan does not grant an agent authority to execute a >50 USDC payment. Stronger intelligence can satisfy delegated authority; it cannot create new authority. A higher-value live product would need a separate step-up/human-approved Mandate or policy.
+
 ## Screen contract
 
 ### Screen 1 — Control what an agent can do
@@ -102,9 +122,11 @@ This screen visualizes real backend stages, not cosmetic timers.
 3. `REAL CHECKS RUNNING`
 4. `DECISION`
 
-The paid stage begins only after the deterministic mandate check passes.
+The paid stage begins only after deterministic authority preflight passes.
 
 ProofGate requests **Intents**, not preferred Miner identities. Telegraph performs provider routing. ProofGate records the Miner actually served and only counts distinct providers toward quorum.
+
+A LOW request can retry an unusable route only within its precommitted attempt/deadline/x402 budget. No synthetic fallback is allowed. If sufficient real evidence is not obtained, the result is `HOLD`.
 
 If the final decision is `HOLD` or `BLOCK`, execution stops.
 
@@ -185,15 +207,18 @@ Production deployments should keep separate credentials for separate authorities
 
 A production permit signer must be asymmetric. Local HMAC signing remains development/test-only.
 
+These credentials stay in the trusted server boundary and are never shipped in the public web client or future hosted SDK client.
+
 ## Failure semantics
 
 ProofGate fails closed.
 
 | Failure | Result |
 | --- | --- |
-| proposal exceeds mandate | `BLOCK`, no Miner spend |
+| proposal exceeds Mandate | `BLOCK`, no Miner spend |
 | frozen request changed | reject before paid live verification |
 | Telegraph/x402 unavailable | no Permit, no vendor execution |
+| bounded evidence attempts/deadline exhausted | `HOLD`, no execution |
 | quorum incomplete | `HOLD`, no execution |
 | explicit unsafe evidence | `BLOCK`, no execution |
 | Permit invalid/expired/replayed | executor `BLOCKED` |
@@ -205,7 +230,7 @@ ProofGate fails closed.
 
 ProofGate receipts make the decision reconstructible from its authority, evidence and execution context.
 
-That provenance is important, but ProofGate is not merely an audit layer. Its defining property is that the receipt comes **after an enforced authorization boundary**:
+That provenance is important, but ProofGate is not merely an audit layer. Its defining property is that proof comes **after an enforced authorization boundary**:
 
 `evidence -> decision -> Permit -> protected execution`
 
@@ -223,6 +248,12 @@ Autonomous/continuous workflows may generate genuine machine traffic when they c
 
 The public Web UI is the human-observable surface for the same real pipeline. It must not silently substitute synthetic evidence, fake Miner results or fake transaction confirmations.
 
+## Developer adoption boundary
+
+The embedded trusted-host SDK already exposes the authorization orchestration inside a trusted Node/backend environment. A future hosted client SDK should make integration simple for external agents, while keeping Telegraph/x402, Permit and executor keys behind the ProofGate server.
+
+Before that hosted client is described as production-ready, the public API needs a dedicated API-key/authentication boundary. SDK simplicity must not weaken the authorization trust model.
+
 ## Submission story
 
 ProofGate demonstrates the consumption side of the Telegraph flywheel:
@@ -234,4 +265,4 @@ ProofGate demonstrates the consumption side of the Telegraph flywheel:
 5. an `ALLOW` can trigger a real downstream transaction automatically;
 6. the full action remains inspectable afterward through a verifiable receipt.
 
-That is the architecture the UI, API, executor and submission narrative must all describe.
+That is the architecture the UI, API, executor, SDK and submission narrative must all describe.

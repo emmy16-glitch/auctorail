@@ -1,17 +1,21 @@
 {
-  "name": "proof-gate",
+  "name": "auctorail",
   "version": "1.0.0",
-  "description": "Risk-adaptive authorization firewall for autonomous agents using Telegraph intelligence.",
+  "description": "Authorization rails for autonomous agents using Telegraph intelligence.",
   "type": "module",
   "main": "index.js",
-  "directories": {
-    "doc": "docs"
+  "exports": {
+    ".": "./src/sdk/auctorail.ts",
+    "./sdk": "./src/sdk/auctorail.ts",
+    "./legacy-proofgate": "./src/sdk/proofgate.ts"
   },
+  "directories": { "doc": "docs" },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "web:typecheck": "tsc -p tsconfig.web.json",
-    "ci": "npm run typecheck && npm run web:typecheck && npm test && npm run web:build",
+    "sdk:check": "node --check packages/sdk/index.js && node -e \"import('./packages/sdk/index.js').then(m=>{if(typeof m.Auctorail!=='function')process.exit(1)})\"",
+    "ci": "node --check scripts/dev.mjs && npm run sdk:check && npm run typecheck && npm run web:typecheck && npm test && npm run web:build",
     "audit:prod": "npm audit --omit=dev",
     "demo": "tsx scripts/demo-proof.ts",
     "proof:live": "tsx scripts/prove-telegraph.ts",
@@ -31,19 +35,13 @@
     "gateway:serve": "tsx scripts/serve-authorization-gateway.ts",
     "proof:reprocess": "tsx scripts/reprocess-quarantine.ts",
     "test:postgres": "tsx scripts/test-postgres.ts",
-    "dev": "PROOFGATE_LIVE_AUTHORIZATION_ENABLED=true tsx web/api-bundle.ts & vite --host 0.0.0.0",
-    "web:dev": "PROOFGATE_LIVE_AUTHORIZATION_ENABLED=true tsx web/api-bundle.ts & vite --host 0.0.0.0",
+    "dev": "node scripts/dev.mjs",
+    "web:dev": "vite --host 0.0.0.0",
     "web:build": "vite build",
     "web:preview": "vite preview --host 0.0.0.0",
     "web:api": "tsx web/api-bundle.ts"
   },
-  "keywords": [
-    "telegraph",
-    "ai-agents",
-    "authorization",
-    "x402",
-    "security"
-  ],
+  "keywords": ["auctorail", "telegraph", "ai-agents", "authorization", "x402", "security"],
   "author": "",
   "license": "ISC",
   "dependencies": {

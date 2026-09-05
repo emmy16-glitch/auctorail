@@ -14,7 +14,7 @@ import {
 
 describe("adaptive evidence orchestrator", () => {
   it("collects the routed attempts required by the high-risk quorum", async () => {
-    const action = adaptiveAction("7000000");
+    const action = adaptiveAction("70000000");
     const plan = createAdaptiveEvidencePlan(action);
     const seen: string[] = [];
 
@@ -65,7 +65,7 @@ describe("adaptive evidence orchestrator", () => {
   });
 
   it("continues after free schema-poor evidence without counting it as a quorum vote", async () => {
-    const action = adaptiveAction("7000000");
+    const action = adaptiveAction("70000000");
     const plan = createAdaptiveEvidencePlan(action);
     const seen: string[] = [];
 
@@ -135,7 +135,7 @@ describe("adaptive evidence orchestrator", () => {
   });
 
   it("accounts for a settled paid unusable response and continues within the precommitted budget", async () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const priorSeen: string[][] = [];
 
@@ -216,7 +216,7 @@ describe("adaptive evidence orchestrator", () => {
         throw new RetryableEvidenceAcquisitionError({
           code: "evidence_chain_not_asserted",
           detail: "paid Miner omitted chain",
-          paymentAmountRaw: "15001",
+          paymentAmountRaw: "35001",
           minerId: "over-budget-schema-poor-miner"
         });
       }
@@ -233,7 +233,7 @@ describe("adaptive evidence orchestrator", () => {
   });
 
   it("does not count repeated routing to the same Miner as independent diversity", async () => {
-    const action = adaptiveAction("3000000");
+    const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
 
     const result = await collectAdaptiveEvidence(
@@ -321,7 +321,7 @@ describe("adaptive evidence orchestrator", () => {
           action,
           requirement.intent
         ),
-        paymentAmountRaw: "15001"
+        paymentAmountRaw: "35001"
       })
     );
 

@@ -53,7 +53,7 @@ describe("provider-neutral Intent routing helpers", () => {
 
   it("reports coverage for every risk-required Intent", () => {
     const plan = createAdaptiveEvidencePlan(
-      adaptiveAction("7000000")
+      adaptiveAction("70000000")
     );
     const coverage = describeIntentCoverage(
       miners,
@@ -74,7 +74,7 @@ describe("provider-neutral Intent routing helpers", () => {
 
   it("fails closed when a required Intent has no active Miner", () => {
     const plan = createAdaptiveEvidencePlan(
-      adaptiveAction("7000000")
+      adaptiveAction("70000000")
     );
     const limited = miners.filter(
       (item) => item.slug !== "multi-b"

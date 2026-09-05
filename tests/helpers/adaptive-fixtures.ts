@@ -31,9 +31,15 @@ export const ADAPTIVE_TEST_VENDOR =
 export const ADAPTIVE_TEST_AGENT =
   "procurement-agent";
 
+type BaseSepoliaAdaptiveAction = ActionContract & {
+  payload: ActionContract["payload"] & {
+    chainId: typeof BASE_SEPOLIA_CHAIN_ID;
+  };
+};
+
 export function adaptiveAction(
   amountRaw = "7000000"
-): ActionContract {
+): BaseSepoliaAdaptiveAction {
   return createActionContract({
     type: "payment",
     chainId: BASE_SEPOLIA_CHAIN_ID,
@@ -43,7 +49,7 @@ export function adaptiveAction(
     reason: "Adaptive test payment",
     policyId: "payments.adaptive.v1",
     policyVersion: 1
-  });
+  }) as BaseSepoliaAdaptiveAction;
 }
 
 export function adaptiveMandate(

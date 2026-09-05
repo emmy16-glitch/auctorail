@@ -66,9 +66,9 @@ function routedEvidence(
 }
 
 describe("ProofGate developer SDK", () => {
-  it("plans risk and provider diversity automatically from a developer payment proposal", () => {
+  it("plans the strongest evidence tier automatically for a high-consequence proposal", () => {
     const planned = planPaymentAuthorization({
-      amountRaw: "7000000",
+      amountRaw: "70000000",
       destination: VENDOR,
       reason: "External agent purchase"
     });
@@ -145,9 +145,9 @@ describe("ProofGate developer SDK", () => {
     );
   });
 
-  it("returns a deterministic counterfactual after required fraud quorum but missing secondary evidence", () => {
+  it("returns a deterministic counterfactual after required medium-risk fraud quorum but missing secondary evidence", () => {
     const planned = planPaymentAuthorization({
-      amountRaw: "3000000",
+      amountRaw: "7000000",
       destination: VENDOR,
       reason: "SDK hold"
     });
@@ -215,7 +215,7 @@ describe("ProofGate developer SDK", () => {
       clock: () => NOW
     });
 
-    expect(result.plan.riskTier).toBe("HIGH");
+    expect(result.plan.riskTier).toBe("MEDIUM");
     expect(result.collection.status).toBe("COMPLETE");
     expect(result.authorization.decision.decision).toBe("ALLOW");
     expect(result.permit).not.toBeNull();
@@ -224,12 +224,12 @@ describe("ProofGate developer SDK", () => {
     );
   });
 
-  it("never mints a permit when the trusted acquisition path is incomplete", async () => {
+  it("never mints a permit when the trusted medium-risk acquisition path is incomplete", async () => {
     const mandate = mandateFor(VENDOR);
 
     const result = await authorizePaymentWithEvidence({
       proposal: {
-        amountRaw: "3000000",
+        amountRaw: "7000000",
         destination: VENDOR,
         reason: "Incomplete trusted path"
       },
