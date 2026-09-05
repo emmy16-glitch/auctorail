@@ -53,7 +53,7 @@ export interface AdaptiveEvidencePlan {
 }
 
 /*
- * These are ProofGate's default consequence bands, not universal financial
+ * These are Auctorail's default consequence bands, not universal financial
  * thresholds. The principal-created Mandate remains the real authority cap.
  * The public hackathon web path is intentionally capped lower again by its API.
  *
@@ -190,9 +190,14 @@ export function createAdaptiveEvidencePlan(
         ? "60000"
         : "100000";
 
+  // The public LOW-risk path must fail closed quickly enough to remain usable
+  // in interactive agent flows. Evidence quality requirements are unchanged;
+  // only the maximum waiting window is reduced. Slow or unavailable upstream
+  // evidence therefore becomes HOLD sooner instead of leaving the caller
+  // waiting for tens of seconds.
   const maxEvidenceLatencyMs =
     riskTier === "LOW"
-      ? 35_000
+      ? 12_000
       : riskTier === "MEDIUM"
         ? 60_000
         : 90_000;
