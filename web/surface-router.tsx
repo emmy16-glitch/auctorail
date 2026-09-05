@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ControlScreen, type ControlActivityItem } from "./ControlScreen";
+import { HomeLandingScreen } from "./HomeLandingScreen";
 import { SecurityLabScreen } from "./SecurityLabScreen";
 import "./surface-router.css";
 
 const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "");
 const DURATIONS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
-type Surface = "check" | "control" | "security";
+type Surface = "home" | "check" | "control" | "security";
 
 function parseLimitFromPage(): number {
   const value = document.querySelector<HTMLOutputElement>('[data-testid="limit-value"]')?.textContent ?? "5.00";
@@ -20,6 +21,20 @@ function parseDurationFromPage(): number {
   if (label === "1 hour") return 3600;
   if (label.endsWith("hours")) return Number.parseInt(label, 10) * 3600;
   return 86400;
+}
+
+function setEnvironmentStrip(surface: Surface) {
+  const strip = document.querySelector<HTMLElement>(".live-strip");
+  if (!strip) return;
+
+  if (surface === "home") {
+    strip.setAttribute("aria-label", "Offline demo environment");
+    strip.innerHTML = '<span class="live-dot"></span><span>OFFLINE MODE (SAFE DEMO)</span><i>·</i><span>BASE SEPOLIA</span><i>·</i><span>DETERMINISTIC RESULTS</span>';
+    return;
+  }
+
+  strip.setAttribute("aria-label", "Live environment");
+  strip.innerHTML = '<span class="live-dot"></span><span>LIVE</span><i>·</i><span>BASE SEPOLIA</span><i>·</i><span>REAL MINERS</span>';
 }
 
 function applyAuthorityToCheck(limit: number, duration: number, active: boolean) {
@@ -92,7 +107,7 @@ function readCurrentActivity(): ControlActivityItem | null {
 }
 
 function SurfaceRouter() {
-  const [surface, setSurface] = useState<Surface>("check");
+  const [surface, setSurface] = useState<Surface>("home");
   const [limit, setLimit] = useState(() => parseLimitFromPage());
   const [duration, setDuration] = useState(() => parseDurationFromPage());
   const [active, setActive] = useState(true);
@@ -109,6 +124,7 @@ function SurfaceRouter() {
       for (const element of originalContent()) element.style.display = surface === "check" ? "" : "none";
       const legacyNav = document.querySelector<HTMLElement>(".app-page > .top-tabs:not(.pg-surface-tabs)");
       if (legacyNav) legacyNav.style.display = "none";
+      setEnvironmentStrip(surface);
       applyAuthorityToCheck(limit, duration, active);
     };
     updateVisibility();
@@ -158,13 +174,19 @@ function SurfaceRouter() {
     }, 50);
   }
 
+  function previewDemo() {
+    document.getElementById("demo-preview-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   return (
     <>
       <nav className="top-tabs pg-surface-tabs" aria-label="ProofGate sections">
+        <button type="button" className={surface === "home" ? "active" : ""} aria-current={surface === "home" ? "page" : undefined} onClick={() => setSurface("home")}>HOME</button>
         <button type="button" className={surface === "check" ? "active" : ""} aria-current={surface === "check" ? "page" : undefined} onClick={() => setSurface("check")}>CHECK</button>
         <button type="button" className={surface === "control" ? "active" : ""} aria-current={surface === "control" ? "page" : undefined} onClick={() => setSurface("control")}>CONTROL</button>
         <button type="button" className={surface === "security" ? "active" : ""} aria-current={surface === "security" ? "page" : undefined} onClick={() => setSurface("security")}>SECURITY LAB</button>
       </nav>
+      {surface === "home" && <HomeLandingScreen onDemo={previewDemo} onLive={() => setSurface("check")} />}
       {surface === "control" && (
         <ControlScreen
           agentId="invoice-bot"
