@@ -62,12 +62,24 @@ describe(
         expect(body.context).toEqual({
           query:
             verificationPlan.query,
+          intent:
+            verificationPlan.requiredIntent,
           address:
             verificationPlan.subject,
           wallet:
             verificationPlan.subject,
+          target:
+            verificationPlan.subject,
           chainId:
-            verificationPlan.chainId
+            verificationPlan.chainId,
+          network:
+            "eip155:84532",
+          amountRaw:
+            "1000000",
+          actionHash:
+            verificationPlan.actionHash,
+          applicability:
+            "EXACT_TARGET_AND_ACTION"
         });
       }
     );
@@ -85,11 +97,51 @@ describe(
           "base"
         );
 
+        expect(body.context.network).toBe(
+          "eip155:84532"
+        );
+        expect(body.context.chainId).toBe(
+          84532
+        );
         expect(body.query).toContain(
           "Base Sepolia testnet"
         );
         expect(body.query).toContain(
           "Do not substitute Base mainnet"
+        );
+      }
+    );
+
+    it(
+      "keeps the fraud intent, exact payment action and applicability explicit",
+      () => {
+        const verificationPlan =
+          plan();
+        const body =
+          buildTelegraphEngineAskBody(
+            verificationPlan
+          );
+
+        expect(body.context.intent).toBe(
+          "FRAUD_DETECTION"
+        );
+        expect(body.context.target).toBe(
+          VENDOR
+        );
+        expect(body.context.amountRaw).toBe(
+          "1000000"
+        );
+        expect(body.context.actionHash).toBe(
+          verificationPlan.actionHash
+        );
+        expect(body.context.applicability).toBe(
+          "EXACT_TARGET_AND_ACTION"
+        );
+        expect(body.query).toContain(
+          "Exact payment amountRaw: 1000000"
+        );
+        expect(body.query).toContain(
+          verificationPlan.actionHash
         );
       }
     );
