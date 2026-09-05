@@ -2,7 +2,7 @@
 
 **Prove authority before execution.**
 
-> **Naming note:** Auctorail is the current product name. The repository is still named `proof-gate`, and some historical wire-format identifiers and the deployed `ProofGateVendor` contract keep the old ProofGate name for compatibility. Those identifiers are not a second product.
+> **Naming note:** Auctorail is the current product and repository name. The project was previously developed as ProofGate, so some historical wire-format identifiers and the already-deployed `ProofGateVendor` contract keep the old name for compatibility and provenance. Those identifiers are not a second product.
 
 Auctorail is a **pre-execution authorization layer for autonomous agents**. An agent can propose an action, but it cannot grant itself permission to cause the external effect.
 
@@ -219,32 +219,24 @@ ALLOW / HOLD / BLOCK
 content receipt
 ```
 
-Current policy behavior:
+Policy behavior is deliberately conservative:
 
 - strong scam/phishing evidence can `BLOCK`;
-- missing, stale, weak or unrecognized required evidence becomes `HOLD`;
-- AI-generated text is informational by itself and is **not** treated as malicious;
-- AI-generation becomes a blocking authorship conflict only when the action is `publish`, the claim is `human`, and the confidence crosses the configured threshold;
-- accepted signals must be bound to the exact content hash;
-- the receipt summary is included inside the receipt hash so the displayed summary and audit record cannot silently diverge.
+- missing, stale, weak, or unrecognized required evidence becomes `HOLD`;
+- AI-written text is informational by itself and does **not** mean malicious;
+- AI-generation only becomes a blocking authorship conflict when the proposed action is `publish`, the claimed authorship is `human`, and the AI-generation confidence crosses the configured threshold;
+- every accepted signal is bound to the exact content hash;
+- the receipt `summaryLine` is inside the receipt hash, so the share text and audit record have one source of truth.
 
-The Content Trust UI defaults to **deterministic demo mode** and clearly labels demo evidence as non-Telegraph output.
-
-A bounded live Telegraph/x402 Content Trust client exists behind:
-
-```text
-AUCTORAIL_CONTENT_LIVE_ENABLED=true
-```
-
-A real Content Trust Miner run should **not** be claimed until the run has actually been performed, reviewed and preserved as a safe artifact.
+The Content Trust UI defaults to **deterministic demo mode**, clearly marked as non-Telegraph output. A bounded real Telegraph/x402 text-acquisition path exists behind the explicit `AUCTORAIL_CONTENT_LIVE_ENABLED=true` switch. Do not claim real Content Trust Miner usage until a real run has been captured and reviewed.
 
 ---
 
-## Verify: prove the receipt, not the screenshot
+## Public proof verification
 
-The web app includes a public **VERIFY** surface.
+The web app includes a **VERIFY** surface.
 
-It can inspect:
+It accepts:
 
 - Auctorail payment receipt JSON;
 - Auctorail content receipt JSON;
@@ -252,182 +244,67 @@ It can inspect:
 - a receipt hash;
 - a recorded Base Sepolia transaction hash.
 
-For payment receipts, verification recomputes receipt integrity and checks the action, Mandate, evidence, decision, permit and execution bindings represented by the receipt schema.
+For payment receipts, the verifier recomputes Auctorail receipt integrity and checks the action, mandate, evidence, permit, decision, and execution bindings enforced by the receipt schema. A recorded transaction hash links to Base Sepolia for independent chain inspection.
 
-For content receipts, verification recomputes the content receipt hash, subject/action binding, evidence commitment and deterministic decision aggregation.
+For content receipts, the verifier recomputes the content receipt hash, exact subject/action binding, evidence commitment, and deterministic decision aggregation.
 
-A valid receipt proves that the record is internally consistent under Auctorail's verification rules. It does **not** mean that a Miner prediction is objective truth.
+A valid receipt proves **integrity and binding under Auctorail's verification rules**. It does not turn a Miner assessment into objective truth.
 
 ---
 
 ## Product surfaces
 
-The UI intentionally separates explanation, deterministic testing and real execution.
+The web experience deliberately separates safe demonstration from real execution:
 
-| Surface | Purpose | Live external side effect? |
-| --- | --- | --- |
-| **Home** | Explains the product and routes users to the main flows. | No |
-| **Guided Demo** | Shows valid request, modified amount, permit replay and missing-evidence behavior. | No |
-| **Content Trust** | Checks suspicious content and creates a content receipt. Demo by default; live acquisition is explicit opt-in. | Demo: no. Live mode: Telegraph/x402 only when enabled. |
-| **Verify** | Verifies payment/content receipts and known transaction references. | No protected payment execution. |
-| **Check / Live Mode** | Runs the real payment authorization path. | Can make Telegraph/x402 requests and, after authorization, protected Base Sepolia execution. |
-| **Activity** | Shows decisions, execution outcomes and receipt details. | No |
-| **Permissions** | Shows and explains standing authority/limits. | No |
-| **Security Lab** | Deterministic adversarial workbench for mutation, replay and evidence failures. | No |
-| **Docs / SDK** | Shows integration examples and the repository-local SDK. | Examples are deterministic unless you explicitly call the live path. |
+- **Home** — product thesis and entry points.
+- **Content Trust** — paste suspicious text, run a deterministic demo or an explicitly enabled live Telegraph check, and produce a verifiable content receipt.
+- **Verify** — independently re-check stored/payment/content receipts and recorded transaction references.
+- **Watch Demo** — deterministic, zero-payment walkthrough: valid request, modified amount, replayed permit, missing evidence.
+- **Check / Live Mode** — real Telegraph/x402 payment authorization path and protected Base Sepolia execution path.
+- **Activity** — decisions, technical bindings, execution outcomes, and receipts.
+- **Permissions** — principal-controlled limits and authorization state.
+- **Security Lab** — deterministic adversarial workbench; no real payments.
+- **Docs / SDK** — short integration flow and deterministic SDK examples.
 
 ---
 
-## Run locally
+## Security invariants
 
-### Requirements
+Auctorail is designed to fail closed around consequential effects:
 
-- Node.js 20+
-- npm
+- exact action / subject binding;
+- principal Mandate validation before evidence spending;
+- provider-neutral Telegraph routing;
+- distinct-Miner quorum accounting;
+- evidence subject/chain/intent binding;
+- bounded x402 evidence spend;
+- one-use, short-lived permits for executable actions;
+- execution-time Mandate revalidation;
+- fail-closed execution kill switch;
+- atomic permit consumption / replay resistance;
+- ambiguous external effects are not blindly retried;
+- tamper-evident proof receipts.
 
-For deterministic/demo use:
-
-```bash
-npm ci
-npm run dev
-```
-
-The launcher starts:
-
-```text
-Payment authorization API       http://127.0.0.1:8787
-Utility API                      http://127.0.0.1:8788
-Web UI                           http://127.0.0.1:5173
-```
-
-The utility API serves Security Lab, Content Trust and Verify-related local endpoints.
-
-### Live configuration
-
-Use [`.env.example`](.env.example) as the template.
-
-```bash
-cp .env.example .env
-```
-
-Live payment authorization is intentionally opt-in. Live Content Trust has a separate opt-in switch. Keep private keys, permit-signing secrets and wallet material out of source control.
-
-Do not enable a live path merely to make the UI look more impressive. A live Telegraph request can create a real x402 payment.
-
----
-
-## SDK quickstart
-
-The SDK is currently a **repository-local hackathon package**. It is not claimed as a public npm release.
-
-Install it from this repository:
-
-```bash
-npm install ./packages/sdk
-```
-
-A safe local-policy-only example:
-
-```js
-import { Auctorail } from "@auctorail/sdk";
-
-const rail = new Auctorail({
-  baseUrl: "http://127.0.0.1:8787"
-});
-
-const auth = await rail.authorize({
-  agent: "invoice-bot",
-  amount: "1.00",
-  recipient: "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14",
-  limit: "10.00",
-  reason: "Supplier invoice #4471",
-  reference: "INV-4471",
-  live: false
-});
-
-console.log(auth.decision); // ALLOW | HOLD | BLOCK
-```
-
-`live: false` stops after local policy preflight and does not intentionally purchase Telegraph evidence.
-
-If `live` is omitted, `authorize()` follows the real two-stage path when local policy requires intelligence:
+The repository includes deterministic attack and fuzz harnesses. The current validation snapshot records:
 
 ```text
-local policy preflight
-→ frozen request fingerprint
-→ live Telegraph/x402 authorization
-→ normalized ALLOW / HOLD / BLOCK
+267 / 267 tests across 53 files
+7400 / 7400 deterministic adversarial cases contained
+0 unauthorized executions / authorizations in those suites
+0 production dependency vulnerabilities
 ```
 
-Only call `execute()` when the returned authorization contains executable authority:
-
-```js
-if (auth.allowed && auth.executionToken) {
-  const receipt = await rail.execute(auth);
-  console.log(receipt);
-}
-```
-
-See [`packages/sdk/README.md`](packages/sdk/README.md) for the complete SDK guide.
-
----
-
-## Security model
-
-Auctorail is designed to fail closed around consequential effects.
-
-Important invariants include:
-
-- **exact action binding** — changing the amount, destination, chain, asset, reason or policy creates a different action;
-- **authority before evidence spend** — undelegated requests are blocked before paid evidence acquisition;
-- **provider-neutral Telegraph routing** — Auctorail asks for Intents and records the actual serving Miner;
-- **distinct-Miner quorum accounting** — duplicate routing cannot fake provider independence;
-- **exact evidence binding** — subject, chain, Intent, applicability and commitments are verified;
-- **bounded x402 spend** — acquisition is constrained by per-request/aggregate budgets, attempts and deadlines;
-- **one-use authority** — executable permits are short-lived and consumed atomically;
-- **execution-time revalidation** — the Mandate and bindings are checked again immediately before the effect;
-- **kill switch** — protected execution fails closed if execution authority is unavailable/disabled;
-- **ambiguous-effect handling** — ambiguous external effects are not blindly retried;
-- **tamper-evident receipts** — authorization and execution records are cryptographically committed.
-
-### Critical deployment assumption
-
-The protected tool or wallet must not have a second direct path that the agent can use to bypass Auctorail.
-
-If the same agent process can simply call the protected wallet, cloud API, merge endpoint or other tool directly, the authorization layer is no longer the security boundary. Deployment isolation matters as much as policy code.
-
----
-
-## Validation status
-
-The latest green feature-branch CI at the time of this documentation update completed:
+Fuzz breakdown:
 
 ```text
-267 / 267 unit tests passed across 53 test files
-7400 / 7400 deterministic adversarial fuzz cases contained
-0 unauthorized executions / authorizations in those fuzz suites
-0 production dependency vulnerabilities reported by npm audit
+1100 payment authorization
+3200 adaptive + quorum
+3100 general authorization
+----
+7400 total
 ```
 
-Fuzz totals:
-
-```text
-payment authorization fuzz      1100 / 1100
-adaptive + quorum fuzz           3200 / 3200
-general authorization fuzz       3100 / 3100
-                                -----------
-total                             7400 / 7400
-```
-
-The final browser workflow also exercises the main product flows in Chromium at approximately:
-
-```text
-390px   phone
-980px   Android desktop-site-like viewport
-1440px  desktop
-```
-
-Re-run the exact revision you intend to submit rather than relying forever on a README snapshot:
+Re-run the exact final revision locally before submission:
 
 ```bash
 npm ci
@@ -440,115 +317,103 @@ npm run security:fuzz:general
 npm run vendor:verify
 ```
 
-The deterministic tests, Attack Lab and fuzz harnesses are designed to run without buying Telegraph evidence or writing protected blockchain effects.
+The fuzz/attack suites are offline: they do not buy Telegraph evidence or write to the blockchain.
 
 ---
 
-## Repository map
+## Run locally
 
-```text
-contracts/
-  Historical ProofGateVendor demo contract and pinned artifact source.
-
-src/core/
-  Payment Action/Mandate contracts plus the generic action.v2 / mandate.v2 core.
-
-src/telegraph/
-  Telegraph routing, x402 acquisition controls, adaptive evidence planning,
-  distinct-Miner quorum logic, evidence bundles and Content Trust live client.
-
-src/policy/
-  Payment policies and content.strict.v1.
-
-src/permit/
-  Deterministic decisions, decision commitments, permit signing and verification.
-
-src/executor/
-  Protected execution, replay prevention, durable execution and spend authority.
-
-src/receipt/
-  Payment proof receipts and content receipts.
-
-src/sdk/
-  Trusted in-repository integration/adaptor code and legacy compatibility exports.
-
-packages/sdk/
-  Small repository-local JavaScript package used by the Docs/SDK experience.
-
-src/security/
-  Attack Lab primitives, kill switch and audit controls.
-
-web/
-  Home, Guided Demo, Content Trust, Verify, Check, Activity, Permissions,
-  Security Lab and SDK UI.
-
-qa/
-  Playwright/browser product checks.
-
-data/evidence/
-  Sanitized committed real Telegraph evidence artifacts.
-
-data/receipts/
-  Stored proof receipts used by verification flows.
-
-scripts/
-  Local demo, live proof, execution, security/fuzz and operational utilities.
-
-tests/
-  Deterministic unit/integration tests.
-
-docs/
-  Architecture, risk policy, real-usage proof, integration, validation and demo docs.
+```bash
+npm ci
+npm run dev
 ```
 
-For a guided documentation index, start with [`docs/README.md`](docs/README.md).
+The development launcher starts:
+
+- Auctorail payment authorization API — port `8787`
+- Auctorail utility API (Security Lab, Content Trust, Verify) — port `8788`
+- Vite web UI — port `5173`
+
+Live Telegraph payment authorization and live Content Trust are protected by separate opt-in switches, quotas, and evidence budgets. Never commit real wallet/private-key values.
+
+See [`.env.example`](.env.example).
 
 ---
 
-## Documentation guide
+## SDK / integration model
 
-| If you want to understand… | Read… |
-| --- | --- |
-| the whole project | [`docs/README.md`](docs/README.md) |
-| trust boundaries and system design | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| current amount tiers and evidence rules | [`docs/RISK_POLICY.md`](docs/RISK_POLICY.md) |
-| real Telegraph/x402 usage | [`docs/REAL_USAGE_LOG.md`](docs/REAL_USAGE_LOG.md) |
-| the canonical real payment | [`docs/LIVE_EXECUTION.md`](docs/LIVE_EXECUTION.md) |
-| distinct-Miner quorum semantics | [`docs/V1_2_GENERAL_QUORUM.md`](docs/V1_2_GENERAL_QUORUM.md) |
-| integrating another protected action | [`docs/DEVELOPER_INTEGRATION.md`](docs/DEVELOPER_INTEGRATION.md) |
-| adversarial behavior | [`docs/ATTACK_LAB.md`](docs/ATTACK_LAB.md) |
-| the judge-facing demo | [`docs/HACKATHON_DEMO.md`](docs/HACKATHON_DEMO.md) |
-| submission claims and claim limits | [`docs/FINAL_SUBMISSION.md`](docs/FINAL_SUBMISSION.md) |
+```text
+YOUR AGENT
+    ↓
+AUCTORAIL SDK
+    ↓
+AUCTORAIL AUTHORIZATION API
+    ↓
+TELEGRAPH EVIDENCE + POLICY + PERMIT
+    ↓
+CONTROLLED EXECUTION
+```
+
+The payment adapter is the first publicly demonstrated real external effect. The generic Action / Mandate / Decision architecture is reused by Content Trust and is designed for additional trusted consequential adapters.
+
+Some stable internal wire-format identifiers and the historically deployed vendor contract still use the pre-rename `proofgate.*` / `ProofGateVendor` names. They are retained for cryptographic and deployment compatibility and should not be interpreted as the current product brand.
 
 ---
 
-## Honest scope
+## Judge path
 
-### Real today
+For the fastest review:
+
+1. Open the app and run **Content Trust** in demo mode, then verify its generated receipt.
+2. Open **Verify** and load the canonical public payment proof.
+3. Read [`docs/LIVE_EXECUTION.md`](docs/LIVE_EXECUTION.md) for the genuine Telegraph + Base Sepolia execution.
+4. Run **Security Lab** for mutation/replay/missing-evidence enforcement.
+5. Read [`docs/FINAL_SUBMISSION.md`](docs/FINAL_SUBMISSION.md) and [`docs/HACKATHON_DEMO.md`](docs/HACKATHON_DEMO.md) for submission claims and presentation sequence.
+
+---
+
+## Scope
+
+What is real today:
 
 - genuine Telegraph/x402 acquisition in the payment lane;
-- two publicly committed real Telegraph Miner evidence artifacts;
-- one real protected Base Sepolia USDC execution;
-- consequence-adaptive multi-Intent and distinct-Miner quorum implementation;
+- real protected Base Sepolia USDC execution;
+- consequence-derived multi-Intent / distinct-Miner quorum logic;
 - generic Action / Mandate / Decision / Permit / Executor architecture;
-- Content Trust policy and verifiable content receipts;
-- bounded, opt-in live Content Trust acquisition code;
-- public payment/content receipt verification UI;
-- deterministic Security Lab and fuzz validation;
-- repository-local SDK;
-- responsive product UI with browser QA.
+- `content.strict.v1` plus verifiable content decision receipts;
+- bounded opt-in Content Trust Telegraph/x402 client code;
+- public verification of Auctorail payment and content receipts;
+- deterministic attack and fuzz validation;
+- responsive Home, Content Trust, Verify, Demo, Live, Security Lab, Activity, Permissions, and SDK surfaces.
 
-### Not claimed
+What is **not** claimed:
 
-- a captured real Content Trust Telegraph run merely because the live client exists;
-- that the canonical 1-USDC transaction used the later adaptive multi-Miner path;
-- a successful real three-distinct-Miner HIGH quorum artifact;
-- autonomous execution above the current 10-USDC ceiling;
-- production-ready GitHub/cloud/database adapters;
-- that arbitrary third-party action adapters are safe without trusted review;
-- that a Miner verdict proves objective truth;
-- a public npm release of `@auctorail/sdk`;
-- an independent production security audit.
+- that a real Content Trust Telegraph run has already been captured merely because the live adapter exists;
+- that the historical 1-USDC transaction used the later multi-Miner quorum path;
+- that a successful three-distinct-Miner HIGH quorum artifact has already been captured;
+- that example GitHub/cloud/database adapters are production integrations;
+- that arbitrary third-party adapters are safe without trusted review;
+- that a content Miner verdict proves objective truth;
+- that Auctorail has undergone an independent production security audit.
+
+---
+
+## Documentation
+
+Start with [`docs/README.md`](docs/README.md).
+
+That file explains which documents are current, which are historical, and the order a human or AI should use when interpreting the repository.
+
+Useful entry points:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — trust boundaries and invariants;
+- [`docs/RISK_POLICY.md`](docs/RISK_POLICY.md) — current consequence-adaptive payment policy;
+- [`docs/REAL_USAGE_LOG.md`](docs/REAL_USAGE_LOG.md) — conservative real Telegraph/x402 usage ledger;
+- [`docs/LIVE_EXECUTION.md`](docs/LIVE_EXECUTION.md) — canonical protected transaction;
+- [`docs/DEVELOPER_INTEGRATION.md`](docs/DEVELOPER_INTEGRATION.md) — adding a trusted protected-action integration;
+- [`packages/sdk/README.md`](packages/sdk/README.md) — repository-local SDK guide;
+- [`docs/HACKATHON_DEMO.md`](docs/HACKATHON_DEMO.md) — judge-facing demonstration;
+- [`docs/FINAL_SUBMISSION.md`](docs/FINAL_SUBMISSION.md) — submission claims/checklist.
 
 ---
 
@@ -556,28 +421,28 @@ For a guided documentation index, start with [`docs/README.md`](docs/README.md).
 
 **Agent** — autonomous software that proposes an action.
 
-**Principal** — the human or trusted authority that delegates what the agent may do.
+**Principal** — the human/organization that owns the authority being delegated.
 
-**Mandate** — the principal's standing, bounded authorization contract.
+**Mandate** — standing, bounded authority created by the principal.
 
-**Action** — the exact proposed external effect. A canonical hash binds its security-relevant fields.
+**Action** — the exact proposed consequence that is frozen and hashed before authorization.
 
-**Intent** — the type of intelligence requested from Telegraph, such as `FRAUD_DETECTION`.
+**Intent** — the type of external intelligence requested from Telegraph.
 
-**Miner** — a Telegraph provider that returns external intelligence for an Intent.
+**Miner** — a Telegraph provider that supplies the requested intelligence.
 
-**x402** — the payment mechanism used for paid Telegraph requests in the live path.
+**x402** — the payment mechanism used when a Telegraph request requires paid evidence acquisition.
 
-**Evidence Bundle** — the verified, committed set of Miner evidence and quorum summaries used by policy.
+**Evidence Bundle** — the committed set of accepted evidence and quorum summaries used by policy.
 
-**Permit** — short-lived, one-use executable authority bound to one exact action/decision/evidence set.
+**Permit** — short-lived one-use capability created only after an executable action is allowed.
 
-**Receipt** — a tamper-evident record of what Auctorail authorized and, for executable actions, what happened.
+**Receipt** — tamper-evident record binding the authorization decision and, where applicable, execution result.
 
-**HOLD** — a fail-closed result meaning the system does not currently have enough trustworthy evidence to authorize execution.
+**HOLD** — fail-closed decision meaning the system does not have enough acceptable evidence to authorize execution now.
 
 ---
 
 ## Final principle
 
-**Telegraph tells autonomous software what the outside world says. The principal defines what the agent may do. Auctorail combines sufficiently bound evidence with delegated authority to decide whether one exact consequence may proceed.**
+**Telegraph tells autonomous software what the outside world says. Auctorail proves whether there is enough delegated authority and sufficiently bound evidence to permit one exact consequence.**
