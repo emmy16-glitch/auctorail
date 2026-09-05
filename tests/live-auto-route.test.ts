@@ -74,8 +74,16 @@ describe("public live Telegraph routing", () => {
       const url = String(input);
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       calls.push({ url, body });
+
+      const directMinerId =
+        url.match(/\/v1\/ask\/([^/?#]+)$/)?.[1] ?? null;
       const query = String(body.query ?? "");
-      const miner = query.includes(firstMiner.id) ? secondMiner : firstMiner;
+      const miner =
+        directMinerId === encodeURIComponent(secondMiner.id)
+          ? secondMiner
+          : query.includes(firstMiner.id)
+            ? secondMiner
+            : firstMiner;
 
       return new Response(
         JSON.stringify({
