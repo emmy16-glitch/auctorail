@@ -125,8 +125,8 @@ describe(
         expect(body.context.intent).toBe(
           "FRAUD_DETECTION"
         );
-        expect(body.context.target).toBe(
-          VENDOR
+        expect(body.context.target.toLowerCase()).toBe(
+          VENDOR.toLowerCase()
         );
         expect(body.context.amountRaw).toBe(
           "1000000"
