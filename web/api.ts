@@ -443,6 +443,8 @@ async function performLiveAuthorization(input: {
         spendRaw: collection.actualEvidenceSpendRaw,
         bundleHash: collection.bundle.bundleHash,
         rejectedAttempts: collection.rejectedAttempts.length,
+        failedIntent: collection.failedIntent ?? null,
+        error: collection.error ?? null,
         sources: summarizeEvidenceSources(collection.bundle)
       }
     };

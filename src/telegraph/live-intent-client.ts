@@ -980,6 +980,53 @@ export function createLiveIntentAcquirer(
         });
       }
 
+      if (
+        route.mode === "TELEGRAPH_AUTO_ROUTE" &&
+        response.status >= 500 &&
+        /routing failed|not currently routable/i.test(compactBody)
+      ) {
+        let routingError = compactBody;
+
+        try {
+          const parsedError = JSON.parse(bodyText) as unknown;
+
+          if (
+            isObject(parsedError) &&
+            typeof parsedError.error === "string"
+          ) {
+            routingError = parsedError.error;
+          }
+        } catch {
+          // Keep the compact raw body.
+        }
+
+        const unavailableSlug =
+          routingError.match(
+            /miner "([^"]+)" is not currently routable/i
+          )?.[1];
+
+        const unavailableMiner =
+          unavailableSlug
+            ? options.miners.find(
+                (miner) =>
+                  miner.slug === unavailableSlug
+              )
+            : undefined;
+
+        throw new RetryableEvidenceAcquisitionError({
+          code: "auto_route_http_unavailable",
+          detail,
+          paymentAmountRaw:
+            (actualLane as X402PaymentLane).amount,
+          ...(unavailableMiner
+            ? {
+                minerId:
+                  String(unavailableMiner.id)
+              }
+            : {})
+        });
+      }
+
       throw new Error(
         `adaptive_miner_failed_after_payment:${detail}`
       );

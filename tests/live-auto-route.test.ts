@@ -62,7 +62,7 @@ function fraudMiner(input: {
 }
 
 describe("public live Telegraph routing", () => {
-  it("keeps every corroboration attempt on ranked /v1/ask auto-route while preserving prior Miner context", async () => {
+  it("uses ranked auto-route first then directly corroborates with an unused Miner", async () => {
     const action = adaptiveAction("7000000");
     const plan = createAdaptiveEvidencePlan(action);
     const firstMiner = fraudMiner({ id: "91001", slug: "first-miner", rank: 1 });
@@ -74,8 +74,16 @@ describe("public live Telegraph routing", () => {
       const url = String(input);
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       calls.push({ url, body });
+
+      const directMinerId =
+        url.match(/\/v1\/ask\/([^/?#]+)$/)?.[1] ?? null;
       const query = String(body.query ?? "");
-      const miner = query.includes(firstMiner.id) ? secondMiner : firstMiner;
+      const miner =
+        directMinerId === encodeURIComponent(secondMiner.id)
+          ? secondMiner
+          : query.includes(firstMiner.id)
+            ? secondMiner
+            : firstMiner;
 
       return new Response(
         JSON.stringify({
@@ -124,9 +132,7 @@ describe("public live Telegraph routing", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0].url).toMatch(/\/v1\/ask$/);
-    expect(calls[1].url).toMatch(/\/v1\/ask$/);
-    expect(calls[1].url).not.toMatch(/\/v1\/ask\//);
-    expect(String(calls[1].body.query)).toContain(firstMiner.id);
+    expect(calls[1].url).toMatch(/\/v1\/ask\/302$/);
     expect(first.evidence.miner.id).toBe(firstMiner.id);
     expect(second.evidence.miner.id).toBe(secondMiner.id);
   });
