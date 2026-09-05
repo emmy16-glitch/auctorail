@@ -17,6 +17,8 @@ export interface TelegraphVerificationPlan {
   requiredIntent: ProofGateTelegraphIntent;
   subject: string;
   chainId: number;
+  amountRaw: string;
+  network: "eip155:84532";
   query: string;
   requiredBindings: {
     subject: true;
@@ -66,16 +68,24 @@ export function createIntentVerificationPlan(
 
   const subject = action.payload.destination;
   const chainId = action.payload.chainId;
+  const amountRaw = action.payload.amountRaw;
+
+  if (chainId !== 84532) {
+    throw new Error("telegraph_verification_unsupported_chain");
+  }
 
   const query = [
     ...intentInstructions(intent),
     `Exact EVM subject: ${subject}.`,
     `Exact chainId: ${chainId}.`,
+    `Exact payment amountRaw: ${amountRaw} USDC base units.`,
+    `Exact actionHash: ${action.actionHash}.`,
     "Network: Base Sepolia testnet. Do not substitute Base mainnet for Base Sepolia chainId 84532.",
+    "Applicability requirement: the result must assess this exact payment subject/action, not a stale, historical, or different target.",
     "Return verifiable intelligence explicitly bound to this exact subject and chain.",
     "Use live verifiable measurements or source-backed intelligence when the routed Miner supports them; do not invent unsupported facts.",
     "Explicitly repeat the exact subject address and exact chainId in structured output or in a schema-declared signal field so the evidence can be machine-bound without relying on request metadata.",
-    "Do not assess a different address, chain, or Intent."
+    "Do not assess a different address, chain, amount, action, or Intent."
   ].join(" ");
 
   return {
@@ -86,6 +96,8 @@ export function createIntentVerificationPlan(
     requiredIntent: intent,
     subject,
     chainId,
+    amountRaw,
+    network: "eip155:84532",
     query,
     requiredBindings: {
       subject: true,
