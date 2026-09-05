@@ -4,9 +4,15 @@ import type {
 
 export interface TelegraphEngineAskContext {
   query: string;
+  intent: TelegraphVerificationPlan["requiredIntent"];
   address: string;
   wallet: string;
+  target: string;
   chainId: number;
+  network: "eip155:84532";
+  amountRaw: string;
+  actionHash: string;
+  applicability: "EXACT_TARGET_AND_ACTION";
 }
 
 export interface TelegraphEngineAskBody {
@@ -28,9 +34,15 @@ export function buildTelegraphEngineAskBody(
       // The selected Miner must still explicitly assert subject + chain in its
       // result before evidence can be normalized or authorize anything.
       query: plan.query,
+      intent: plan.requiredIntent,
       address: plan.subject,
       wallet: plan.subject,
-      chainId: plan.chainId
+      target: plan.subject,
+      chainId: plan.chainId,
+      network: plan.network,
+      amountRaw: plan.amountRaw,
+      actionHash: plan.actionHash,
+      applicability: "EXACT_TARGET_AND_ACTION"
     }
   };
 }
