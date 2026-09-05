@@ -38,7 +38,8 @@ export type RetryableEvidenceAcquisitionCode =
   | "evidence_subject_not_asserted"
   | "evidence_chain_not_asserted"
   | "routed_intent_mismatch"
-  | "direct_route_http_unavailable";
+  | "direct_route_http_unavailable"
+  | "auto_route_http_unavailable";
 
 export class RetryableEvidenceAcquisitionError extends Error {
   readonly code: RetryableEvidenceAcquisitionCode;
