@@ -318,6 +318,12 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
           <a className="btn btn-lg" href={GITHUB_URL} target="_blank" rel="noreferrer"><span>READ THE CODE — GITHUB ↗</span></a>
           <a className="btn btn-lg" href={BASESCAN_TX_URL} target="_blank" rel="noreferrer"><span>VERIFY THE RECEIPTS — BASESCAN ↗</span></a>
         </div>
+        <p className="closing-contact fade-rise" style={{ "--d": "280ms" } as React.CSSProperties}>
+          Questions, audits, attacks we haven't thought of:{" "}
+          <a href="https://x.com/Okunlola_Labs" target="_blank" rel="noreferrer">X / @Okunlola_Labs ↗</a>
+          {" · "}
+          <a href="mailto:emmanuelokunlola16@gmail.com">emmanuelokunlola16@gmail.com</a>
+        </p>
         <div className="closing-term fade-rise" style={{ "--d": "320ms" } as React.CSSProperties}>
           <AutoTerminal
             lines={closeTerm}

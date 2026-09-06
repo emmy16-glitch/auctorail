@@ -2698,3 +2698,8 @@ details.technical .kv { padding: 8px 14px 12px; }
 
 /* === demo proof links === */
 .demo-proof-links{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap;}
+
+/* === closing contact === */
+.closing-contact{margin-top:22px;color:var(--text-3);font-size:14px;}
+.closing-contact a{color:var(--text-2);text-decoration:none;border-bottom:1px solid var(--line);}
+.closing-contact a:hover{color:var(--text-1);}
