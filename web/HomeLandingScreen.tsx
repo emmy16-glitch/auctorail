@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { PlayIcon, BoltIcon } from "./icons";
+import { AutoTerminal, type AutoTermLine } from "./AutoTerminal";
 
 interface HomeLandingScreenProps {
   onDemo: () => void;
@@ -44,9 +45,40 @@ const demos = [
   }
 ];
 
+// The "simple version" — everyday language, no jargon.
+const plain = [
+  { n: "01", title: "You set the rules first", copy: "You say what's allowed — which account, how much, by when. You never hand over the keys to the money.", example: "set   limit 10 USDC → alice" },
+  { n: "02", title: "It locks the exact request", copy: "The moment the helper says “send $10 to Alice”, Auctorail freezes that exact sentence. Change one letter afterwards and it stops.", example: "freeze “send 10 USDC to alice” → 0x7b1a…c907" },
+  { n: "03", title: "It gets an outside safety check", copy: "For anything risky it pays a little to ask an independent check — it doesn't just take the helper's own word for it.", example: "check safety → 2 sources · safe" },
+  { n: "04", title: "It signs a one-time pass", copy: "Only a short, single-use pass can actually move the money. Use it twice and it's dead. A receipt is saved that anyone can re-check.", example: "sign pass → permit issued · receipt saved" }
+];
+
+// Plain-language loop for the auto-terminal: one normal request, one that's stopped.
+const plainTerm: AutoTermLine[] = [
+  { cmd: true, text: 'check "send 10 USDC to alice"' },
+  { text: "→ frozen   exact request locked", tone: "ok" },
+  { text: "→ rules    within your limit  ✓", tone: "ok" },
+  { text: "→ safety   independent check  ✓", tone: "ok" },
+  { text: "→ pass     one-time permit signed", tone: "ok" },
+  { text: "→ done     receipt saved · verifiable", tone: "ok", pause: 700 },
+  { cmd: true, text: 'check "send 100 USDC to bob"' },
+  { text: "→ frozen   exact request locked", tone: "ok" },
+  { text: "→ rules    over your limit    ✗", tone: "bad" },
+  { text: "→ stopped  nothing sent · no money moved", tone: "bad", pause: 1100 }
+];
+
+// Compact loop for the closing band — the verifiable-proof angle.
+const closeTerm: AutoTermLine[] = [
+  { cmd: true, text: "verify receipt 0x036a…c4d2" },
+  { text: "→ integrity   hash matches  ✓", tone: "ok" },
+  { text: "→ bindings    mandate · action · permit  ✓", tone: "ok" },
+  { text: "→ verdict     VALID · anyone can re-check", tone: "ok", pause: 1200 }
+];
+
 export function HomeLandingScreen(props: HomeLandingScreenProps) {
   const { onDemo, onLive, onContent, onVerify, onSecurity } = props;
   const demoHandlers = { onDemo, onSecurity, onVerify } as Record<"onDemo" | "onSecurity" | "onVerify", () => void>;
+  const [activeStep, setActiveStep] = useState(0);
 
   return (
     <main data-testid="home-landing-screen">
@@ -85,6 +117,49 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
           <div className="stat"><b className="stat-hot">0</b><span>payments without a signed permit</span></div>
         </div>
       </div>
+
+      <section className="landing-section plain-section" aria-labelledby="plain-title">
+        <div className="page-inner" style={{ padding: "0 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">00</span><span className="sec-dash">—</span>THE SIMPLE VERSION</span>
+            <h2 className="section-title" id="plain-title">Here's what it actually does.</h2>
+            <p className="section-lede">No jargon. Think of it this way: you ask someone to pay a single bill — but you only trust them with that one bill, and you want proof they did it right. Tap each step.</p>
+          </div>
+          <div className="plain-grid">
+            <div className="plain-steps" role="tablist" aria-label="How Auctorail works, in plain words">
+              {plain.map((step, index) => {
+                const active = index === activeStep;
+                return (
+                  <button
+                    key={step.n}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`plain-step ${active ? "active" : ""}`}
+                    onClick={() => setActiveStep(index)}
+                  >
+                    <span className="plain-step-num">{step.n}</span>
+                    <span className="plain-step-body">
+                      <strong>{step.title}</strong>
+                      <span className="plain-step-copy">{step.copy}</span>
+                      <code className="plain-step-example mono">{step.example}</code>
+                    </span>
+                    <span className="plain-step-arrow" aria-hidden="true">{active ? "–" : "+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="plain-terminal">
+              <p className="plain-terminal-hint">watching it run, right now — it loops on its own. tap to pause.</p>
+              <AutoTerminal
+                lines={plainTerm}
+                label="auctorail — plain run"
+                ariaLabel="Live terminal showing a normal request passing and a request that exceeds the limit being stopped"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="landing-section" aria-labelledby="how-title">
         <div className="page-inner" style={{ padding: "0 28px" }}>
@@ -166,6 +241,14 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
         <div className="hero-actions fade-rise" style={{ "--d": "240ms" } as React.CSSProperties}>
           <button className="btn btn-primary btn-lg" type="button" onClick={onDemo}><span>RUN THE DEMO</span> <span className="arrow" aria-hidden="true">→</span></button>
           <button className="btn btn-lg" type="button" onClick={onLive}><span>START A REAL CHECK</span></button>
+        </div>
+        <div className="closing-term fade-rise" style={{ "--d": "320ms" } as React.CSSProperties}>
+          <AutoTerminal
+            lines={closeTerm}
+            label="auctorail — verify"
+            compact
+            ariaLabel="Live terminal re-verifying a saved receipt and confirming it is valid"
+          />
         </div>
       </section>
     </main>

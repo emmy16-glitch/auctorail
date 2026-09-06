@@ -439,7 +439,12 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
 
               <div className="card card-pad" style={{ padding: 18 }}>
                 <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>AUCTORAIL CONTENT RECEIPT</span>
-                <code style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", overflowWrap: "anywhere" }}>{result.receipt.receiptHash}</code>
+                <details className="technical">
+                  <summary>VIEW TECHNICAL DETAILS ↓</summary>
+                  <div style={{ padding: "10px 14px 12px" }}>
+                    <code style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", overflowWrap: "anywhere" }}>{result.receipt.receiptHash}</code>
+                  </div>
+                </details>
                 <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                   <button type="button" className="btn btn-primary btn-sm" onClick={() => onVerifyReceipt(JSON.stringify(result.receipt, null, 2))}>VERIFY RECEIPT</button>
                   <button type="button" className="btn btn-sm" onClick={shareResult}>{copied ? "COPIED" : "SHARE RESULT"}</button>

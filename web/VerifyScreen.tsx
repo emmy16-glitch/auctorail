@@ -193,11 +193,16 @@ export function VerifyScreen({ initialInput = "" }: VerifyScreenProps) {
 
               <div className="card card-pad" style={{ padding: 18 }}>
                 <dl className="kv">
-                  <div><dt>RECEIPT ID</dt><dd className="mono">{result.receiptId ?? "—"}</dd></div>
-                  <div><dt>RECEIPT HASH</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{result.receiptHash ?? "—"}</dd></div>
                   <div><dt>DECISION</dt><dd>{result.decision ?? "—"}</dd></div>
-                  {result.transactionHash && <div><dt>TRANSACTION</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{result.transactionHash}</dd></div>}
                 </dl>
+                <details className="technical" style={{ marginTop: 2 }}>
+                  <summary>VIEW TECHNICAL DETAILS ↓</summary>
+                  <dl className="kv">
+                    <div><dt>RECEIPT ID</dt><dd className="mono">{result.receiptId ?? "—"}</dd></div>
+                    <div><dt>RECEIPT HASH</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{result.receiptHash ?? "—"}</dd></div>
+                    {result.transactionHash && <div><dt>TRANSACTION</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{result.transactionHash}</dd></div>}
+                  </dl>
+                </details>
                 <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                   {result.explorerUrl && (
                     <a className="explorer-link" href={result.explorerUrl} target="_blank" rel="noreferrer">OPEN BASESCAN ↗</a>

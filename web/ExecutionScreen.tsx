@@ -229,19 +229,24 @@ export function ExecutionScreen(props: {
 
       <aside>
         <div className="card card-pad" aria-label="Execution details">
-          <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>EXECUTION DETAILS</span>
+          <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>EXECUTION</span>
           <dl className="kv">
-            <div><dt>Network</dt><dd>Base Sepolia</dd></div>
-            <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
             <div><dt>Amount</dt><dd>{authorization.action.amount} USDC</dd></div>
             <div><dt>Decision</dt><dd>{decision}</dd></div>
-            <div><dt>Telegraph route</dt><dd className="mono">{routeEndpoint} · auto-ranked</dd></div>
-            <div><dt>Intelligence spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
-            <div><dt>Permit hash</dt><dd className="mono" title={authorization.permit.hash}>{shortHash(authorization.permit.hash)}</dd></div>
             <div><dt>Status</dt><dd>{confirmed ? "Confirmed" : ambiguous ? "Uncertain — no retry" : failed ? "Stopped" : "Broadcast / confirmation pending"}</dd></div>
-            <div><dt>Tx hash</dt><dd className="mono" title={transactionHash ?? undefined}>{shortHash(transactionHash, 10, 8)}</dd></div>
-            <div><dt>Block</dt><dd>{blockNumber ?? "—"}</dd></div>
           </dl>
+          <details className="technical" style={{ marginTop: 8 }}>
+            <summary>VIEW TECHNICAL DETAILS ↓</summary>
+            <dl className="kv">
+              <div><dt>Network</dt><dd>Base Sepolia</dd></div>
+              <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
+              <div><dt>Telegraph route</dt><dd className="mono">{routeEndpoint} · auto-ranked</dd></div>
+              <div><dt>Intelligence spend</dt><dd>{formatEvidenceSpend(evidenceSpend)}</dd></div>
+              <div><dt>Permit hash</dt><dd className="mono" title={authorization.permit.hash}>{shortHash(authorization.permit.hash)}</dd></div>
+              <div><dt>Tx hash</dt><dd className="mono" title={transactionHash ?? undefined}>{shortHash(transactionHash, 10, 8)}</dd></div>
+              <div><dt>Block</dt><dd>{blockNumber ?? "—"}</dd></div>
+            </dl>
+          </details>
         </div>
 
         <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
