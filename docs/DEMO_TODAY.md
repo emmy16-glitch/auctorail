@@ -34,10 +34,13 @@ This order guarantees that the security value is visible even if Telegraph routi
 Before touching the browser:
 
 ```bash
+node -v
 npm ci
 npm run ci
 npm run audit:prod
 ```
+
+Current `main` requires **Node `>=24.15.0`**. `.nvmrc` selects Node 24 and current GitHub Actions workflows run Node 24.
 
 For a deeper security pass:
 
@@ -57,11 +60,9 @@ Current expected green validation snapshot:
 0 production dependency vulnerabilities reported
 ```
 
-## Recommended local runtime
+## Required local runtime
 
-Use **Node 24** for current local development because the redesigned browser/DOM dependency set includes packages that officially require Node 22/24.
-
-Some current CI workflow steps still exercise Node 20 for compatibility, but `EBADENGINE` warnings are expected there.
+Use **Node `>=24.15.0`** for current local development and demo validation. Node 20 belongs to older historical runs and is not a supported baseline for current `main`.
 
 ## Browser setup
 
@@ -329,6 +330,7 @@ For an X post:
 ## Final 10-minute checklist
 
 - [ ] correct branch/commit;
+- [ ] Node version is `>=24.15.0`;
 - [ ] current app loads;
 - [ ] no open unrelated browser tabs;
 - [ ] deterministic demo passes;
