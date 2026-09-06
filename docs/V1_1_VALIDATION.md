@@ -1,203 +1,185 @@
-# Auctorail v1.1 Validation Record
+# Auctorail v1.1 validation — historical snapshot
 
-This document records the strict validation performed after the v1.1 adaptive-evidence architecture and security hardening were implemented.
+> **Status: HISTORICAL.** This file preserves the validation mindset and milestone context from an earlier ProofGate/Auctorail revision. It is not the source of truth for current test counts or current policy thresholds.
 
-## Validated code snapshot
+## Why keep historical validation
 
-Code SHA:
+Security-sensitive projects benefit from knowing not only what passes today, but how validation evolved.
 
-`369f37d8e4f0aec020f58ae027d1e1810a6d5449`
+This document records that the project already treated mutation, replay, evidence binding and protected execution as first-class validation concerns before the later v1.2/generalized architecture.
 
-GitHub Actions run:
+## Historical milestone focus
 
-`33676884023`
+The v1.1 stage concentrated on payment authorization and stronger evidence/execution controls.
 
-Branch:
+Representative concerns included:
 
-`v1.1-adaptive-evidence`
+- exact action binding;
+- stale hash detection;
+- destination/amount mutation;
+- evidence subject/chain binding;
+- permit signature integrity;
+- permit expiry;
+- permit replay;
+- controlled execution;
+- deterministic security scenarios;
+- genuine Telegraph evidence proof.
 
-This snapshot includes the final code-level hardenings before this validation record was refreshed, including:
+## Historical validation categories
 
-- consequence-derived adaptive plans
-- provider-neutral Intent routing
-- live Telegraph/x402 acquisition boundary
-- canonical Evidence Bundles
-- evidence-payment provenance validation
-- x402 challenge-to-signature binding that prevents a second unvalidated challenge from being substituted between preflight and payment creation
-- adaptive conflict/uncertainty semantics
-- bundle-aware permits/execution
-- Proof Receipt v3
-- trusted-host developer SDK
-- non-authoritative evaluate-only HTTP gateway
+### Unit/integration tests
 
-Subsequent documentation-only commits must still pass CI before a release/tag is created.
-
-## CI result
-
-**PASS**
-
-### Vendor reproducibility
-
-- tracked vendor source/artifact/manifest verification: PASS
-- pinned native `solc 0.8.36+commit.8a079791` recompilation on Linux x64: PASS
-- creation bytecode: `258 bytes`
-- runtime bytecode: `165 bytes`
-- generated-artifact diff check: PASS
-
-### TypeScript and deterministic tests
+The project validated the relationships among:
 
 ```text
-Test Files: 42 passed / 42
-Tests:      211 passed / 211
+Action
+Mandate
+Evidence
+Decision
+Permit
+Executor
+Receipt
 ```
 
-Coverage includes the original v1 controls plus adaptive planning, Intent routing, Evidence Bundles, live-client guards, conflict semantics, x402 provenance, trusted SDK behavior, bundle-bound permits and Receipt v3.
+### Attack Lab
 
-### Original authorization fuzz gate
+Deterministic attack scenarios demonstrated that known tampering did not become authorization.
+
+### Fuzzing
+
+Mutation families exercised many automatically generated adversarial variations.
+
+### Live proof
+
+Separately from deterministic tests, the project preserved genuine Telegraph/x402 evidence and a real protected Base Sepolia execution.
+
+This distinction remains important today.
+
+## Current validation supersedes old counts
+
+Do not quote an old v1.1 test/fuzz count as the current state.
+
+The latest green current `main` snapshot is:
 
 ```text
-Mutation families:        11
-Cases per family:         100
-Adversarial contained:    1100 / 1100
-Valid controls:           100 / 100
-Unauthorized executions: 0
-Uncaught errors:          0
-Telegraph requests:       0
-x402 payments:            0
-Blockchain writes:        0
+53 test files
+268 / 268 tests passed
 ```
 
-Families include:
-
-- stale action amount hash
-- destination swap
-- chain confusion
-- asset swap
-- reason mutation
-- permit signature forgery
-- evidence subject swap
-- evidence chain swap
-- decision commitment tampering
-- Mandate version substitution
-- permit expiry
-
-### Adaptive authorization fuzz gate
+Current deterministic fuzzing:
 
 ```text
-Mutation families:             18
-Cases per family:              100
-Adversarial contained:         1800 / 1800
-Valid controls:                100 / 100
-Unauthorized authorizations:  0
-Uncaught errors:               0
-Telegraph requests:            0
-x402 payments:                 0
-Blockchain writes:             0
+1100 payment authorization cases
+3200 adaptive + quorum cases
+3100 general authorization cases
+----
+7400 total adversarial cases contained
+
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
 ```
 
-Families include:
+Production dependency audit currently reports zero vulnerabilities in the latest green CI snapshot.
 
-- risk-tier downgrade
-- missing `FRAUD_DETECTION`
-- missing `ONCHAIN_TX_LOOKUP`
-- missing `WALLET_BALANCE_CHECK`
-- negative fraud signal
-- negative secondary signal
-- fraud confidence below floor
-- stale required evidence
-- missing signal hash
-- evidence-budget overrun
-- bundle signal-hash tampering
-- bundle raw-response-hash tampering
-- evidence subject substitution
-- substitution of another valid bundle after permit mint
-- permit signature forgery
-- permit expiry
-- action semantic mutation
-- un-delegated Intent
+## What was added after v1.1
 
-The adaptive tamper families explicitly require both bundle-integrity rejection and non-authorization where applicable.
+Current Auctorail includes controls and surfaces that were not necessarily part of the original v1.1 milestone, including:
 
-### Additional direct hardening regressions
+- adaptive LOW/MEDIUM/HIGH evidence plans;
+- distinct-Miner quorum;
+- LOW 12-second evidence deadline;
+- generalized authorization adapters;
+- Content Trust;
+- redesigned responsive UI;
+- expanded browser QA;
+- broader fuzz families;
+- stronger deployment/ambiguity handling.
 
-The deterministic test suite also covers security cases outside the 18 fuzz-family count, including:
+Do not retroactively attribute those current features to an older validation run.
 
-- paid Evidence Bundle with wrong x402 network rejected
-- paid Evidence Bundle with wrong asset rejected
-- per-request evidence payment above global cap rejected
-- malformed signal hash rejected even if outer bundle is rehashed
-- malformed raw-response hash rejected even if outer bundle is rehashed
-- secondary `UNAVAILABLE` status results in `HOLD`
-- alternate Evidence Bundle is first proven internally valid, then rejected after permit mint because the decision commitment binds the original bundle
-- trusted high-level SDK does not mint a permit on incomplete evidence acquisition
-- HTTP evaluation gateway does not return executable authority
-- the validated x402 preflight challenge is reused by the payment wrapper rather than replaced by a second unpaid network challenge
-- the exact x402 requirements selected for signing are independently revalidated against Auctorail's scheme/network/asset/per-request/remaining-budget policy
-- the challenge-swap regression test proves the paid path cannot introduce a second unvalidated 402 between Auctorail's preflight check and payment-signature creation
+## Current policy facts for comparison
 
-## x402 TOCTOU hardening
-
-The deeper review identified a time-of-check/time-of-use risk in the original adaptive live client design: Auctorail validated one preflight `402 Payment Required` challenge, while `wrapFetchWithPayment()` normally performs its own initial request and could therefore receive a materially different challenge before signing.
-
-The validated implementation closes that gap in two layers:
-
-1. the x402 wrapper consumes a clone of the already validated preflight response as its initial 402, so no second unpaid network challenge exists between validation and signing;
-2. the x402 client applies Auctorail's hard payment policy again to the exact `PaymentRequirements` selected for payment-payload creation.
-
-The network request that follows is the payment-bearing request. Auctorail does not register a recovery hook that could authorize a second paid attempt.
-
-## Production dependency audit
+Current adaptive payment evidence tiers:
 
 ```text
-npm audit --omit=dev
-found 0 vulnerabilities
+LOW     <=5 USDC
+MEDIUM  >5 to 50 USDC
+HIGH    >50 USDC
 ```
 
-This is a dependency-audit result, not a claim of an independent production security audit.
+Current LOW:
 
-## Important trust statement
+```text
+FRAUD_DETECTION
+1 distinct positive Miner
+confidence >=0.70
+max attempts 3
+max evidence spend 0.035 USDC
+overall deadline 12 seconds
+```
 
-An Evidence Bundle hash proves **integrity**, not source authenticity by itself.
+Current autonomous payment execution ceiling:
 
-The authoritative production path must construct the bundle inside the trusted Telegraph acquisition boundary. That boundary verifies:
+```text
+10 USDC
+```
 
-- actual serving Miner identity
-- active Miner / supported Intent
-- exact subject binding
-- exact chain binding
-- Telegraph signal metadata
-- approved x402 payment lane and budget when paid
-- exact challenge/payment-requirements binding before signing
-- provable settlement
-- raw-response commitment
+## Validation philosophy that remains current
 
-A production permit-minter must not accept arbitrary agent-supplied Evidence Bundles as authenticated Telegraph proof.
+The following principles survived the milestone:
 
-## Real-world proof boundary
+1. Test the exact security binding, not only UI success.
+2. Keep deterministic fuzzing offline and reproducible.
+3. Do not count deterministic traffic as real Telegraph usage.
+4. Preserve real live artifacts separately.
+5. Test mutation of one semantic at a time.
+6. Test replay and expiration explicitly.
+7. Treat missing evidence as non-executable.
+8. Verify external evidence belongs to the exact subject/context.
+9. Keep protected credentials behind the executor.
+10. Avoid overstating what one historical run proved.
 
-The frozen v1.0 artifact remains the public real transaction proof:
+## Current references
 
-- transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
-- Base Sepolia block: `46301208`
-- genuine Telegraph `FRAUD_DETECTION` evidence
-- one protected `1 USDC` execution
+Use these for current validation:
 
-v1.1's multi-Intent live client is implemented and tested, but a real saved multi-Intent Telegraph Evidence Bundle is deliberately **not claimed** until an actual `npm run proof:adaptive -- ...` run is captured.
+- root `README.md`;
+- `docs/README.md`;
+- `docs/ATTACK_LAB.md`;
+- `docs/SECURITY_MODEL.md`;
+- current GitHub Actions runs;
+- current `tests/` and fuzz scripts.
 
-## Release gate
+For genuine external proof:
 
-Before creating a v1.1 tag:
+- `docs/REAL_USAGE_LOG.md`;
+- `docs/LIVE_EXECUTION.md`.
+
+## Reproducing current validation
 
 ```bash
 npm ci
 npm run ci
 npm run audit:prod
-npm run attack:lab
 npm run security:fuzz
 npm run security:fuzz:adaptive
+npm run security:fuzz:general
 npm run vendor:verify
 ```
 
-GitHub CI must be green on the exact release SHA. On Linux x64 it must also pass the pinned native vendor recompilation/reproducibility check.
+Use Node 24 for current local development where possible.
 
-If a real adaptive Telegraph artifact is added later, rerun every gate on the new exact SHA before tagging.
+## Historical interpretation rule
+
+A historical green run proves that the tested revision satisfied the tests present at that time.
+
+It does not prove:
+
+- current `main` automatically has the same behavior;
+- new features were covered before they existed;
+- the application is universally secure;
+- deployment configuration cannot weaken controls.
+
+## Final note
+
+**Keep this file as evidence of validation evolution, but use the latest green current source/tests for any present-tense security or submission claim.**
