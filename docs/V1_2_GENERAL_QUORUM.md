@@ -1,471 +1,355 @@
-# Auctorail v1.2 — General Authorization + Telegraph Miner Quorum
+# Auctorail distinct-Miner quorum semantics
 
-## Why v1.2 exists
+This document defines the evidence-quorum rules used by Auctorail's adaptive authorization architecture.
 
-v1.0 proved that Auctorail could use genuine Telegraph evidence to control one real Base Sepolia USDC payment.
+The central idea is simple:
 
-v1.1 made the verification effort consequence-adaptive and added multiple Telegraph Intents.
+> **Multiple requests are not multiple independent opinions unless they came from distinct evidence providers.**
 
-v1.2 asks two deeper questions:
+For Telegraph evidence, provider identity is counted by **Miner ID**.
 
-1. **For a critical claim, how many independent providers should the consequence require?**
-2. **Can the same authorization model protect consequential agent actions that are not payments?**
+## Why quorum exists
 
-The result is:
+A single external provider can be:
 
-> **A general authorization core plus consequence-adaptive horizontal and vertical evidence diversity.**
+- unavailable;
+- wrong;
+- stale;
+- misconfigured;
+- routed for the wrong Intent;
+- unable to make the exact subject/chain assertions policy requires.
 
-## The two-dimensional evidence model
+Higher-consequence actions can therefore require evidence from more than one distinct Miner.
 
-### Vertical diversity — different questions
+Quorum is not an attempt to create absolute truth. It is a deterministic rule for how much independent evidence the policy requires before execution can be authorized.
 
-A HIGH-risk payment requires multiple kinds of intelligence:
+## Quorum rule structure
 
-```text
-FRAUD_DETECTION
-+ ONCHAIN_TX_LOOKUP
-+ WALLET_BALANCE_CHECK
-```
-
-### Horizontal diversity — independent providers for one question
-
-The highest-value security question, `FRAUD_DETECTION`, can require independent corroboration:
+A fraud-evidence quorum can contain:
 
 ```text
-FRAUD_DETECTION
-      │
-      ├─ Telegraph route → Miner A
-      ├─ Telegraph route → Miner B
-      └─ Telegraph route → Miner C
+minimumDistinctMiners
+minimumPositiveResults
+minimumPositiveConfidence
+maxAttempts
+negativeVetoConfidence
 ```
 
-Auctorail records who Telegraph actually served. It does not pre-label three calls as independent.
+These values are part of the frozen evidence plan and cannot be silently relaxed after acquisition begins.
 
-## Exact current quorum policy
+## Current adaptive fraud quorum
 
-### LOW — `<= 1 USDC`
+### LOW
 
 ```text
-Required Intents:
-  FRAUD_DETECTION
-
-Fraud quorum:
-  minimumDistinctMiners:      1
-  minimumPositiveResults:     1
-  minimumPositiveConfidence:  0.70
-  maxAttempts:                1
-  negativeVetoConfidence:     none
-
-Evidence budget: 0.015 USDC
-Deadline:        15 seconds
+minimum distinct Miners:     1
+minimum positive results:    1
+minimum positive confidence: 0.70
+max fraud attempts:          3
+negative veto confidence:    0.90
 ```
 
-### MEDIUM — `>1 <=5 USDC`
+### MEDIUM
 
 ```text
-Required Intents:
-  FRAUD_DETECTION
-  ONCHAIN_TX_LOOKUP
-
-Fraud quorum:
-  minimumDistinctMiners:      2
-  minimumPositiveResults:     2
-  minimumPositiveConfidence:  0.75
-  maxAttempts:                4
-  negativeVetoConfidence:     0.90
-
-Evidence budget: 0.050 USDC
-Deadline:        35 seconds
+minimum distinct Miners:     2
+minimum positive results:    2
+minimum positive confidence: 0.75
+max fraud attempts:          4
+negative veto confidence:    0.90
 ```
 
-### HIGH — `>5 <=10 USDC`
+### HIGH
 
 ```text
-Required Intents:
-  FRAUD_DETECTION
-  ONCHAIN_TX_LOOKUP
-  WALLET_BALANCE_CHECK
-
-Fraud quorum:
-  minimumDistinctMiners:      3
-  minimumPositiveResults:     2
-  minimumPositiveConfidence:  0.80
-  maxAttempts:                5
-  negativeVetoConfidence:     0.90
-
-Evidence budget: 0.070 USDC
-Deadline:        60 seconds
+minimum distinct Miners:     3
+minimum positive results:    2
+minimum positive confidence: 0.80
+max fraud attempts:          5
+negative veto confidence:    0.90
 ```
 
-The plan is deterministically recreated from the frozen payment action. The autonomous agent cannot choose or downgrade these values.
+Higher tiers can also require additional non-fraud Intents.
 
-## Why distinct Miner identity matters
+## Distinctness
 
-Suppose Telegraph routes three attempts like this:
+Consider these responses:
 
 ```text
-attempt 1 → Miner A
-attempt 2 → Miner A
-attempt 3 → Miner B
+Attempt 1 → Miner 95822412 → positive
+Attempt 2 → Miner 95822412 → positive
+Attempt 3 → Miner 95822412 → positive
 ```
 
-Auctorail records:
+The distinct-provider count is:
 
 ```text
-observed attempts: 3
-distinct providers: 2
-duplicate attempts: 1
+1
 ```
 
-A HIGH-risk requirement for three distinct Miners is **not satisfied**.
+not `3`.
 
-This prevents a routing coincidence or repeated provider from masquerading as a three-provider consensus.
-
-## Why the quorum is not naive 2-of-3 voting
-
-A naive majority rule could allow:
+Now:
 
 ```text
-Miner A  ALLOW      0.91
-Miner B  ALLOW      0.86
-Miner C  MALICIOUS  0.97
+Miner 95822412
+Miner 12345678
+Miner 87654321
 ```
 
-because two providers are positive.
+can represent three distinct providers if each identity is verified and the evidence is otherwise usable.
 
-Auctorail does not do that.
+## A response must be usable before it can count
 
-Two layers apply:
+A response is not a quorum vote merely because it came from a new Miner.
 
-1. MEDIUM/HIGH collection has a `0.90` high-confidence negative **early veto** so collection can fail closed without wasting more evidence budget.
-2. Final adaptive policy blocks on **any explicit negative result**, even below the early-veto threshold.
+It must satisfy the requirement's evidence conditions, such as:
 
-Therefore a known-danger signal cannot be averaged away.
+- correct required Intent;
+- valid serving-Miner identity;
+- Miner capability for the Intent;
+- exact subject binding;
+- exact chain binding;
+- applicability;
+- signal commitment where required;
+- freshness;
+- valid positive/negative semantics.
 
-## Positive-confidence rule
+A distinct but unusable response does not satisfy the policy.
 
-A positive label does not automatically count as a quorum vote.
+## Qualified positive result
 
-For HIGH risk:
+A positive result counts only when its confidence reaches the tier's floor.
+
+Example for MEDIUM:
 
 ```text
-ALLOW 0.40
+Miner A → ALLOW, confidence 0.82 → qualified positive
+Miner B → ALLOW, confidence 0.61 → not a qualified positive
 ```
 
-is not one of the required positive votes because the positive confidence floor is `0.80`.
+Distinct provider count may be 2, but qualified-positive count is only 1.
 
-This prevents weak positive outputs from being used to manufacture quorum.
+If the rule requires 2 qualified positives, quorum is not satisfied.
 
-## Bounded acquisition
+## Negative veto
 
-Provider diversity is not permission to spend indefinitely.
+The quorum definition includes `negativeVetoConfidence`.
 
-Each requirement has a bounded attempt count, and the full evidence plan has:
+A sufficiently confident negative can terminate the acquisition/evaluation path early according to the rule.
 
-- aggregate x402 evidence-spend limit;
-- deadline;
-- per-request global payment cap (`0.01 USDC`).
+The final adaptive payment policy is also intentionally conservative about explicit negative evidence: known explicit negative evidence is not simply averaged away by positive votes.
 
-If the required provider diversity cannot be obtained within those bounds:
+## Quorum status
+
+Conceptually a requirement can be:
 
 ```text
-HOLD
+SATISFIED
+UNSATISFIED / insufficient
+BLOCKED by negative evidence
 ```
 
-not:
+The final authorization policy maps missing/insufficient required proof to fail-closed behavior rather than optimistic execution.
 
-```text
-keep paying until something says yes
-```
+For required evidence that cannot reach threshold within bounds, the user-visible result is normally `HOLD`.
 
-## Canonical quorum commitment
+## Attempts are not votes
 
-`src/telegraph/evidence-quorum.ts` calculates a deterministic summary for a quorum-protected Intent.
+`maxAttempts` controls acquisition effort.
 
-The summary includes:
-
-- rule thresholds;
-- observed attempt count;
-- sorted distinct Miner IDs;
-- sorted positive Miner IDs;
-- negative Miner IDs;
-- uncertain Miner IDs;
-- veto Miner IDs;
-- duplicate-Miner attempt count;
-- final quorum status.
-
-`proofgate.evidence-bundle.v1` commits both every raw normalized attempt and these canonical quorum summaries.
-
-That means changing any of these after authorization changes the bundle commitment:
-
-- Miner identity;
-- response label/confidence;
-- signal/raw-response hash;
-- attempt number;
-- payment metadata;
-- quorum thresholds;
-- summary membership/status.
-
-A different internally valid Evidence Bundle also cannot replace the one used for Permit minting because the decision/Permit chain commits the original bundle.
-
-## Provider-neutral routing
-
-v1.2 quorum does not hardcode “ask Miner A, then B, then C.”
-
-The application asks Telegraph for an **Intent**. Telegraph determines the serving provider. Auctorail records the actual provider and decides whether enough distinct identities have been observed.
-
-Conceptually:
-
-```text
-Auctorail: FRAUD_DETECTION needed
-        ↓
-Telegraph routes → Miner X
-        ↓
-Need more independent corroboration?
-        ↓ yes
-Telegraph routes again → Miner Y or maybe Miner X again
-        ↓
-Auctorail counts actual distinct provider identities
-```
-
-This keeps Telegraph routing central to the application rather than replacing it with a local API aggregator.
-
-## General authorization architecture
-
-The second v1.2 extension removes “Base Sepolia payment” as the architectural definition of Auctorail.
-
-The original payment path remains the concrete live demonstration. A new generic core adds:
-
-```text
-proofgate.action.v2
-proofgate.mandate.v2
-proofgate.decision.v2
-proofgate.permit.v2
-ActionAdapterRegistry
-controlled generic executor
-```
-
-### Generic Action Envelope
-
-A generic action has:
-
-```text
-type
-exact target
-bounded JSON parameters
-policy ID/version
-canonical payload/hash
-```
+It does not mean every attempt must or can count.
 
 Example:
 
-```json
-{
-  "type": "github.merge",
-  "target": "github:acme/production#42",
-  "parameters": {
-    "branch": "main",
-    "sha": "abc123..."
-  },
-  "policyId": "github.merge.v1"
-}
+```text
+attempt 1 → wrong Intent        → rejected
+attempt 2 → correct Miner, 0.55 → below confidence
+attempt 3 → correct, 0.80       → one qualified positive
 ```
 
-This is an example action shape, not a claim that Auctorail ships a live GitHub integration.
+For LOW this may satisfy the one-provider requirement.
 
-### Generic Mandate
+For MEDIUM it would still be insufficient because a second distinct qualified positive is required.
 
-A principal can authorize:
+## Provider routing vs policy quorum
+
+Transport routing and authorization quorum are separate.
+
+Auctorail may use:
+
+- Telegraph ranked auto-route for the first request;
+- direct selection of another ranked unused Miner for corroboration.
+
+That transport choice must not change the original policy requirement.
+
+A route fallback is not permission to lower `minimumDistinctMiners`.
+
+## Prior Miner tracking
+
+During acquisition, Auctorail tracks prior Miner IDs.
+
+This helps the route planner prefer an unused provider when independent corroboration is required.
+
+The prior list is a transport/input constraint. The final bundle still verifies actual provider identities.
+
+## Duplicate Miner example
+
+MEDIUM requires 2 distinct positives.
 
 ```text
-agent: coding-agent
-action type: github.merge
-target: github:acme/production#42
-required evidence: CI_STATUS + SECURITY_SCAN
-policy: github.merge.v1
-expiry: ...
+Attempt 1
+Miner 100
+ALLOW 0.90
+
+Attempt 2
+Miner 100
+ALLOW 0.94
+
+Result:
+Distinct Miners = 1
+Qualified positives = 1 provider
+Quorum = not satisfied
 ```
 
-The autonomous agent cannot replace this standing authority.
+The second response can add information but does not create an independent second provider.
 
-### Trusted Action Adapter
-
-An adapter is reviewed/trusted deployment code that implements:
+## Below-confidence example
 
 ```text
-freeze(proposal)
-requiredIntents(action)
-evaluateTrusted(...)
-execute(action)
+Miner 100 → ALLOW 0.80
+Miner 200 → ALLOW 0.60
 ```
 
-It bridges Auctorail's generic authorization model to one real external tool.
-
-The adapter must report:
-
-- cryptographic evidence commitment;
-- exact `coveredIntents`;
-- deterministic checks.
-
-The SDK verifies coverage before Permit minting.
-
-## Why evidence coverage is explicit
-
-Without explicit accounting, a buggy/malicious adapter might claim:
+MEDIUM:
 
 ```text
-requiredIntents:
-  CI_STATUS
-  SECURITY_SCAN
-
-checks:
-  PASS
+Distinct Miners = 2
+Qualified positives >=0.75 = 1
+Quorum = not satisfied
 ```
 
-without proving which required evidence it actually evaluated.
-
-v1.2 requires:
+## Negative example
 
 ```text
-coveredIntents:
-  CI_STATUS
-  SECURITY_SCAN
+Miner 100 → ALLOW 0.90
+Miner 200 → BLOCK/RISK 0.95
 ```
 
-and enforces:
+A high-confidence negative is material. The system must not continue as though two positive votes are merely waiting to overpower it.
 
-- missing required coverage → HOLD;
-- extra/unrequested coverage → BLOCK;
-- required evidence with no commitment → HOLD;
-- required evidence with no trusted checks → HOLD.
-
-This does not magically authenticate the evidence source. Source authenticity remains the trusted adapter/evidence-acquisition responsibility.
-
-## Authority before evidence spend
-
-Before calling `evaluateTrusted()`, the generic SDK checks:
-
-- Mandate integrity/lifecycle;
-- exact agent;
-- action type;
-- target;
-- policy;
-- required Intent delegation.
-
-If that preflight blocks, trusted evidence acquisition is skipped.
-
-This prevents an unauthorized agent from using a deliberately invalid action merely to consume the principal's paid intelligence budget.
-
-## Decision semantics hardening
-
-A hash alone is not enough.
-
-`verifyGeneralDecision()` also verifies semantics:
-
-- decision agent must equal Mandate agent;
-- checks must be nonempty;
-- `ALLOW` is valid only when every check is PASS;
-- a HOLD/BLOCK check cannot be wrapped inside a self-consistent recomputed `ALLOW` hash;
-- decision timestamp must be valid;
-- action/Mandate/policy bindings must match.
-
-## Permit + current authority
-
-`proofgate.permit.v2` is signed and short lived.
-
-Before minting, current Mandate authority is evaluated again.
-
-Before execution, the Mandate is evaluated **again**.
-
-This closes the case where:
+## Wrong subject example
 
 ```text
-06:30:00  Permit minted, expires 06:30:30
-06:30:10  Mandate expires
-06:30:20  agent attempts execution
+Required subject: Wallet A
+Miner result:     Wallet B
 ```
 
-Expected:
+Even if verdict/confidence look good:
 
 ```text
-BLOCK / general_mandate_execution_invalid
+usable vote = no
 ```
 
-The Permit is subordinate to current principal authority.
-
-## Kill switch + replay + ambiguity
-
-The generic executor:
-
-1. checks the fail-closed execution kill switch;
-2. verifies current authority/decision/Permit;
-3. atomically consumes `permitId + nonce`;
-4. calls the trusted adapter once.
-
-If the kill switch is disabled or unreadable, execution is blocked before Permit consumption.
-
-If the adapter callback throws after claim:
+## Wrong chain example
 
 ```text
-AMBIGUOUS
+Required chain: Base Sepolia 84532
+Result chain:   Base mainnet 8453
 ```
 
-The Permit remains consumed and Auctorail never blindly retries. The integration must reconcile the external system.
+The response does not satisfy exact-chain policy.
 
-## What is real vs generalized
+## Missing signal commitment
 
-### Real public proof
+When `requireSignalHash` is true, a response with no usable signal commitment cannot count as valid required evidence.
 
-v1.0 contains:
+## Quorum and time/spend bounds
 
-- genuine Telegraph/x402 evidence;
-- a real 1-USDC protected Base Sepolia transaction;
-- a public transaction hash and Proof Receipt.
+Quorum must be reached inside the frozen acquisition envelope.
 
-### Implemented/tested in v1.2
-
-- same-Intent distinct-Miner quorum;
-- adaptive multi-Intent evidence;
-- canonical quorum Evidence Bundles;
-- generic Action/Mandate/Decision/Permit core;
-- trusted Action Adapter Registry;
-- generic kill-switch/replay/ambiguity enforcement.
-
-### Not claimed yet
-
-- a saved successful live three-Miner quorum artifact;
-- live production GitHub/cloud/database adapters;
-- sandboxed arbitrary third-party adapters;
-- independent production audit.
-
-## Current deterministic validation
-
-The pre-documentation v1.2 code snapshot passed:
+Current payment defaults:
 
 ```text
-43/43 test files
-225/225 tests
-
-1100/1100 original adversarial cases
-3100/3100 adaptive + quorum adversarial cases
-3100/3100 general authorization adversarial cases
-
-7300/7300 total deterministic adversarial cases
-0 unauthorized executions/authorizations
-0 uncaught fuzz errors
-0 production dependency vulnerabilities
+LOW:     3 fraud attempts, 0.035 USDC, 12s
+MEDIUM:  4 fraud attempts, 0.060 USDC, 60s
+HIGH:    5 fraud attempts, 0.100 USDC, 90s
 ```
 
-All fuzzing is offline with zero Telegraph requests, x402 payments and blockchain writes.
+Auctorail does not continue indefinitely until it eventually finds enough positive providers.
 
-See `V1_2_VALIDATION.md` for the exact release snapshot/run.
+## Quorum and authority
 
-## v1.2 differentiator
+Even perfect quorum cannot expand authority.
 
-The compact story is:
+Example:
 
-> **Auctorail dynamically scales both the breadth and independence of external intelligence with consequence, while keeping the final authorization decision separate from the agent and from the evidence providers themselves.**
+```text
+HIGH plan obtains 3 excellent Miners
+Payment amount: 75 USDC
+Current autonomous policy ceiling: 10 USDC
 
-And the platform story is:
+Result: still not authorized for autonomous execution
+```
 
-> **The Base Sepolia payment is Auctorail's first proven adapter, not its architectural limit.**
+Quorum answers “is required evidence sufficient?”
+
+It does not answer “did the principal delegate this action?”
+
+## Bundle integrity
+
+The final evidence bundle/summary should commit to the rule used for evaluation.
+
+An attacker should not be able to acquire evidence under one rule and then present a weaker rule at decision time.
+
+Fuzz tests target:
+
+- distinct-Miner downgrade;
+- positive-vote downgrade;
+- confidence-floor downgrade;
+- negative-veto disable;
+- attempt-limit expansion;
+- duplicate-Miner counting;
+- insufficient-positive quorum;
+- quorum summary tampering;
+- Miner identity substitution.
+
+## Current validation
+
+The adaptive/quorum fuzz harness currently contains:
+
+```text
+3200 deterministic adversarial cases
+```
+
+The complete current validation snapshot is:
+
+```text
+268 / 268 tests
+7400 / 7400 total deterministic adversarial cases contained
+0 unauthorized executions / authorizations in the fuzz suites
+```
+
+## Designing a new quorum
+
+When adding a new evidence requirement, explicitly define:
+
+1. provider identity key;
+2. what counts as distinct;
+3. positive semantics;
+4. confidence semantics;
+5. negative/veto semantics;
+6. minimum providers;
+7. minimum qualified positives;
+8. max attempts;
+9. evidence budget;
+10. latency deadline;
+11. subject/context binding;
+12. freshness;
+13. signal/provenance requirements.
+
+Do not use “majority” as an informal word without defining these details.
+
+## Final quorum rule
+
+**A quorum is a policy commitment over verified, action-bound evidence from distinct providers—not a count of how many HTTP requests returned something favorable.**
