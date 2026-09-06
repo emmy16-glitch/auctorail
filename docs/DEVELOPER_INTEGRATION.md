@@ -22,7 +22,7 @@ The protected wallet/API credential should not live inside the agent process.
 
 ## Quick start
 
-Use Node 24 for the current dependency set.
+Current `main` requires **Node `>=24.15.0`**. `.nvmrc` selects Node 24 and current CI uses Node 24.
 
 ```bash
 npm ci
@@ -434,11 +434,11 @@ Never commit:
 
 Use `.env.example` only as a template.
 
-## Recommended Node runtime
+## Required Node runtime
 
-The current dependency set includes modern browser/DOM packages that officially target Node 22/24.
+Current `main` requires **Node `>=24.15.0`**. The repository `.nvmrc` selects Node 24 and both current GitHub Actions workflows use Node 24.
 
-Use **Node 24** for current local development unless you have a specific compatibility reason not to.
+Do not present Node 20 as a supported current runtime simply because older historical CI logs used it.
 
 ## SDK status
 
