@@ -39,7 +39,7 @@ import {
   evaluatePaymentsAttestedVendorV1
 } from "../src/policy/payments-attested-vendor-v1.js";
 import {
-  loadOrCreateProofGateSecret
+  loadOrCreateAuctorailSecret
 } from "../src/permit/local-secret.js";
 import {
   createProofReceipt,
@@ -281,7 +281,7 @@ if (!privateKey) {
 }
 
 const secret =
-  loadOrCreateProofGateSecret();
+  loadOrCreateAuctorailSecret();
 
 const store =
   new FilePermitConsumptionStore();

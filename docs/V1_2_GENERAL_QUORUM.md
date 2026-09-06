@@ -1,8 +1,8 @@
-# ProofGate v1.2 — General Authorization + Telegraph Miner Quorum
+# Auctorail v1.2 — General Authorization + Telegraph Miner Quorum
 
 ## Why v1.2 exists
 
-v1.0 proved that ProofGate could use genuine Telegraph evidence to control one real Base Sepolia USDC payment.
+v1.0 proved that Auctorail could use genuine Telegraph evidence to control one real Base Sepolia USDC payment.
 
 v1.1 made the verification effort consequence-adaptive and added multiple Telegraph Intents.
 
@@ -39,7 +39,7 @@ FRAUD_DETECTION
       └─ Telegraph route → Miner C
 ```
 
-ProofGate records who Telegraph actually served. It does not pre-label three calls as independent.
+Auctorail records who Telegraph actually served. It does not pre-label three calls as independent.
 
 ## Exact current quorum policy
 
@@ -109,7 +109,7 @@ attempt 2 → Miner A
 attempt 3 → Miner B
 ```
 
-ProofGate records:
+Auctorail records:
 
 ```text
 observed attempts: 3
@@ -133,7 +133,7 @@ Miner C  MALICIOUS  0.97
 
 because two providers are positive.
 
-ProofGate does not do that.
+Auctorail does not do that.
 
 Two layers apply:
 
@@ -212,12 +212,12 @@ A different internally valid Evidence Bundle also cannot replace the one used fo
 
 v1.2 quorum does not hardcode “ask Miner A, then B, then C.”
 
-The application asks Telegraph for an **Intent**. Telegraph determines the serving provider. ProofGate records the actual provider and decides whether enough distinct identities have been observed.
+The application asks Telegraph for an **Intent**. Telegraph determines the serving provider. Auctorail records the actual provider and decides whether enough distinct identities have been observed.
 
 Conceptually:
 
 ```text
-ProofGate: FRAUD_DETECTION needed
+Auctorail: FRAUD_DETECTION needed
         ↓
 Telegraph routes → Miner X
         ↓
@@ -225,14 +225,14 @@ Need more independent corroboration?
         ↓ yes
 Telegraph routes again → Miner Y or maybe Miner X again
         ↓
-ProofGate counts actual distinct provider identities
+Auctorail counts actual distinct provider identities
 ```
 
 This keeps Telegraph routing central to the application rather than replacing it with a local API aggregator.
 
 ## General authorization architecture
 
-The second v1.2 extension removes “Base Sepolia payment” as the architectural definition of ProofGate.
+The second v1.2 extension removes “Base Sepolia payment” as the architectural definition of Auctorail.
 
 The original payment path remains the concrete live demonstration. A new generic core adds:
 
@@ -271,7 +271,7 @@ Example:
 }
 ```
 
-This is an example action shape, not a claim that ProofGate ships a live GitHub integration.
+This is an example action shape, not a claim that Auctorail ships a live GitHub integration.
 
 ### Generic Mandate
 
@@ -299,7 +299,7 @@ evaluateTrusted(...)
 execute(action)
 ```
 
-It bridges ProofGate's generic authorization model to one real external tool.
+It bridges Auctorail's generic authorization model to one real external tool.
 
 The adapter must report:
 
@@ -410,7 +410,7 @@ If the adapter callback throws after claim:
 AMBIGUOUS
 ```
 
-The Permit remains consumed and ProofGate never blindly retries. The integration must reconcile the external system.
+The Permit remains consumed and Auctorail never blindly retries. The integration must reconcile the external system.
 
 ## What is real vs generalized
 
@@ -464,8 +464,8 @@ See `V1_2_VALIDATION.md` for the exact release snapshot/run.
 
 The compact story is:
 
-> **ProofGate dynamically scales both the breadth and independence of external intelligence with consequence, while keeping the final authorization decision separate from the agent and from the evidence providers themselves.**
+> **Auctorail dynamically scales both the breadth and independence of external intelligence with consequence, while keeping the final authorization decision separate from the agent and from the evidence providers themselves.**
 
 And the platform story is:
 
-> **The Base Sepolia payment is ProofGate's first proven adapter, not its architectural limit.**
+> **The Base Sepolia payment is Auctorail's first proven adapter, not its architectural limit.**

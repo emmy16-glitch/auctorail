@@ -1,4 +1,4 @@
-# ProofGate Mandate Binding Implementation
+# Auctorail Mandate Binding Implementation
 
 Prepared against main commit `d4cb3e6eb450b0792d5e65fdb034b7420ad9dc0c`.
 

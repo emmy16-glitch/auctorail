@@ -90,7 +90,7 @@ function holdReceipt() {
   });
 }
 
-describe("ProofGate proof receipts", () => {
+describe("Auctorail proof receipts", () => {
   it("hashes mandate context even for a HOLD/BLOCK outcome", () => {
     const receipt = holdReceipt();
 

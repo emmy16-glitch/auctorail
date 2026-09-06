@@ -203,7 +203,7 @@ function validateTextBinding(input: {
       detail:
         `Schema-declared text field ${input.field} named the expected subject ` +
         `but also named different EVM subjects (${conflictingAddresses.join(", ")}); ` +
-        "ProofGate refuses ambiguous text binding."
+        "Auctorail refuses ambiguous text binding."
     };
   }
 
@@ -240,7 +240,7 @@ function validateTextBinding(input: {
       detail:
         `Schema-declared text field ${input.field} named the expected chain ` +
         `but also named different chain IDs (${conflictingChains.join(", ")}); ` +
-        "ProofGate refuses ambiguous text binding."
+        "Auctorail refuses ambiguous text binding."
     };
   }
 

@@ -24,7 +24,7 @@ fs.writeFileSync(envPath, env, {
 });
 
 console.log("");
-console.log("ProofGate burner wallet created.");
+console.log("Auctorail burner wallet created.");
 console.log("");
 console.log("PUBLIC ADDRESS:");
 console.log(wallet.address);

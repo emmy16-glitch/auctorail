@@ -45,7 +45,7 @@ const refut: TelegraphMinerRecord = {
 };
 
 describe(
-  "ProofGate capability-selected Telegraph routing",
+  "Auctorail capability-selected Telegraph routing",
   () => {
     it(
       "selects the locked active contract-control Miner deterministically",
@@ -96,7 +96,7 @@ describe(
           code:
             "capability_miner_unavailable",
           reason:
-            "No active Telegraph Miner satisfies ProofGate's locked v1 contract-control evidence profile."
+            "No active Telegraph Miner satisfies Auctorail's locked v1 contract-control evidence profile."
         });
       }
     );

@@ -83,7 +83,7 @@ for (const rpc of uniqueRpcs) {
 
     console.log("");
     console.log(
-      "ProofGate Burner Wallet"
+      "Auctorail Burner Wallet"
     );
     console.log(
       "-----------------------"

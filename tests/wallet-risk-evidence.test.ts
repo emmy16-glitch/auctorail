@@ -175,7 +175,7 @@ describe(
     );
 
     it(
-      "normalizes ProofGate-canonical applicability while preserving unknown evidence as fail-closed",
+      "normalizes Auctorail-canonical applicability while preserving unknown evidence as fail-closed",
       () => {
         const base = {
           source: "telegraph",

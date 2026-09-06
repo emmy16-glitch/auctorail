@@ -57,7 +57,7 @@ const executionBody = {
   actionHash: ACTION_HASH, freezeFingerprint: FREEZE,
   permit: { id: PERMIT_ID, hash: PERMIT_HASH, expiresAt: "2026-09-04T10:15:00.000Z" },
   network: { chain: "Base Sepolia", chainId: 84532, asset: "USDC" },
-  payment: { amount: "1.00", amountRaw: "1000000", recipient: VENDOR, recipientLabel: "ProofGate Vendor", reference: "INV-4471" },
+  payment: { amount: "1.00", amountRaw: "1000000", recipient: VENDOR, recipientLabel: "Auctorail Vendor", reference: "INV-4471" },
   transaction: {
     status: "CONFIRMED", transactionHash: TX_HASH, blockNumber: 46310001,
     confirmedAt: "2026-09-04T09:35:22.000Z", confirmedVia: "https://sepolia.base.org",

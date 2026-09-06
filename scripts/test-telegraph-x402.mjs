@@ -69,7 +69,7 @@ const request = {
 };
 
 console.log("");
-console.log("ProofGate → Telegraph LIVE x402");
+console.log("Auctorail → Telegraph LIVE x402");
 console.log("--------------------------------");
 console.log("Payment wallet:", account.address);
 console.log("Assessment target:", TARGET);

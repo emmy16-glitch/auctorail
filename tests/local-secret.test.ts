@@ -8,11 +8,11 @@ import {
 } from "vitest";
 
 import {
-  loadOrCreateProofGateSecret
+  loadOrCreateAuctorailSecret
 } from "../src/permit/local-secret.js";
 
 describe(
-  "local ProofGate permit secret",
+  "local Auctorail permit secret",
   () => {
     it(
       "creates and then reuses a stable local secret",
@@ -32,13 +32,13 @@ describe(
           );
 
         const first =
-          loadOrCreateProofGateSecret({
+          loadOrCreateAuctorailSecret({
             filePath: file,
             envSecret: null
           });
 
         const second =
-          loadOrCreateProofGateSecret({
+          loadOrCreateAuctorailSecret({
             filePath: file,
             envSecret: null
           });
@@ -80,7 +80,7 @@ describe(
           "x".repeat(64);
 
         expect(
-          loadOrCreateProofGateSecret({
+          loadOrCreateAuctorailSecret({
             filePath: file,
             envSecret: secret
           })

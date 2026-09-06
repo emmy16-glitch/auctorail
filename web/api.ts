@@ -598,7 +598,7 @@ async function performPendingExecution(
         amount: (Number(pending.action.payload.amountRaw) / 1_000_000).toFixed(2),
         amountRaw: pending.action.payload.amountRaw,
         recipient: pending.action.payload.destination,
-        recipientLabel: "ProofGate Vendor",
+        recipientLabel: "Auctorail Vendor",
         reference: pending.reference
       },
       transaction: {
@@ -864,7 +864,7 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`ProofGate web API listening on ${PORT}`);
+  console.log(`Auctorail web API listening on ${PORT}`);
   console.log(`Live Telegraph auto-route authorization: ${LIVE_ENABLED ? "enabled" : "disabled"}`);
   console.log("Authorized Base Sepolia execution endpoint: /api/execute");
 });

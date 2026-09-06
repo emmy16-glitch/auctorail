@@ -30,7 +30,7 @@ export function buildTelegraphEngineAskBody(
       // Telegraph's Engine merges caller context into the LLM-built Miner
       // request body. These values are routing/request hints only.
       //
-      // CRITICAL: ProofGate never treats this context as returned evidence.
+      // CRITICAL: Auctorail never treats this context as returned evidence.
       // The selected Miner must still explicitly assert subject + chain in its
       // result before evidence can be normalized or authorize anything.
       query: plan.query,

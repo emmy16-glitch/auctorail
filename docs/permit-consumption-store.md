@@ -1,6 +1,6 @@
 # Permit consumption and shared execution authority
 
-ProofGate consumes or claims a permit before protected execution. That consumption record is replay authority, so every executor replica in a multi-worker deployment must share the same strongly consistent durable source of truth.
+Auctorail consumes or claims a permit before protected execution. That consumption record is replay authority, so every executor replica in a multi-worker deployment must share the same strongly consistent durable source of truth.
 
 A model process, HTTP worker or container-local cache must never be able to create its own independent replay state.
 
@@ -45,7 +45,7 @@ It does not, by itself, answer:
 
 > What happened after the claim?
 
-ProofGate therefore also has durable execution state in `src/executor/durable-execution.ts`, backed by the execution migration:
+Auctorail therefore also has durable execution state in `src/executor/durable-execution.ts`, backed by the execution migration:
 
 `migrations/002_executions.sql`
 

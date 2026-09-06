@@ -180,7 +180,7 @@ console.log("");
 console.log("ROTATION COMPLETE");
 console.log("-----------------");
 console.log(
-  "New ProofGate address:",
+  "New Auctorail address:",
   newWallet.address
 );
 console.log(

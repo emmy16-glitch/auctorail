@@ -65,7 +65,7 @@ function routedEvidence(
   );
 }
 
-describe("ProofGate developer SDK", () => {
+describe("Auctorail developer SDK", () => {
   it("plans the strongest evidence tier automatically for a high-consequence proposal", () => {
     const planned = planPaymentAuthorization({
       amountRaw: "70000000",
@@ -96,7 +96,7 @@ describe("ProofGate developer SDK", () => {
     ).toBe(2);
   });
 
-  it("lets a host evaluate and mint authority without giving ProofGate direct execution power", () => {
+  it("lets a host evaluate and mint authority without giving Auctorail direct execution power", () => {
     const planned = planPaymentAuthorization({
       amountRaw: "1000000",
       destination: VENDOR,

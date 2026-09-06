@@ -29,7 +29,7 @@ EXTERNAL EFFECT
 
 The most important deployment rule is that the agent must not have a second unrestricted route to the protected tool.
 
-> **Naming note:** the current product is Auctorail. Historical source identifiers such as `proofgate.action.v2`, `src/sdk/proofgate.ts`, and the TypeScript interface name `ProofGateActionAdapter` are retained for compatibility.
+> **Naming note:** the current product is Auctorail. Historical source identifiers such as `proofgate.action.v2`, `src/sdk/proofgate.ts`, and the TypeScript interface name `AuctorailActionAdapter` are retained for compatibility.
 
 ---
 
@@ -78,7 +78,7 @@ For example, a GitHub merge adapter knows how to freeze a merge proposal, what e
 
 ```ts
 import { createGeneralAction } from "../src/core/general-action.js";
-import type { ProofGateActionAdapter } from "../src/sdk/action-adapter.js";
+import type { AuctorailActionAdapter } from "../src/sdk/action-adapter.js";
 
 interface MergeProposal {
   target: string;
@@ -86,7 +86,7 @@ interface MergeProposal {
   sha: string;
 }
 
-const mergeAdapter: ProofGateActionAdapter<
+const mergeAdapter: AuctorailActionAdapter<
   MergeProposal,
   { merged: boolean }
 > = {

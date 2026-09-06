@@ -45,7 +45,7 @@ async def reference_screen3_running(page):
     await expect(page.get_by_text("PERMIT ISSUED", exact=True)).to_be_visible()
     await expect(page.get_by_text("EXECUTING ON BASE SEPOLIA", exact=True)).to_be_visible()
     await expect(page.get_by_text("CONFIRMATION PENDING", exact=True)).to_be_visible()
-    await expect(page.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(page.get_by_text("1.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
     await expect(page.get_by_text("Policy and Miner checks completed.", exact=True)).to_be_visible()
     await expect(page.get_by_text("Execution permit generated and signed.", exact=True)).to_be_visible()
     await expect(page.get_by_text("Sending the authorized transaction to the network...", exact=True)).to_be_visible()

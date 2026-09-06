@@ -33,7 +33,7 @@ export interface TrustedAdapterEvaluation {
   checks: GeneralAuthorizationCheck[];
 }
 
-export interface ProofGateActionAdapter<Proposal = unknown, Result = unknown> {
+export interface AuctorailActionAdapter<Proposal = unknown, Result = unknown> {
   readonly type: string;
   readonly policyId: string;
   readonly policyVersion: number;
@@ -50,14 +50,14 @@ export interface ProofGateActionAdapter<Proposal = unknown, Result = unknown> {
 export class ActionAdapterRegistry {
   private readonly adapters = new Map<
     string,
-    ProofGateActionAdapter<unknown, unknown>
+    AuctorailActionAdapter<unknown, unknown>
   >();
 
   private key(type: string, policyId: string, policyVersion: number): string {
     return `${type.trim().toLowerCase()}::${policyId.trim().toLowerCase()}::${policyVersion}`;
   }
 
-  register<P, R>(adapter: ProofGateActionAdapter<P, R>): void {
+  register<P, R>(adapter: AuctorailActionAdapter<P, R>): void {
     if (
       !adapter.type.trim() ||
       !adapter.policyId.trim() ||
@@ -78,7 +78,7 @@ export class ActionAdapterRegistry {
 
     this.adapters.set(
       key,
-      adapter as ProofGateActionAdapter<unknown, unknown>
+      adapter as AuctorailActionAdapter<unknown, unknown>
     );
   }
 
@@ -86,11 +86,11 @@ export class ActionAdapterRegistry {
     type: string,
     policyId: string,
     policyVersion: number
-  ): ProofGateActionAdapter<P, R> | null {
+  ): AuctorailActionAdapter<P, R> | null {
     return (
       this.adapters.get(
         this.key(type, policyId, policyVersion)
-      ) as ProofGateActionAdapter<P, R> | undefined
+      ) as AuctorailActionAdapter<P, R> | undefined
     ) ?? null;
   }
 }

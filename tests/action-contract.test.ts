@@ -40,7 +40,7 @@ function baseAction() {
   } as const;
 }
 
-describe("ProofGate Action Contract", () => {
+describe("Auctorail Action Contract", () => {
   it(
     "produces the same hash for the same semantic action",
     () => {

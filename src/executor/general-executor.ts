@@ -129,7 +129,7 @@ export async function executeGeneralAction<T>(input: {
   } catch (error: unknown) {
     // The permit remains consumed. For arbitrary external effects an exception
     // cannot prove whether the side effect happened before the transport/runtime
-    // failure, so ProofGate fails into AMBIGUOUS and never retries automatically.
+    // failure, so Auctorail fails into AMBIGUOUS and never retries automatically.
     return {
       status: "AMBIGUOUS",
       code: "general_action_execution_ambiguous",

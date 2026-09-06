@@ -95,7 +95,7 @@ function unitAllowDecision(
   };
 }
 
-describe("ProofGate exact-action and exact-mandate permits", () => {
+describe("Auctorail exact-action and exact-mandate permits", () => {
   it("does not mint a permit for the real HOLD decision", () => {
     const evidence = realHoldEvidence();
     const action = createAction(evidence.subject);

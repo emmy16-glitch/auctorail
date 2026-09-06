@@ -1,6 +1,6 @@
-# ProofGate — Telegraph Track 3 Architecture
+# Auctorail — Telegraph Track 3 Architecture
 
-ProofGate is a **consumption-side application** on Telegraph. It is not a Miner and it does not try to rank providers itself.
+Auctorail is a **consumption-side application** on Telegraph. It is not a Miner and it does not try to rank providers itself.
 
 Its job is to turn a bounded principal Mandate plus real Telegraph intelligence into an enforceable machine authorization decision, then allow the protected action to execute only when that decision is valid.
 
@@ -8,9 +8,9 @@ Its job is to turn a bounded principal Mandate plus real Telegraph intelligence 
 
 > Agent confidence is not permission to act.
 
-An agent may decide what it wants to do. ProofGate decides whether that exact action is authorized to happen.
+An agent may decide what it wants to do. Auctorail decides whether that exact action is authorized to happen.
 
-Telegraph supplies ranked external intelligence. ProofGate consumes that intelligence, applies deterministic authorization policy, issues an exact-action Permit only for an `ALLOW`, executes through a protected adapter, and records verifiable proof afterward.
+Telegraph supplies ranked external intelligence. Auctorail consumes that intelligence, applies deterministic authorization policy, issues an exact-action Permit only for an `ALLOW`, executes through a protected adapter, and records verifiable proof afterward.
 
 ## End-to-end Track 3 flow
 
@@ -35,7 +35,7 @@ CONSEQUENCE-ADAPTIVE EVIDENCE PLAN
         |
         v
 SCREEN 2 — LIVE VERIFICATION
-  ProofGate declares required Telegraph Intents
+  Auctorail declares required Telegraph Intents
         |
         v
 TELEGRAPH /v1/ask
@@ -76,7 +76,7 @@ VERIFIABLE PROOFGATE RECEIPT
 
 ## Evidence strength is not spending authority
 
-ProofGate keeps evidence requirements and principal authority separate.
+Auctorail keeps evidence requirements and principal authority separate.
 
 Current product-default payment evidence bands are:
 
@@ -111,7 +111,7 @@ Backend state transition:
 
 `proposal -> frozen action -> mandate evaluation`
 
-If the action is outside authority, ProofGate blocks locally and does not buy Telegraph intelligence.
+If the action is outside authority, Auctorail blocks locally and does not buy Telegraph intelligence.
 
 ### Screen 2 — Checking request
 
@@ -124,13 +124,13 @@ This screen visualizes real backend stages, not cosmetic timers.
 
 The paid stage begins only after deterministic authority preflight passes.
 
-ProofGate requests **Intents**, not preferred Miner identities. Telegraph performs provider routing. ProofGate records the Miner actually served and only counts distinct providers toward quorum.
+Auctorail requests **Intents**, not preferred Miner identities. Telegraph performs provider routing. Auctorail records the Miner actually served and only counts distinct providers toward quorum.
 
 A LOW request can retry an unusable route only within its precommitted attempt/deadline/x402 budget. No synthetic fallback is allowed. If sufficient real evidence is not obtained, the result is `HOLD`.
 
 If the final decision is `HOLD` or `BLOCK`, execution stops.
 
-If the final decision is `ALLOW`, ProofGate automatically mints the one-use Permit and moves to Screen 3. There is no second human approval button in the primary autonomous flow.
+If the final decision is `ALLOW`, Auctorail automatically mints the one-use Permit and moves to Screen 3. There is no second human approval button in the primary autonomous flow.
 
 ### Screen 3 — Executing request
 
@@ -152,7 +152,7 @@ The server then:
 - permits one irreversible transaction broadcast attempt;
 - reconciles confirmation using read-only RPC failover;
 - refuses blind automatic rebroadcast after an ambiguous result;
-- generates and verifies the ProofGate receipt.
+- generates and verifies the Auctorail receipt.
 
 `VIEW PROOF` is an audit action after the autonomous path. It is not required to continue execution.
 
@@ -160,10 +160,10 @@ The server then:
 
 Telegraph is the external ranked-intelligence market.
 
-ProofGate does not register as a Miner and does not bypass Telegraph routing in the primary Track 3 path.
+Auctorail does not register as a Miner and does not bypass Telegraph routing in the primary Track 3 path.
 
 ```text
-ProofGate: require FRAUD_DETECTION for this exact subject
+Auctorail: require FRAUD_DETECTION for this exact subject
                  |
                  v
           Telegraph /v1/ask
@@ -172,26 +172,26 @@ ProofGate: require FRAUD_DETECTION for this exact subject
         ranked Miner is served
                  |
                  v
- ProofGate validates and records the result
+ Auctorail validates and records the result
 ```
 
-For higher consequence, ProofGate may make additional bounded Intent requests. Duplicate responses from the same Miner do not create fake independence.
+For higher consequence, Auctorail may make additional bounded Intent requests. Duplicate responses from the same Miner do not create fake independence.
 
 ## The two payment lanes
 
-ProofGate has two intentionally separate financial side effects.
+Auctorail has two intentionally separate financial side effects.
 
 ### 1. Intelligence acquisition
 
 Small x402 payments to Telegraph Miners while Screen 2 is collecting evidence.
 
-These are bounded by ProofGate's evidence-spend policy and are **not** the vendor payment.
+These are bounded by Auctorail's evidence-spend policy and are **not** the vendor payment.
 
 ### 2. Protected action execution
 
 The actual requested payment, for example:
 
-`1.00 USDC -> ProofGate Vendor`
+`1.00 USDC -> Auctorail Vendor`
 
 This is attempted only after a valid `ALLOW` and signed one-use Permit.
 
@@ -203,7 +203,7 @@ Production deployments should keep separate credentials for separate authorities
 
 - `TELEGRAPH_EVM_PRIVATE_KEY` — purchases Telegraph intelligence over x402;
 - `PROOFGATE_EXECUTOR_PRIVATE_KEY` — executes protected Base Sepolia actions;
-- `PROOFGATE_PERMIT_ED25519_PRIVATE_KEY` — signs ProofGate execution Permits.
+- `PROOFGATE_PERMIT_ED25519_PRIVATE_KEY` — signs Auctorail execution Permits.
 
 A production permit signer must be asymmetric. Local HMAC signing remains development/test-only.
 
@@ -211,7 +211,7 @@ These credentials stay in the trusted server boundary and are never shipped in t
 
 ## Failure semantics
 
-ProofGate fails closed.
+Auctorail fails closed.
 
 | Failure | Result |
 | --- | --- |
@@ -228,9 +228,9 @@ ProofGate fails closed.
 
 ## Provenance without changing the product identity
 
-ProofGate receipts make the decision reconstructible from its authority, evidence and execution context.
+Auctorail receipts make the decision reconstructible from its authority, evidence and execution context.
 
-That provenance is important, but ProofGate is not merely an audit layer. Its defining property is that proof comes **after an enforced authorization boundary**:
+That provenance is important, but Auctorail is not merely an audit layer. Its defining property is that proof comes **after an enforced authorization boundary**:
 
 `evidence -> decision -> Permit -> protected execution`
 
@@ -244,19 +244,19 @@ The production demonstration should therefore use legitimate end-to-end actions:
 
 `real proposal -> real Telegraph request -> real decision -> real downstream action or real block -> real receipt`
 
-Autonomous/continuous workflows may generate genuine machine traffic when they correspond to real decisions. Artificial loops whose only purpose is to inflate request counts should not be part of ProofGate.
+Autonomous/continuous workflows may generate genuine machine traffic when they correspond to real decisions. Artificial loops whose only purpose is to inflate request counts should not be part of Auctorail.
 
 The public Web UI is the human-observable surface for the same real pipeline. It must not silently substitute synthetic evidence, fake Miner results or fake transaction confirmations.
 
 ## Developer adoption boundary
 
-The embedded trusted-host SDK already exposes the authorization orchestration inside a trusted Node/backend environment. A future hosted client SDK should make integration simple for external agents, while keeping Telegraph/x402, Permit and executor keys behind the ProofGate server.
+The embedded trusted-host SDK already exposes the authorization orchestration inside a trusted Node/backend environment. A future hosted client SDK should make integration simple for external agents, while keeping Telegraph/x402, Permit and executor keys behind the Auctorail server.
 
 Before that hosted client is described as production-ready, the public API needs a dedicated API-key/authentication boundary. SDK simplicity must not weaken the authorization trust model.
 
 ## Submission story
 
-ProofGate demonstrates the consumption side of the Telegraph flywheel:
+Auctorail demonstrates the consumption side of the Telegraph flywheel:
 
 1. an autonomous application needs external intelligence before acting;
 2. it buys ranked intelligence through Telegraph;

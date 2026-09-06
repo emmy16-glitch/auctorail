@@ -272,6 +272,6 @@ console.log("JUDGE CLOSE");
 console.log("-----------");
 console.log(
   "Telegraph tells autonomous software what the outside world says. " +
-  "ProofGate decides how much independent intelligence the consequence deserves, " +
+  "Auctorail decides how much independent intelligence the consequence deserves, " +
   "and only turns sufficient evidence plus delegated authority into one-use permission for one exact action."
 );

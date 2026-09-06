@@ -430,7 +430,7 @@ function buildPayload(
       continue;
     }
 
-    // If an endpoint exposes an explicit chain/network input, ProofGate must
+    // If an endpoint exposes an explicit chain/network input, Auctorail must
     // be able to express the frozen chain exactly through that field. A
     // mainnet-only value such as "base" is not equivalent to Base Sepolia
     // chainId 84532, and silently omitting the field could make the upstream

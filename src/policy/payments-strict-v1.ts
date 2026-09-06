@@ -13,7 +13,7 @@ import {
 } from "../core/mandate-contract.js";
 import type { TelegraphEvidenceRecord } from "../evidence/telegraph.js";
 
-export type ProofGateDecision = "ALLOW" | "HOLD" | "BLOCK";
+export type AuctorailDecision = "ALLOW" | "HOLD" | "BLOCK";
 export type CheckStatus = "PASS" | "HOLD" | "BLOCK";
 
 export interface PolicyCheck {
@@ -35,7 +35,7 @@ export interface DecisionRecord {
   mandate: DecisionMandateContext;
   agentId: string;
   actionId: string;
-  decision: ProofGateDecision;
+  decision: AuctorailDecision;
   reason: string;
   policyId: PaymentPolicyId;
   policyVersion: number;
@@ -267,7 +267,7 @@ export function evaluatePaymentsStrictV1(
       check(
         "evidence_applicability",
         "HOLD",
-        "Miner completed the request, but ProofGate could not establish that the returned risk assessment is sufficiently applicable to this exact target."
+        "Miner completed the request, but Auctorail could not establish that the returned risk assessment is sufficiently applicable to this exact target."
       )
     );
   }

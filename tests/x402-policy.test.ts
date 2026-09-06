@@ -36,7 +36,7 @@ function validChallenge() {
   };
 }
 
-describe("ProofGate x402 payment policy", () => {
+describe("Auctorail x402 payment policy", () => {
   it("accepts only the locked Base Sepolia USDC lane", () => {
     const parsed = parsePaymentRequiredHeader(encode(validChallenge()));
     const decision = selectApprovedTelegraphPaymentLane(parsed);

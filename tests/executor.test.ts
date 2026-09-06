@@ -95,7 +95,7 @@ function action(destination: string, amountRaw = "5000000") {
   });
 }
 
-describe("ProofGate Controlled Executor", () => {
+describe("Auctorail Controlled Executor", () => {
   it("executes a valid mandate-bound permit exactly once", async () => {
     const ev = evidence();
     const now = new Date("2026-09-01T19:00:00.000Z");

@@ -1,6 +1,6 @@
-# ProofGate v1.2 on Termux / Android ARM
+# Auctorail v1.2 on Termux / Android ARM
 
-ProofGate can run its TypeScript suite, all deterministic security harnesses, Telegraph proof flows, adaptive/quorum check flow and architecture-independent vendor verification inside an Ubuntu `proot-distro` environment on Termux.
+Auctorail can run its TypeScript suite, all deterministic security harnesses, Telegraph proof flows, adaptive/quorum check flow and architecture-independent vendor verification inside an Ubuntu `proot-distro` environment on Termux.
 
 ## Get the v1.2 branch
 
@@ -40,7 +40,7 @@ The canonical Solidity build is intentionally pinned to the official native comp
 - canonical platform: `linux-amd64`
 - compiler binary SHA-256 is pinned by the repository
 
-Most Android/Termux devices are `arm64`. ProofGate does not silently replace the canonical compiler/platform and then claim the tracked artifact was reproduced identically.
+Most Android/Termux devices are `arm64`. Auctorail does not silently replace the canonical compiler/platform and then claim the tracked artifact was reproduced identically.
 
 On unsupported hosts, `npm run vendor:compile` gives an explicit platform message.
 
@@ -206,7 +206,7 @@ A successful `vendor:verify` on ARM proves that the checked-in source, artifact 
 
 A successful `vendor:compile` in GitHub CI proves that the tracked artifact can be reproduced with the exact pinned native `linux-amd64` compiler configuration.
 
-ProofGate intentionally keeps those claims separate.
+Auctorail intentionally keeps those claims separate.
 
 ## Validation record
 

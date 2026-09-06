@@ -65,7 +65,7 @@ function advisory<T>(result: T) {
     authoritative: false as const,
     executableAuthority: null,
     warning:
-      "This gateway does not mint a ProofGate Permit. Treat this response as evaluation/debug output only.",
+      "This gateway does not mint a Auctorail Permit. Treat this response as evaluation/debug output only.",
     result
   };
 }
@@ -220,7 +220,7 @@ const server = createServer(
 
 server.listen(port, host, () => {
   console.log(
-    `ProofGate authorization gateway listening on http://${host}:${port}`
+    `Auctorail authorization gateway listening on http://${host}:${port}`
   );
   console.log(
     "Mode: EVALUATE_ONLY (non-authoritative; does not hold a wallet key, buy evidence, mint permits, or execute funds)"

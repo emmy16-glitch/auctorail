@@ -44,7 +44,7 @@ const requestBody = {
 };
 
 console.log("");
-console.log("ProofGate → Telegraph Quote");
+console.log("Auctorail → Telegraph Quote");
 console.log("---------------------------");
 console.log("Miner:", miner.name);
 console.log("Miner ID:", miner.id);

@@ -35,7 +35,7 @@ const PaymentActionInputSchema = z.object({
       } catch {
         return false;
       }
-    }, "Only Base Sepolia USDC is supported by ProofGate payment policies"),
+    }, "Only Base Sepolia USDC is supported by Auctorail payment policies"),
 
   amountRaw: z
     .string()

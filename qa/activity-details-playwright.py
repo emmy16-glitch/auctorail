@@ -111,7 +111,7 @@ async def main():
         await expect(page.get_by_test_id("activity-screen")).to_be_visible()
         activity = page.locator(".activity-card")
         await expect(activity.get_by_text("RECENT ACTIVITY", exact=True)).to_be_visible()
-        await expect(activity.get_by_text("6.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+        await expect(activity.get_by_text("6.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
         await expect(activity.get_by_text("HELD", exact=True)).to_be_visible()
 
         summary = activity.locator(".activity-summary").first

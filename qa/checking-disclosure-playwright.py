@@ -166,7 +166,7 @@ async def run_hold_flow(browser, width, height, suffix):
     await expect(page.get_by_test_id("activity-screen")).to_be_visible()
     activity = page.locator(".activity-item.status-held").first
     await expect(activity).to_be_visible()
-    await expect(activity.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(activity.get_by_text("1.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
     await activity.locator(".activity-summary").click()
     await expect(activity.locator(".plain-explanation").get_by_text("Required FRAUD_DETECTION evidence is missing.", exact=False)).to_be_visible()
     await activity.get_by_role("button", name="VIEW TECHNICAL DETAILS ↓").click()

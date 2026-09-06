@@ -231,7 +231,7 @@ if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
   unsigned.gasPrice = feeData.gasPrice;
 }
 
-// Sign before broadcast. This lets ProofGate know the deterministic tx hash
+// Sign before broadcast. This lets Auctorail know the deterministic tx hash
 // and nonce before an RPC can accept the irreversible write.
 const signedTransaction = await wallet.signTransaction(unsigned);
 const transactionHash = ethers.keccak256(signedTransaction);
@@ -320,7 +320,7 @@ if (reconciliation.state === "AMBIGUOUS") {
 
   console.log("Deployment outcome is AMBIGUOUS.");
   console.log("Transaction:", transactionHash);
-  console.log("ProofGate will not redeploy blindly.");
+  console.log("Auctorail will not redeploy blindly.");
   process.exit(2);
 }
 

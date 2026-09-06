@@ -1,6 +1,6 @@
-# ProofGate Resilience Invariants
+# Auctorail Resilience Invariants
 
-ProofGate must recover from infrastructure problems **without weakening authorization or duplicating consequential effects**.
+Auctorail must recover from infrastructure problems **without weakening authorization or duplicating consequential effects**.
 
 ## Primary rule
 
@@ -114,7 +114,7 @@ Examples may include checking:
 - whether an API-created object/idempotency key already exists;
 - whether a remote workflow already completed.
 
-ProofGate does not guess that a thrown client error means the external effect did not happen.
+Auctorail does not guess that a thrown client error means the external effect did not happen.
 
 ## Execution kill-switch invariant
 
@@ -229,10 +229,10 @@ A trusted generic adapter must:
 
 Operational maintenance such as sweeping a test wallet may dynamically calculate safe transferable ETH after reserving gas.
 
-That operational action is **not permission to mutate a ProofGate-protected Action Contract**.
+That operational action is **not permission to mutate a Auctorail-protected Action Contract**.
 
 ## Design goal
 
-ProofGate should recover automatically when infrastructure can change without changing or duplicating the authorized effect.
+Auctorail should recover automatically when infrastructure can change without changing or duplicating the authorized effect.
 
-When recovery could create uncertainty about whether money, evidence payment, code, infrastructure or another external effect already happened, ProofGate **reconciles instead of guessing**.
+When recovery could create uncertainty about whether money, evidence payment, code, infrastructure or another external effect already happened, Auctorail **reconciles instead of guessing**.

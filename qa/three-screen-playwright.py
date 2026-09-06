@@ -101,7 +101,7 @@ def execution_response(*, status="EXECUTED", tx_status="CONFIRMED", amount="1.00
             "amount": amount,
             "amountRaw": str(int(float(amount) * 1_000_000)),
             "recipient": recipient,
-            "recipientLabel": "ProofGate Vendor",
+            "recipientLabel": "Auctorail Vendor",
             "reference": "INV-4471",
         },
         "transaction": {
@@ -255,7 +255,7 @@ async def assert_screen3_running(page):
     await expect(page.get_by_text("PERMIT ISSUED", exact=True)).to_be_visible()
     await expect(page.get_by_text("EXECUTING ON BASE SEPOLIA", exact=True)).to_be_visible()
     await expect(page.get_by_text("CONFIRMATION PENDING", exact=True)).to_be_visible()
-    await expect(page.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(page.get_by_text("1.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
     await expect(page.get_by_role("button", name="EXECUTION IN PROGRESS")).to_be_disabled()
     await expect(page.get_by_role("button", name="VIEW PROOF")).to_be_disabled()
     await expect(page.get_by_role("button", name="EXECUTE", exact=True)).to_have_count(0)
