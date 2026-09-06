@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = process.cwd();
@@ -16,7 +16,15 @@ mkdirSync(utilityFunction, { recursive: true });
 execFileSync("npm", ["run", "web:build"], { cwd: root, stdio: "inherit" });
 cpSync(join(root, "dist"), staticOutput, { recursive: true });
 
-function makeVercelHandler(sourcePath, temporaryPath) {
+function deploymentPrelude() {
+  const bundleSource = readFileSync(join(root, "web", "api-bundle.ts"), "utf8");
+  const marker = 'await import("./api.js")';
+  const markerIndex = bundleSource.indexOf(marker);
+  if (markerIndex < 0) throw new Error("Auctorail deployment prelude marker not found");
+  return bundleSource.slice(0, markerIndex).trimEnd();
+}
+
+function makeVercelHandler(sourcePath, temporaryPath, prelude) {
   const source = readFileSync(sourcePath, "utf8");
   const marker = 'server.listen(PORT, "0.0.0.0"';
   const markerIndex = source.indexOf(marker);
@@ -24,7 +32,7 @@ function makeVercelHandler(sourcePath, temporaryPath) {
     throw new Error(`Vercel adapter marker not found in ${sourcePath}`);
   }
 
-  const adapted = `${source.slice(0, markerIndex)}
+  const adapted = `${prelude}\n\n${source.slice(0, markerIndex)}
 export default function handler(request, response) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -55,14 +63,15 @@ export default function handler(request, response) {
   writeFileSync(temporaryPath, adapted);
 }
 
+const prelude = deploymentPrelude();
 const paymentSource = join(root, "web", "api.ts");
 const utilitySource = join(root, "web", "security-lab-api.ts");
 const paymentTemp = join(root, "web", "__vercel-payment.ts");
 const utilityTemp = join(root, "web", "__vercel-utility.ts");
 
 try {
-  makeVercelHandler(paymentSource, paymentTemp);
-  makeVercelHandler(utilitySource, utilityTemp);
+  makeVercelHandler(paymentSource, paymentTemp, prelude);
+  makeVercelHandler(utilitySource, utilityTemp, prelude);
 
   execFileSync(
     "npx",
