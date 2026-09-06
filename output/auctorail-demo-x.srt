@@ -1,0 +1,80 @@
+1
+00:00:00,200 --> 00:00:04,000
+AI agents can already move money and use powerful tools.
+
+2
+00:00:04,100 --> 00:00:07,400
+But being able to do something doesn't mean they're allowed to do it.
+
+3
+00:00:07,500 --> 00:00:10,700
+This is Auctorail.
+
+4
+00:00:11,000 --> 00:00:14,400
+Here, invoice-bot may pay one specific vendor,
+
+5
+00:00:14,500 --> 00:00:17,600
+up to five USDC per transaction.
+
+6
+00:00:18,000 --> 00:00:21,900
+Now it requests a one USDC supplier invoice.
+
+7
+00:00:22,000 --> 00:00:26,300
+Auctorail freezes the exact request and checks the permission.
+
+8
+00:00:26,600 --> 00:00:29,800
+It verifies delegated authority, then asks Telegraph
+
+9
+00:00:29,900 --> 00:00:33,000
+for fraud intelligence on this exact recipient.
+
+10
+00:00:33,300 --> 00:00:36,100
+The evidence matches the wallet and the Base Sepolia network,
+
+11
+00:00:36,200 --> 00:00:38,800
+and the requested action.
+
+12
+00:00:39,100 --> 00:00:42,000
+Every check passes and one-use authority is issued.
+
+13
+00:00:42,100 --> 00:00:46,300
+A real Base Sepolia transaction is confirmed on-chain.
+
+14
+00:00:46,600 --> 00:00:50,000
+Now the agent tries to send more than was approved.
+
+15
+00:00:50,100 --> 00:00:52,600
+The old authorization no longer matches. Blocked.
+
+16
+00:00:52,700 --> 00:00:55,300
+No transaction is sent.
+
+17
+00:00:55,600 --> 00:00:59,300
+And if required evidence isn't available, Auctorail doesn't guess.
+
+18
+00:00:59,400 --> 00:01:03,000
+It holds the action instead of spending.
+
+19
+00:01:03,300 --> 00:01:06,100
+Intelligence tells agents what they know.
+
+20
+00:01:06,200 --> 00:01:09,000
+Auctorail determines what they're allowed to do.
+

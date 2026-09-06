@@ -1,0 +1,8 @@
+AI agents can already move money and use powerful tools.
+But capability isn't authority.
+
+Watch Auctorail freeze a 1 USDC request, check the agent's 5 USDC permission, pull Telegraph fraud evidence, issue one-use authority — and confirm a real Base Sepolia transaction.
+
+Over the limit? Blocked. Tampered? Blocked. Missing evidence? Held.
+
+Intelligence tells agents what they know. Auctorail determines what they're allowed to do.
