@@ -259,11 +259,9 @@ Current UI work also includes mobile overflow fixes, technical-detail disclosure
 
 ## Current runtime delta
 
-The redesigned dependency set now contains development/browser packages that officially target Node 22/24.
+Current `main` requires **Node `>=24.15.0`** through `package.json`. `.nvmrc` selects Node 24 and both current GitHub Actions workflows run Node 24.
 
-**Node 24 is recommended for current local development.**
-
-Some existing CI workflow configuration still exercises Node 20 with engine warnings. The green run demonstrates current compatibility in that runner, not a long-term Node 20 dependency guarantee.
+Older v1.2/ProofGate CI logs may show Node 20. Those are historical runtime facts for those revisions, not a supported baseline for current Auctorail.
 
 ## Real-world proof boundary
 
@@ -327,7 +325,10 @@ A real adapter must still:
 
 ## Re-running current validation
 
+Use Node `>=24.15.0`:
+
 ```bash
+node -v
 npm ci
 npm run ci
 npm run audit:prod
