@@ -2479,3 +2479,26 @@ details.technical .kv { padding: 8px 14px 12px; }
 @media (max-width: 640px) {
   .lab-attack-select { flex: 1 1 100%; max-width: none; }
 }
+
+/* trust: merged content-check + verify receipt page */
+.trust-screen { display: grid; gap: 20px; }
+.trust-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
+.trust-tab {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 11px 18px;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+.trust-tab .tt-num { color: var(--text-3); opacity: 0.7; }
+.trust-tab:hover { color: var(--text-1); border-color: var(--line-strong); }
+.trust-tab:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.trust-tab.active {
+  color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 140%);
+  border-color: rgba(62, 207, 142, 0.5);
+}
+.trust-tab.active .tt-num { color: var(--accent); opacity: 1; }

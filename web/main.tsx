@@ -6,8 +6,7 @@ import { PermissionsScreen } from "./PermissionsScreen";
 import { SecurityLabScreen } from "./SecurityLabScreen";
 import { CheckingScreen, type CheckPhase, type CheckStage, type EventTimes } from "./CheckingScreen";
 import { HomeLandingScreen } from "./HomeLandingScreen";
-import { ContentTrustScreen } from "./ContentTrustScreen";
-import { VerifyScreen } from "./VerifyScreen";
+import { TrustScreen } from "./TrustScreen";
 import { GuidedDemoScreen } from "./GuidedDemoScreen";
 import { SdkScreen } from "./SdkScreen";
 import { ShieldIcon, FileIcon, LockIcon } from "./icons";
@@ -22,7 +21,7 @@ const BASE_SEPOLIA_CHAIN_ID = 84532;
 const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
 const GITHUB_URL = "https://github.com/emmy16-glitch/auctorail";
 
-export type Route = "home" | "check" | "activity" | "permissions" | "security" | "content" | "verify" | "demo" | "docs";
+export type Route = "home" | "check" | "activity" | "permissions" | "security" | "trust" | "content" | "verify" | "demo" | "docs";
 
 const ROUTE_BY_PATH: Record<string, Route> = {
   "": "home",
@@ -30,6 +29,7 @@ const ROUTE_BY_PATH: Record<string, Route> = {
   activity: "activity",
   permissions: "permissions",
   "security-lab": "security",
+  trust: "trust",
   content: "content",
   verify: "verify",
   demo: "demo",
@@ -48,6 +48,7 @@ function routePath(route: Route): string {
     activity: "activity",
     permissions: "permissions",
     security: "security-lab",
+    trust: "trust",
     content: "content",
     verify: "verify",
     demo: "demo",
@@ -236,7 +237,7 @@ function TopNav({ route }: { route: Route }) {
           {NAV_LINKS.map((link) => <NavButton key={link.route} target={link.route} label={link.label} />)}
         </nav>
         <div className="nav-side">
-          <NavButton target="verify" label="VERIFY" />
+          <NavButton target="trust" label="TRUST" />
           <NavButton target="docs" label="DOCS" />
           <span className="status-pill"><span className="status-dot" aria-hidden="true" />BASE SEPOLIA · TESTNET</span>
         </div>
@@ -287,7 +288,7 @@ function SiteFooter() {
         <nav aria-label="Footer">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
           <a href={routePath("docs")}>Docs</a>
-          <a href={routePath("verify")}>Verify</a>
+          <a href={routePath("trust")}>Trust</a>
         </nav>
       </div>
     </footer>
@@ -470,7 +471,6 @@ function ResultPreview() {
 
 function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute());
-  const [verifyInput, setVerifyInput] = useState("");
 
   const [authorityActive, setAuthorityActive] = useState(true);
   const [limit, setLimit] = useState(5);
@@ -848,16 +848,11 @@ function App() {
     />
   );
 
-  function openVerifyWith(input: string) {
-    setVerifyInput(input);
-    window.location.hash = routePath("verify");
-  }
-
   return (
     <div id="auctorail-home-root" className="app">
       <TopNav route={route} />
       <div className="page">
-        <div className={`page-inner ${route === "content" || route === "verify" || route === "docs" ? "narrow" : ""}`}>
+        <div className={`page-inner ${route === "trust" || route === "content" || route === "verify" || route === "docs" ? "narrow" : ""}`}>
           {route === "home" && (
             <HomeLandingScreen
               onDemo={() => { window.location.hash = routePath("demo"); }}
@@ -883,8 +878,9 @@ function App() {
             />
           )}
           {route === "security" && <SecurityLabScreen apiBase={API_BASE} />}
-          {route === "content" && <ContentTrustScreen onVerifyReceipt={openVerifyWith} />}
-          {route === "verify" && <VerifyScreen initialInput={verifyInput} />}
+          {route === "trust" && <TrustScreen initialTab="content" />}
+          {route === "content" && <TrustScreen initialTab="content" />}
+          {route === "verify" && <TrustScreen initialTab="verify" />}
           {route === "demo" && (
             <GuidedDemoScreen
               onBack={() => { window.location.hash = routePath("home"); }}

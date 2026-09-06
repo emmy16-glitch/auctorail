@@ -185,7 +185,7 @@ async function installLiveMocks(page, { liveDelay = 900, executeDelay = 700, liv
 // ================= 1. route matrix =================
 const ROUTES = [
   ["", "landing"], ["check", "check"], ["activity", "activity"], ["permissions", "permissions"],
-  ["security-lab", "security-lab"], ["content", "content"], ["verify", "verify"], ["demo", "demo"], ["docs", "docs"]
+  ["security-lab", "security-lab"], ["trust", "content"], ["content", "content"], ["verify", "verify"], ["demo", "demo"], ["docs", "docs"]
 ];
 const TESTIDS = {
   landing: '[data-testid="home-landing-screen"]', check: '[data-testid="checking-screen"]',
@@ -302,47 +302,24 @@ console.log("\n=== 4. real live attempt (503) ===");
   await page.close();
 }
 
-// ================= 5. content trust states =================
-console.log("\n=== 5. content trust: BLOCK / ALLOW / LIVE ===");
+// ================= 5. content trust (live-only) =================
+console.log("\n=== 5. content trust: live-only terminal ===");
 {
   const page = await newPage(1440, 1000);
-  page.__allowErrors = [/Failed to load resource.*503/];
+  page.__allowErrors = [/Failed to load resource.*(503|500|404)/];
   await page.goto(BASE + "/#/content", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(TESTIDS.content, { timeout: 15000 });
-
-  // BLOCK (scam sample)
+  check("content wire console visible at idle", Boolean(await page.$(".content-wire")));
+  check("content wire idle hint (no demo mode)", await page.evaluate(() => (document.querySelector(".content-wire")?.textContent ?? "").includes("no demo mode")));
   await clickClean(page, "LOAD SCAM SAMPLE");
-  await clickClean(page, "RUN CONTENT CHECK");
-  await page.waitForFunction(() => document.querySelector(".content-verdict > strong")?.textContent === "BLOCK", { timeout: 15000 });
-  check("content BLOCK verdict", true);
-  check("content DEMO badge", await page.evaluate(() => (document.body.textContent ?? "").includes("DETERMINISTIC DEMO")));
-  check("content SCAM signal", await page.evaluate(() => [...document.querySelectorAll(".signal-kind")].some((el) => el.textContent === "SCAM")));
-  await shot(page, "audit-content-block.png");
-
-  // ALLOW (benign) — set the full value via the native setter (React controlled input)
-  const benign = "The supplier delivered 12 units of the agreed component; invoice number 4471 matches the purchase order.";
-  const setValue = async (text) => page.evaluate((t) => {
-    const ta = document.querySelector("textarea");
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-    setter.call(ta, t);
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-  }, text);
-  await setValue(benign);
-  await sleep(200);
-  const taValue = await page.evaluate(() => document.querySelector("textarea").value);
-  check("content textarea replaced", taValue === benign);
-  await clickClean(page, "RUN CONTENT CHECK");
-  await page.waitForFunction(() => document.querySelector(".content-verdict > strong")?.textContent === "ALLOW", { timeout: 15000 });
-  check("content ALLOW verdict", true);
-  await shot(page, "audit-content-allow.png");
-
-  // LIVE TELEGRAPH (disabled in sandbox -> error state); run button relabels in live mode
-  await clickClean(page, "LIVE TELEGRAPH");
   await clickClean(page, "CHECK WITH TELEGRAPH");
-  await page.waitForFunction(() => (document.querySelector(".content-verdict > strong")?.textContent === "BLOCK" || (document.body.textContent ?? "").includes("live")) , { timeout: 15000 }).catch(() => {});
-  await sleep(1200);
-  const liveState = await page.evaluate(() => (document.body.textContent ?? "").slice(0, 4000));
-  check("content LIVE mode reaches a state (error or verdict)", /LIVE TELEGRAPH/.test(liveState) && (/error|BLOCK|ALLOW|HOLD|not|disabled|unavailable/i.test(liveState)));
+  await page.waitForFunction(() => document.querySelector(".content-verdict > strong")?.textContent || document.querySelector(".lab-error"), { timeout: 25000 });
+  const state = await page.evaluate(() => ({
+    verdict: document.querySelector(".content-verdict > strong")?.textContent ?? null,
+    error: document.querySelector(".lab-error")?.textContent ?? null
+  }));
+  check("content live reaches terminal state (verdict or fail-closed stop)", Boolean(state.verdict || state.error), JSON.stringify(state));
+  check("content wire logged the run", await page.evaluate(() => (document.querySelector(".content-wire")?.textContent ?? "").includes("content --action")));
   await shot(page, "audit-content-live.png");
   auditErrors(page, "content page");
   await page.close();
@@ -355,6 +332,7 @@ console.log("\n=== 6. verify: VALID / INVALID ===");
   page.__allowErrors = [/Failed to load resource.*404/];
   await page.goto(BASE + "/#/verify", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(TESTIDS.verify, { timeout: 15000 });
+  check("trust tabs present (merged trust page)", await page.evaluate(() => document.querySelectorAll('[role="tab"]').length === 2));
   await clickClean(page, "LOAD CANONICAL PROOF");
   await page.waitForFunction(() => document.querySelector(".verify-verdict > strong")?.textContent === "VALID", { timeout: 15000 });
   check("verify canonical VALID", true);

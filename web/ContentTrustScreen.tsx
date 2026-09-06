@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 
-type ContentMode = "demo" | "live";
 type ProposedAction = "view" | "share" | "publish";
 type AuthorshipClaim = "unspecified" | "human" | "ai-assisted";
 
@@ -58,25 +57,19 @@ function shortContent(hash: string | null | undefined): string {
 
 function contentWire(args: {
   status: "idle" | "running" | "done" | "error";
-  mode: ContentMode;
   proposedAction: ProposedAction;
   authorshipClaim: AuthorshipClaim;
   result: ContentCheckResponse | null;
   error: string | null;
 }): { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] {
-  const { status, mode, proposedAction, authorshipClaim, result, error } = args;
-  if (status === "idle" && !result) return [];
+  const { status, proposedAction, authorshipClaim, result, error } = args;
+  if (status === "idle" && !result) return [{ text: "live content check only — evidence is acquired via a real x402 payment · no demo mode" }];
   const lines: { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] = [
-    { cmd: true, text: `content --action ${proposedAction} --authorship ${authorshipClaim} --mode ${mode === "demo" ? "deterministic-demo" : "live-telegraph-x402"}` }
+    { cmd: true, text: `content --action ${proposedAction} --authorship ${authorshipClaim} --mode live-telegraph-x402` }
   ];
   if (status === "running") {
     lines.push({ text: "hashing exact subject…", pending: true });
-    lines.push({
-      text: mode === "demo"
-        ? "policy content-strict-v1 · evaluating signals locally (no Miner call)…"
-        : "telegraph content route · acquiring real x402 evidence…",
-      pending: true
-    });
+    lines.push({ text: "telegraph content route · acquiring real x402 evidence…", pending: true });
     return lines;
   }
   if (status === "error" && !result) {
@@ -85,10 +78,7 @@ function contentWire(args: {
   }
   if (result) {
     lines.push({ text: `subject frozen · ${shortContent(result.subjectHash)}` });
-    lines.push({
-      text: mode === "demo" ? "policy content-strict-v1 · deterministic demo · no Miner call" : `telegraph content route · real x402 · spend raw ${result.spendRaw}`,
-      tone: "ok"
-    });
+    lines.push({ text: `telegraph content route · real x402 · spend raw ${result.spendRaw}`, tone: "ok" });
     for (const signal of result.signals) {
       lines.push({
         text: `${signal.kind} · ${confidence(signal.confidence)} · ${signal.minerName}`,
@@ -112,7 +102,6 @@ function kindClass(kind: ContentSignal["kind"]): string {
 
 export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps) {
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<ContentMode>("demo");
   const [proposedAction, setProposedAction] = useState<ProposedAction>("view");
   const [authorshipClaim, setAuthorshipClaim] = useState<AuthorshipClaim>("unspecified");
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
@@ -133,7 +122,7 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          mode,
+          mode: "live",
           text: text.trim(),
           proposedAction,
           authorshipClaim
@@ -147,7 +136,7 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
       const code = reason instanceof Error ? reason.message : "content_check_failed";
       setError(
         code === "content_live_disabled"
-          ? "Live Content Trust is disabled on this deployment. Demo mode remains available and makes no Miner payment."
+          ? "Live Content Trust is disabled on this deployment (AUCTORAIL_CONTENT_LIVE_ENABLED=false)."
           : code === "telegraph_credentials_unavailable"
             ? "Live Telegraph credentials are not configured on this deployment."
             : code.replaceAll("_", " ")
@@ -227,47 +216,32 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
             </div>
           )}
 
-          <div style={{ margin: "0 0 18px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-              <span className="eyebrow">03 · EVIDENCE MODE</span>
-              <span className={`badge ${mode === "demo" ? "muted" : "accent"}`} style={{ textTransform: "none", letterSpacing: 0.02 }}>
-                {mode === "demo" ? "DETERMINISTIC DEMO" : "LIVE TELEGRAPH + x402"}
-              </span>
-            </div>
-            <div className="mode-switch" role="group" aria-label="Evidence mode">
-              <button type="button" className={mode === "demo" ? "active" : ""} onClick={() => setMode("demo")}>DEMO · FREE</button>
-              <button type="button" className={mode === "live" ? "active" : ""} onClick={() => setMode("live")}>LIVE TELEGRAPH</button>
-            </div>
-          </div>
-
           <button className="btn btn-primary btn-lg btn-block" type="button" disabled={!canRun} onClick={runCheck}>
-            {status === "running" ? "CHECKING EVIDENCE…" : mode === "live" ? "CHECK WITH TELEGRAPH" : "RUN CONTENT CHECK"}
+            {status === "running" ? "CHECKING EVIDENCE…" : "CHECK WITH TELEGRAPH"}
           </button>
           {error && <div className="lab-error" role="alert" style={{ marginTop: 14 }}><strong>CHECK STOPPED</strong><span>{error}</span></div>}
         </section>
 
         <aside aria-live="polite" style={{ display: "grid", gap: 16 }}>
-          {(status !== "idle" || result) && (
-            <div className="demo-console wire-console content-wire" aria-label="Content check wire log" role="log">
+          <div className="demo-console wire-console content-wire" aria-label="Content check wire log" role="log">
               <div className="console-bar">
                 <span className="console-title">
                   <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
                   auctorail wire — content trust
                 </span>
                 <span className={`console-state ${status === "running" ? "running" : status === "error" ? "paused" : "done"}`}>
-                  {status === "running" ? "STREAMING" : status === "error" ? "STOPPED" : "COMPLETE"}
+                  {status === "running" ? "STREAMING" : status === "error" ? "STOPPED" : status === "idle" && !result ? "READY" : "COMPLETE"}
                 </span>
               </div>
               <div className="console-body">
-                {contentWire({ status, mode, proposedAction, authorshipClaim, result, error }).map((line, index) => (
+                {contentWire({ status, proposedAction, authorshipClaim, result, error }).map((line, index) => (
                   <span key={index} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""} ${line.pending ? "pending" : ""}`}>
                     {line.cmd ? <span className="wl-cmd">{line.text}</span> : line.text}
                     {line.pending && <span className="console-cursor" aria-hidden="true" />}
                   </span>
                 ))}
               </div>
-            </div>
-          )}
+          </div>
           {!result ? (
             <div className="result-empty">
               <span className="eyebrow">RESULT</span>
