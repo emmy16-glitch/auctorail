@@ -282,13 +282,15 @@ If the browser cannot load them, inspect deployment asset paths and Vite base-pa
 
 ## `npm ci` prints `EBADENGINE`
 
-The current dependency set includes development/browser packages that officially require Node 22/24.
+First check the runtime:
 
-**Node 24 is recommended.**
+```bash
+node -v
+```
 
-Some existing CI configuration still exercises Node 20 for compatibility and can currently pass, but `EBADENGINE` warnings should not be interpreted as a supported dependency guarantee.
+Current `main` declares **Node `>=24.15.0`** in `package.json`, `.nvmrc` selects Node 24, and current GitHub Actions workflows run Node 24.
 
-For local development, prefer a modern Node 24 environment.
+If the local runtime is older than `24.15.0`, upgrade it. Node 20 is not a supported current baseline. If `EBADENGINE` still appears on a compliant Node version, inspect the exact package requirement instead of dismissing the warning.
 
 ## CI fails after changing evidence policy constants
 
@@ -364,7 +366,13 @@ Current deterministic fuzz total:
 7400 adversarial cases
 ```
 
-If older docs say 225 or 267 tests, treat them as historical snapshots unless the document is explicitly labeled current.
+If older historical artifacts say 120, 225, or other counts, use their date/revision context. Current maintained docs should use the latest green `main` result.
+
+## Historical audit report disagrees with current status
+
+Files under `audit-artifacts/` are dated assessment artifacts. They can legitimately contain old ProofGate naming, old repository URLs, old test counts, old dependency findings and older topology assumptions.
+
+Read `audit-artifacts/README.md` before using those reports for a present-tense claim. Do not edit historical assessment content merely to make it match current `main`.
 
 ## Recommended diagnostic order
 
@@ -372,7 +380,7 @@ When something fails, use this order:
 
 ```text
 1. Confirm exact Git commit
-2. Confirm local/deployed environment
+2. Confirm Node/runtime and deployment environment
 3. Confirm request/action inputs
 4. Confirm Mandate/preflight result
 5. Confirm evidence plan
