@@ -157,7 +157,10 @@ For genuine external proof:
 
 ## Reproducing current validation
 
+Current `main` requires **Node `>=24.15.0`**. `.nvmrc` selects Node 24 and current GitHub Actions workflows run Node 24.
+
 ```bash
+node -v
 npm ci
 npm run ci
 npm run audit:prod
@@ -167,7 +170,7 @@ npm run security:fuzz:general
 npm run vendor:verify
 ```
 
-Use Node 24 for current local development where possible.
+Historical v1.1 environments may have used older Node versions; that does not define the runtime contract of current `main`.
 
 ## Historical interpretation rule
 
