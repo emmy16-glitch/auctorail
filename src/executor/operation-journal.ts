@@ -100,9 +100,33 @@ function assertTransition(from: OperationState, to: OperationState): void {
   }
 }
 
+export function resolveOperationJournalDirectory(
+  environment: NodeJS.ProcessEnv = process.env
+): string {
+  const configured =
+    environment.AUCTORAIL_OPERATION_JOURNAL_DIR?.trim() ||
+    environment.PROOFGATE_OPERATION_JOURNAL_DIR?.trim();
+
+  if (configured) {
+    return configured;
+  }
+
+  // Vercel and AWS Lambda expose the deployed bundle from a read-only
+  // filesystem. /tmp is the writable scratch volume for a single invocation.
+  if (
+    environment.VERCEL === "1" ||
+    Boolean(environment.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(environment.LAMBDA_TASK_ROOT)
+  ) {
+    return path.join("/tmp", "auctorail", "operations");
+  }
+
+  return path.join(".proofgate", "operations");
+}
+
 export class FileOperationJournal {
   constructor(
-    private readonly directory = ".proofgate/operations"
+    private readonly directory = resolveOperationJournalDirectory()
   ) {
     fs.mkdirSync(this.directory, { recursive: true });
   }
