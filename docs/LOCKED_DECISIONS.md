@@ -298,13 +298,13 @@ The redesigned product is checked at desktop and narrow/mobile viewports. Long h
 
 Home terminal animations use a calmer reduced-motion mode while continuing to progress rather than becoming permanently static.
 
-## D32 — Modern Node runtime is recommended
+## D32 — Node 24 is the current runtime baseline
 
 **Status: CURRENT operational guidance**
 
-Node 24 is recommended for current development because several redesigned browser/DOM development dependencies officially target Node 22/24.
+Current `main` requires **Node `>=24.15.0`** through `package.json`. `.nvmrc` selects Node 24 and current GitHub Actions workflows run Node 24.
 
-Some existing CI workflow configuration still runs Node 20 for compatibility and currently emits engine warnings.
+Node 20 is not a supported current baseline. Historical logs that show Node 20 belong to older revisions and should not be used as current runtime guidance.
 
 ## D33 — Honest claim boundaries are a product requirement
 
