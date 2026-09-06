@@ -1,0 +1,5 @@
+loaded check screen
+clicked CHECK
+terminal-non-tx state
+tx= NONE
+done
