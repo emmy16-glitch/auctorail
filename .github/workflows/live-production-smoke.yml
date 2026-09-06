@@ -3,13 +3,14 @@ name: Auctorail Live Production Smoke
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/live-smoke-trigger'
 
 permissions:
   contents: read
 
 jobs:
   live-production-smoke:
-    if: github.event.head_commit.message == 'test: run live production authorization'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -70,7 +71,6 @@ jobs:
             console.log(`\n=== ATTEMPT ${i} LIVE ===`);
             console.log(JSON.stringify(live, null, 2));
             results.push({ attempt: i, policy, live });
-
             await new Promise(resolve => setTimeout(resolve, 1500));
           }
 
