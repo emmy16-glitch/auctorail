@@ -310,11 +310,17 @@ Possible additional protected adapters:
 
 Do not present future adapter ideas as already implemented.
 
-## Current runtime note
+## Current runtime requirement
 
-Node 24 is recommended for local development because newer browser/DOM development dependencies officially target Node 22/24.
+Current `main` requires **Node `>=24.15.0`** through `package.json`. `.nvmrc` selects Node 24 and current GitHub Actions workflows use Node 24.
 
-Some existing CI workflow configuration still uses Node 20 and currently passes with engine warnings. This is an environment-maintenance item, not a reason to overstate Node 20 support in submission docs.
+Node 20 is not a supported current baseline. Any Node 20 references in old logs or historical reports belong to earlier revisions.
+
+## Historical audit-artifact boundary
+
+The files under `audit-artifacts/` are preserved dated assessment outputs. They may contain old ProofGate naming, old repository URLs, old test counts and old dependency findings.
+
+Use `audit-artifacts/README.md` before quoting those reports. Present-tense submission claims should come from current source, current green CI and maintained docs—not from a historical audit snapshot.
 
 ## Final pre-submission checklist
 
@@ -324,10 +330,12 @@ Some existing CI workflow configuration still uses Node 20 and currently passes 
 - [ ] no unintended open PRs;
 - [ ] no secret/private-key material committed;
 - [ ] README current facts match code;
+- [ ] current Node is `>=24.15.0`;
 - [ ] LOW deadline says `12s`, not `35s`;
 - [ ] test count says `268`, not `267`;
 - [ ] public product branding says Auctorail;
-- [ ] historical ProofGate identifiers are explained rather than randomly renamed.
+- [ ] historical ProofGate identifiers are explained rather than randomly renamed;
+- [ ] historical audit artifacts are not presented as current status.
 
 ### Validation
 
