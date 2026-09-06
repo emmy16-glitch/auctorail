@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FileOperationJournal } from "../src/executor/operation-journal.js";
+import {
+  FileOperationJournal,
+  resolveOperationJournalDirectory
+} from "../src/executor/operation-journal.js";
 
 const directories: string[] = [];
 
@@ -20,6 +23,34 @@ afterEach(() => {
 });
 
 describe("Auctorail operation journal", () => {
+  it("uses the writable Vercel scratch directory by default", () => {
+    expect(
+      resolveOperationJournalDirectory({ VERCEL: "1" })
+    ).toBe(path.join("/tmp", "auctorail", "operations"));
+  });
+
+  it("uses the writable Lambda scratch directory by default", () => {
+    expect(
+      resolveOperationJournalDirectory({ AWS_LAMBDA_FUNCTION_NAME: "auctorail-api" })
+    ).toBe(path.join("/tmp", "auctorail", "operations"));
+  });
+
+  it("honors an explicit Auctorail operation journal directory", () => {
+    const configured = temporaryDirectory();
+    expect(
+      resolveOperationJournalDirectory({
+        VERCEL: "1",
+        AUCTORAIL_OPERATION_JOURNAL_DIR: configured
+      })
+    ).toBe(configured);
+  });
+
+  it("keeps the historical local directory outside serverless runtimes", () => {
+    expect(resolveOperationJournalDirectory({})).toBe(
+      path.join(".proofgate", "operations")
+    );
+  });
+
   it("persists state before an irreversible operation and advances it", () => {
     const journal = new FileOperationJournal(temporaryDirectory());
     const prepared = journal.create({
