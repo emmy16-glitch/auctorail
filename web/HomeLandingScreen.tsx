@@ -38,7 +38,7 @@ const attacks = [
 ];
 
 const telegraph = {
-  buy: "When a consequence demands evidence, Auctorail pays Miners through x402 for exactly one thing: bounded, verifiable intelligence about THIS action — recipient risk profile, counterparty reputation, intent-consistency and transfer-pattern verification. Not a subscription. Not a feed. One purchase, one action, cryptographically bound to the frozen hash from layer 01.",
+  buy: "When a consequence demands evidence, Auctorail pays Miners through x402 for exactly one thing: bounded, verifiable intelligence about THIS action. For payments it buys the Telegraph Intents FRAUD_DETECTION, ONCHAIN_TX_LOOKUP and WALLET_BALANCE_CHECK; for content trust, AI_DETECTION and CONTENT_VERIFICATION. Not a subscription. Not a feed. One purchase, one action, cryptographically bound to the frozen hash from layer 01.",
   when: "Only when the consequence demands it. A low-stakes action inside delegation doesn't spend a cent — the local policy engine decides alone. The moment the stakes cross the boundary, evidence is purchased BEFORE the permit is issued. Never after. Never retroactively.",
   why: "We didn't write the intelligence. We bought it, bounded it, and bound it to the action. The moment Auctorail verifies itself, Auctorail becomes the attack surface. Telegraph gives us intelligence we don't control — and therefore can't quietly compromise — paid per-action through x402, so every purchase is itself a receipt on the rail. Evidence from a vendor you trust is a dependency. Evidence bought on an open market is a claim anyone can audit."
 };
