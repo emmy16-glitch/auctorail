@@ -202,6 +202,18 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
                 <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
                 auctorail lab — {presetId}{finishedRun ? ` · ${finishedRun.kind}` : running ? " · running" : " · idle"}
               </span>
+              <select
+                className="lab-attack-select"
+                value={presetId}
+                disabled={running !== null}
+                onChange={(event) => chooseAttack(event.target.value)}
+                aria-label="Select attack to run"
+                title="Pick an attack — it runs immediately"
+              >
+                {PRESETS.map((item, index) => (
+                  <option key={item.id} value={item.id}>ATK {String(index + 1).padStart(2, "0")} · {item.label}</option>
+                ))}
+              </select>
               <span className={`console-state ${running ? "running" : finishedRun ? "done" : "paused"}`}>
                 {running ? "RUNNING" : finishedRun ? "COMPLETE" : "READY"}
               </span>
