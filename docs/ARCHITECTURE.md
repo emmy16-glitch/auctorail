@@ -1,471 +1,561 @@
 # Auctorail architecture
 
-Auctorail is a **pre-execution authorization layer for autonomous agents**.
+This document describes the current Auctorail architecture, trust boundaries, authorization lifecycle, evidence acquisition path, permit model and protected execution flow.
 
-The core security rule is simple:
+Auctorail is a **pre-execution authorization rail for autonomous agents**. Its purpose is to keep the authority to cause external effects outside the agent's direct control.
 
-> **The component that proposes an action must not be able to create, expand, or bypass the authority required to execute it.**
-
-Auctorail separates four things that agent systems often collapse into one step:
-
-1. what the agent wants to do;
-2. what the principal already allowed;
-3. what external evidence says about the exact action or subject; and
-4. whether enough authority and evidence exist to permit the consequence.
+## Architecture principle
 
 ```text
-PRINCIPAL MANDATE
-      ↓
-AGENT PROPOSAL
-      ↓
-FREEZE EXACT ACTION / SUBJECT
-      ↓
-AUTHORITY PREFLIGHT
-      ↓
-DERIVE REQUIRED EVIDENCE
-      ↓
-TELEGRAPH / x402 ACQUISITION
-      ↓
-VERIFY BINDING + QUORUM
-      ↓
-ALLOW / HOLD / BLOCK
-      ↓
-ONE-USE AUTHORITY (EXECUTABLE LANES)
-      ↓
-PROTECTED EXECUTOR
-      ↓
-RECEIPT
+agent capability ≠ execution authority
 ```
 
-A favorable Miner result is evidence. It is **not** permission by itself.
+The agent may propose an action. The protected effect happens only when trusted authorization components conclude that the exact action is permitted.
 
-> **Naming note:** Auctorail is the current product name. Historical schema identifiers such as `proofgate.action.v2`, compatibility files such as `src/sdk/proofgate.ts`, and the already deployed `ProofGateVendor` contract intentionally keep the old name because changing them would break compatibility or historical proof.
-
----
-
-## 1. Trust boundaries
-
-### Principal
-
-The principal creates standing authority before the agent acts. The principal controls things such as:
-
-- which agent is authorized;
-- allowed action types;
-- allowed targets or destinations;
-- amount ceilings;
-- chain and asset restrictions;
-- allowed evidence Intents;
-- policy and version;
-- expiry, status and revocation.
-
-The agent does not get to rewrite this authority while asking for permission.
-
-### Autonomous agent
-
-The agent may reason, plan and propose. It does not own the authoritative Mandate, live Telegraph/x402 wallet, permit-signing key, replay store, kill switch or protected execution wallet.
-
-### Telegraph and Miners
-
-Telegraph provides external intelligence. Auctorail requests an Intent and records the actual serving Miner. Miner output is treated as evidence that must still pass policy and binding checks.
-
-### Trusted evidence boundary
-
-This boundary owns live Telegraph/x402 acquisition and verifies the parts the agent must not be trusted to supply, including:
-
-- requested Intent;
-- actual serving Miner identity;
-- exact subject;
-- exact chain where required;
-- confidence and applicability;
-- signal commitment/hash;
-- x402 payment provenance;
-- bounded attempts, time and evidence spend.
-
-### Policy and decision authority
-
-Policy evaluates the frozen action, Mandate and committed evidence and returns one of:
-
-- `ALLOW`
-- `HOLD`
-- `BLOCK`
-
-### Permit authority
-
-Executable lanes may mint a short-lived single-use capability only after `ALLOW`. The permit is bound to the exact action, Mandate, decision and evidence commitment.
-
-### Protected executor
-
-The executor is the only supported path to the protected side effect. It rechecks the current authority, validates the permit, atomically consumes it and then performs the external effect.
-
----
-
-## 2. Authority and evidence are deliberately separate
-
-Auctorail asks two different questions:
+## High-level architecture
 
 ```text
-How much evidence does this consequence deserve?
-
-What is this agent actually authorized to do?
+┌───────────────────────────────┐
+│ Human / Principal             │
+│                               │
+│ creates bounded Mandate       │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│ Agent / Application           │
+│                               │
+│ proposes exact action         │
+└───────────────┬───────────────┘
+                │ untrusted request
+                ▼
+┌───────────────────────────────┐
+│ Auctorail Authorization API   │
+│                               │
+│ freeze action                 │
+│ authority preflight           │
+│ evidence planning             │
+│ policy evaluation             │
+└───────────────┬───────────────┘
+                │ evidence needed
+                ▼
+┌───────────────────────────────┐
+│ Telegraph / x402              │
+│                               │
+│ route to Miners               │
+│ purchase evidence             │
+└───────────────┬───────────────┘
+                │ returned evidence
+                ▼
+┌───────────────────────────────┐
+│ Evidence Verification         │
+│                               │
+│ Miner identity                │
+│ Intent                        │
+│ subject + chain binding       │
+│ confidence                    │
+│ signal hash                   │
+│ quorum                        │
+└───────────────┬───────────────┘
+                │
+                ▼
+        ALLOW / HOLD / BLOCK
+                │
+                │ ALLOW + executable lane only
+                ▼
+┌───────────────────────────────┐
+│ Permit Authority              │
+│ signed short-lived one-use    │
+│ execution authority           │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│ Protected Executor            │
+│                               │
+│ revalidate authority          │
+│ consume permit                │
+│ perform external effect       │
+│ reconcile ambiguity           │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│ Proof Receipt / Activity      │
+└───────────────────────────────┘
 ```
 
-The evidence tier answers the first question. The Mandate and policy answer the second.
+## Main architectural domains
 
-This means stronger evidence can satisfy already delegated authority, but it cannot manufacture new authority.
+### `src/core/`
 
-Example:
+Contains canonical action and authority primitives.
+
+Responsibilities include:
+
+- input validation;
+- canonical representation;
+- action hashing;
+- chain/asset normalization;
+- Mandate semantics.
+
+The action model is intentionally deterministic. Security-sensitive meaning should not depend on free-form model interpretation at execution time.
+
+### `src/telegraph/`
+
+Contains the external evidence subsystem.
+
+Responsibilities include:
+
+- consequence-derived evidence plans;
+- Intent routing;
+- Telegraph Miner capability handling;
+- x402 payment-lane policy;
+- live evidence acquisition;
+- exact subject/chain binding;
+- signal commitment handling;
+- distinct-Miner diversity planning;
+- evidence bundle construction;
+- quorum evaluation;
+- bounded retries and failure handling.
+
+### `src/policy/`
+
+Contains deterministic authorization policies.
+
+The current payment policies include strict, attested-vendor and adaptive variants. The adaptive policy combines the frozen action, Mandate and verified evidence bundle.
+
+A policy is not an LLM opinion. It is trusted code that returns an explicit decision.
+
+### `src/permit/`
+
+Contains permit creation/validation primitives and local secret handling.
+
+Permits are not generic bearer credentials. They are designed to be bound to the exact authorization context.
+
+### `src/executor/`
+
+Contains protected execution logic.
+
+Responsibilities include:
+
+- permit verification;
+- Mandate revalidation;
+- kill-switch checks;
+- permit consumption;
+- replay prevention;
+- idempotency/durable execution state;
+- ambiguous-effect handling;
+- protected external execution.
+
+### `src/receipt/`
+
+Contains proof-receipt generation/verification.
+
+Receipts preserve important authorization/execution commitments so decisions can be inspected and tampering can be detected.
+
+### `src/sdk/` and `packages/sdk/`
+
+`src/sdk/` contains trusted integration/adaptor logic used by the core architecture.
+
+`packages/sdk/` contains a thin repository-local JavaScript client that lets an application request authorization and submit returned execution authority without holding protected signing/execution secrets.
+
+### `web/`
+
+Contains the product UI and local HTTP API surfaces.
+
+Important product screens include:
+
+- Home;
+- Guided Demo;
+- Checking/Live authorization;
+- Execution;
+- Permissions;
+- Activity;
+- Verify;
+- Content Trust;
+- Security Lab;
+- SDK/docs.
+
+### `qa/`
+
+Contains browser-level validation for responsive layout and product flow.
+
+### `data/`
+
+Contains sanitized committed evidence, deployment references and receipts used by the proof/verification surfaces.
+
+## Trust-boundary model
+
+### Trust boundary A — Agent vs authorization service
+
+The agent controls its proposal but not the trusted Mandate, signing authority or protected credential.
+
+The authorization service must treat client-provided values as claims to validate, not trusted policy state.
+
+### Trust boundary B — Auctorail vs Telegraph
+
+Telegraph is an external evidence source.
+
+Auctorail trusts neither routing metadata nor a favorable label automatically. Returned evidence is normalized and validated against the exact requirement.
+
+### Trust boundary C — Authorization vs protected executor
+
+An `ALLOW` decision is not equivalent to an external effect.
+
+The executor receives only explicit signed execution authority and independently verifies it before acting.
+
+### Trust boundary D — Executor vs external system
+
+The external chain/API may fail, delay or return ambiguous transport state.
+
+Auctorail therefore needs durable state and reconciliation behavior around side effects.
+
+## Action contract
+
+Auctorail first creates a canonical exact action.
+
+For the current payment adapter, important semantics include:
 
 ```text
-A 75 USDC proposal may classify as HIGH evidence.
-The current autonomous payment ceiling is still 10 USDC.
-Therefore the payment is BLOCKED even if HIGH evidence could be collected.
+type
+chainId
+token
+amountRaw
+destination
+reason
+policyId
+policyVersion
 ```
 
-See [`RISK_POLICY.md`](RISK_POLICY.md).
+Values such as EVM addresses are normalized before hashing.
 
----
+The action hash becomes a stable commitment to the intended effect.
 
-## 3. Action models
+### Why canonicalization matters
 
-### Payment action — v1
+Without canonicalization, semantically equivalent values could hash differently or semantically different requests could be compared loosely.
 
-The proven payment path is intentionally narrow:
+Auctorail's security model prefers exact structured values over free-form natural-language matching.
 
-- Base Sepolia (`84532`);
-- canonical Base Sepolia USDC;
+## Mandate architecture
+
+The principal's Mandate defines standing authority.
+
+A Mandate can restrict:
+
+- agent identity;
+- action types;
+- destinations/targets;
+- parameter ranges and amount ceilings;
+- policy/version;
+- evidence Intents;
+- validity period;
+- version and status.
+
+The agent must not be able to convert a request field such as `limit` into authoritative self-delegation. In a production integration, authoritative limits live on the trusted side.
+
+## Authorization lifecycle
+
+### Step 1 — Receive proposal
+
+The agent/application submits a structured request.
+
+### Step 2 — Freeze exact action
+
+Auctorail validates and canonicalizes the action and computes its action hash.
+
+### Step 3 — Authority preflight
+
+Auctorail checks whether the action is inside the principal's authority and hard policy bounds.
+
+If it is already impossible to authorize, return `BLOCK` before buying external evidence.
+
+### Step 4 — Derive evidence plan
+
+The action consequence determines which evidence requirements apply.
+
+For `payments.adaptive.v1`:
+
+```text
+LOW     <= 5 USDC
+MEDIUM  > 5 to 50 USDC
+HIGH    > 50 USDC
+```
+
+See `RISK_POLICY.md` for exact current values.
+
+### Step 5 — Acquire external evidence
+
+When required, Auctorail asks Telegraph for the required Intent and can pay through x402.
+
+The request carries structured routing context for the exact action.
+
+### Step 6 — Verify returned evidence
+
+Auctorail checks:
+
+- serving Miner identity;
+- supported Intent;
+- returned Intent;
+- subject binding;
+- chain binding;
+- confidence;
+- applicability;
+- signal commitment;
+- freshness;
+- x402 settlement/provenance where relevant.
+
+### Step 7 — Build evidence bundle and quorum summary
+
+Only usable evidence enters the authorization bundle.
+
+Distinct-provider quorum is counted by unique Miner IDs.
+
+### Step 8 — Deterministic policy decision
+
+The policy returns:
+
+```text
+ALLOW
+HOLD
+BLOCK
+```
+
+### Step 9 — Mint execution authority
+
+Only an executable `ALLOW` can produce a signed short-lived permit.
+
+### Step 10 — Protected execution
+
+The executor revalidates authority, checks/consumes the permit and performs the external effect.
+
+### Step 11 — Record proof
+
+Receipts/activity records preserve the binding between action, evidence, decision, permit and execution outcome.
+
+## Telegraph routing architecture
+
+The payment lane uses Intent-based routing rather than treating one fixed Miner as the sole authorization source.
+
+The request planner builds a precise query and structured context around:
+
+- required Intent;
+- exact target/recipient;
+- exact chain/network;
 - exact amount;
-- exact EVM destination;
-- reason/reference;
-- policy ID/version.
+- exact action hash;
+- exact applicability expectations.
 
-Security-relevant fields are canonicalized and hashed. Changing amount, recipient, chain, asset, reason or policy changes the action binding and invalidates prior authorization.
+The canonical historical Refut result demonstrates that the lane has worked, but runtime policy does not grant permission merely because that Miner succeeded historically.
 
-### General action envelope — v2
+## Auto-route and corroboration
 
-The generic model uses the historical wire identifier `proofgate.action.v2`.
+The first attempt can use Telegraph's ranked auto-route.
 
-It commits:
+When policy requires additional distinct providers, Auctorail can target another ranked unused Miner for corroboration.
 
-- namespaced action type;
-- exact target;
-- bounded JSON-safe parameters;
-- policy ID/version;
-- creation time;
-- canonical payload;
-- action hash.
+The transport mechanism must not weaken the authorization quorum.
 
-The generic Action Adapter system is trusted application code. It is **not** a sandbox for arbitrary third-party plugins.
+## Evidence rejection vs action rejection
 
----
+These are different.
 
-## 4. Mandates
+A piece of evidence can be rejected as unusable while the action remains eligible for another bounded acquisition attempt.
 
-The payment lane uses `proofgate.mandate.v1`; the generic lane uses `proofgate.mandate.v2`.
-
-A Mandate binds the principal's standing authority independently of the agent's reasoning context.
-
-A proposal outside Mandate scope is rejected **before live evidence acquisition**. This prevents an undelegated request from spending the principal's Telegraph/x402 evidence budget first and only later discovering that it was never authorized.
-
-Mandates are checked again when executable authority is created and again immediately before execution. A still-live permit must not outlive revoked or expired authority.
-
----
-
-## 5. Consequence-adaptive payment evidence
-
-The current implementation in `src/telegraph/adaptive-evidence-plan.ts` derives evidence requirements from the frozen payment amount.
-
-| Proposed amount | Tier | Fraud requirement | Additional Intents | Max evidence spend | Deadline |
-| --- | --- | --- | --- | ---: | ---: |
-| `<= 5 USDC` | LOW | 1 distinct positive Miner at `>= 0.70` | none | `0.035 USDC` | `35s` |
-| `> 5 to 50 USDC` | MEDIUM | 2 distinct positive Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | `0.060 USDC` | `60s` |
-| `> 50 USDC` | HIGH | 3 distinct Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | `0.100 USDC` | `90s` |
-
-These are Auctorail's current product/demo defaults, not universal financial-risk rules.
-
-The current autonomous execution ceiling remains **10 USDC per action**.
-
-### Negative evidence
-
-Every fraud tier supports a high-confidence early negative veto. Final payment policy is stricter: **any explicit negative evidence blocks**. A known negative is not averaged away by a positive majority.
-
----
-
-## 6. Evidence diversity
-
-Auctorail uses two kinds of diversity.
-
-### Vertical diversity
-
-Different Intents answer different questions:
+Examples:
 
 ```text
-FRAUD_DETECTION
-+ ONCHAIN_TX_LOOKUP
-+ WALLET_BALANCE_CHECK
+wrong returned Intent
+missing explicit subject assertion
+missing explicit chain assertion
+route unavailable
 ```
 
-### Horizontal diversity
+After bounded attempts/deadline/budget are exhausted, missing required proof normally becomes `HOLD`.
 
-The same critical Intent can require independent providers:
+## x402 architecture
+
+Evidence acquisition can spend funds.
+
+The x402 path therefore:
+
+- inspects the payment challenge;
+- selects only approved network/asset lanes;
+- checks remaining evidence budget;
+- creates payment payload only within policy;
+- validates settlement or reconciles missing settlement evidence;
+- treats ambiguous paid transport carefully.
+
+Auctorail does not enable generic uncontrolled x402 spending.
+
+## Adaptive evidence limits
+
+Current defaults:
+
+| Tier | Max spend | Deadline |
+| --- | ---: | ---: |
+| LOW | `0.035 USDC` | **12s** |
+| MEDIUM | `0.060 USDC` | `60s` |
+| HIGH | `0.100 USDC` | `90s` |
+
+LOW also has deployed per-request Telegraph timeout protection to keep the interactive path responsive.
+
+## Policy architecture
+
+The adaptive payment policy verifies both the plan and evidence bundle rather than trusting a loosely assembled collection of responses.
+
+Checks include exact plan/action matching and evidence/quorum invariants.
+
+This prevents an attacker from constructing an easier plan after seeing the action.
+
+## One-use permit architecture
+
+A permit represents execution authority derived from one final authorization.
+
+It is bound to the security context and is short-lived.
+
+The executor checks that authority again and consumes it.
+
+This creates separation between:
 
 ```text
-FRAUD_DETECTION
-   ├─ Miner A
-   ├─ Miner B
-   └─ Miner C
+decision to authorize
+and
+actual external execution
 ```
 
-Independence is counted by **distinct Miner ID**, not by request count.
+## Durable execution and replay
 
-Three requests routed to the same Miner still represent one provider. If required diversity cannot be established inside the bounded attempt, time and spend budget, Auctorail returns `HOLD` rather than inventing consensus.
+Protected side effects require persistence.
 
----
+A naive in-memory “used” flag is insufficient for a robust deployment because process restarts or concurrent execution could undermine replay resistance.
 
-## 7. Telegraph routing and x402
+The repository includes durable permit-store concepts and tests around consumption and ambiguous execution.
 
-Auctorail is Intent-first and provider-neutral.
+See `permit-consumption-store.md`.
+
+## Receipt architecture
+
+Proof receipts are built from stable commitments rather than presentation text alone.
+
+The verifier can recompute important hashes/bindings to establish that the receipt is internally consistent under Auctorail's rules.
+
+For the canonical payment proof, the recorded transaction can also be inspected independently on Base Sepolia.
+
+## Content Trust architecture
+
+Content Trust reuses the generic authorization model for a non-payment subject.
+
+The pattern remains:
 
 ```text
-Auctorail asks for an Intent
-        ↓
-Telegraph routes/ranks
-        ↓
-actual serving Miner responds
-        ↓
-Auctorail records and verifies the provider + evidence
+freeze exact content/action
+→ bind evidence to the content subject
+→ deterministic policy
+→ ALLOW / HOLD / BLOCK
+→ content receipt
 ```
 
-Evidence acquisition is itself a machine side effect because it may spend money through x402. The live acquisition boundary therefore:
+The current public claim carefully distinguishes deterministic Content Trust demo support from real live Telegraph evidence already preserved for the payment lane.
 
-1. freezes the protected action first;
-2. runs authority preflight before paid evidence work;
-3. validates the x402 challenge;
-4. checks network, asset, payee and amount rules;
-5. enforces per-request and aggregate evidence budgets;
-6. records settlement/provenance;
-7. avoids blind paid retries after ambiguous outcomes.
+## Browser/product architecture
 
-A paid response that cannot satisfy binding or policy may still count against the evidence budget if payment settled, but it does not count toward authorization quorum.
+The redesigned UI intentionally separates:
 
----
+- explanation;
+- deterministic demonstration;
+- live authorization;
+- proof verification;
+- adversarial testing;
+- SDK/integration documentation.
 
-## 8. Evidence bundles and commitments
+This reduces the risk that a deterministic demo is visually confused with a paid live Telegraph run.
 
-Adaptive payment evidence is committed into an evidence bundle. The bundle records the exact action, evidence plan, accepted Miner attempts, quorum summaries, spend and hashes.
+## Runtime architecture
 
-A valid bundle hash proves integrity of the committed structure. It does **not** prove that arbitrary caller-supplied JSON came from Telegraph. Provenance must be established by the trusted acquisition boundary before policy trusts it.
-
-Content Trust follows the same principle: evidence is bound to the exact content hash before a receipt is created.
-
----
-
-## 9. Decision semantics
-
-### `ALLOW`
-
-All required authority and evidence checks passed.
-
-For an executable lane, permit creation may proceed.
-
-### `HOLD`
-
-Auctorail cannot safely authorize yet. Typical causes include:
-
-- required evidence missing;
-- evidence stale or too weak;
-- insufficient distinct Miner diversity;
-- confidence below the required floor;
-- deadline or evidence budget exhausted;
-- evidence cannot be bound to the exact action.
-
-`HOLD` produces no execution authority.
-
-### `BLOCK`
-
-A hard rule failed. Examples include:
-
-- action outside Mandate scope;
-- revoked/expired authority;
-- prohibited chain, asset or destination;
-- amount above autonomous ceiling;
-- action/evidence binding mismatch;
-- undelegated Intent;
-- explicit negative evidence;
-- invalid execution authority.
-
-`BLOCK` dominates `HOLD` when both are present.
-
----
-
-## 10. One-use authority and replay resistance
-
-Executable payment permits bind security-relevant fields including:
-
-- Mandate hash;
-- action hash;
-- decision hash;
-- policy ID/version;
-- permit ID;
-- nonce;
-- issue/expiry times;
-- signer metadata.
-
-The protected executor validates these bindings and atomically claims `permitId + nonce` before the external effect.
-
-The system is designed so the same permit cannot be successfully consumed twice through the supported executor path.
-
-For multi-worker deployments, shared replay state should use the PostgreSQL permit-consumption store rather than independent local filesystems.
-
----
-
-## 11. Execution, ambiguity and retries
-
-The Base Sepolia payment executor:
-
-1. validates action/decision/evidence/permit bindings;
-2. validates chain, asset, amount and destination;
-3. consumes the permit atomically;
-4. journals the intended transaction;
-5. broadcasts once;
-6. reconciles confirmation read-only;
-7. records a receipt when the outcome is trustworthy.
-
-After dispatch, uncertainty is treated as `AMBIGUOUS` / `UNCERTAIN`, not as a reason to blindly send a replacement transaction. A remote effect may already have happened.
-
-The same principle applies to generic adapters: reconcile uncertain external state before creating a fresh authorization.
-
----
-
-## 12. General trusted adapters
-
-The historical TypeScript interface name `AuctorailActionAdapter` remains for compatibility.
-
-A trusted adapter defines:
+Local development currently starts:
 
 ```text
-type + policy ID/version
-freeze(proposal)
-requiredIntents(action)
-evaluateTrusted(action, requiredIntents)
-execute(action)
+port 8787  payment authorization API
+port 8788  utility / Security Lab / Content Trust / Verify API
+port 5173  Vite web UI
 ```
 
-The generic core verifies adapter metadata, Mandate scope, required evidence coverage, decision semantics, permit bindings, replay state and kill-switch state before executing the trusted callback.
+A modern Node 24 environment is recommended for the redesigned dependency set.
 
-Examples such as GitHub merge or cloud operations demonstrate the integration shape. They are not claimed as production connectors unless separately implemented and tested.
+## Failure model
 
----
+Auctorail intentionally distinguishes:
 
-## 13. Content Trust
+- invalid proposal;
+- authority denial;
+- evidence acquisition failure;
+- unusable evidence;
+- insufficient quorum;
+- policy block;
+- permit failure;
+- execution failure;
+- ambiguous external effect.
 
-`content.strict.v1` is a second policy built on the same general decision architecture.
+Collapsing all of those into a generic “error” would make unsafe retry and debugging mistakes more likely.
 
-The current flow:
+See `TROUBLESHOOTING.md`.
+
+## Security invariants
+
+The architecture is intended to maintain:
+
+1. The agent cannot mint its own authority.
+2. The principal controls standing permission.
+3. Paid evidence happens only after eligibility preflight.
+4. Evidence must bind to the exact action/subject.
+5. Required Intent cannot be silently substituted.
+6. Duplicate providers cannot fake diversity.
+7. Evidence spending and latency remain bounded.
+8. Missing evidence fails closed.
+9. Explicit negative evidence is not ignored.
+10. Permit authority is short-lived and one-use.
+11. Execution revalidates authority.
+12. Replay is rejected.
+13. Ambiguous effects are reconciled rather than blindly repeated.
+14. Receipts preserve important commitments.
+
+## Current validation
+
+Latest green `main`:
 
 ```text
-text / subject
-   ↓
-exact subject hash
-   ↓
-scam / AI-text evidence
-   ↓
-ALLOW / HOLD / BLOCK
-   ↓
-content receipt
+53 test files
+268 / 268 tests passed
+7400 / 7400 deterministic adversarial fuzz cases contained
+0 unauthorized executions / authorizations in those fuzz suites
+0 production dependency vulnerabilities reported by npm audit
 ```
 
-Important semantics:
+Browser product-flow QA also passed for the current redesign.
 
-- strong scam/phishing evidence can block;
-- weak, missing or unrecognized required evidence holds;
-- AI-written text is informational by itself;
-- AI-generation becomes a blocking authorship conflict only when publishing with an explicit human-authorship claim and the configured confidence threshold is crossed;
-- the receipt `summaryLine` is included in the receipt hash.
+## Architectural limitations
 
-The default Content Trust UI is deterministic demo mode and is clearly labeled as non-Telegraph output. The opt-in live client should only be described as real usage after an actual paid run has been captured and preserved.
+The current system should not be described as universally production complete.
 
----
+Important limitations/assumptions include:
 
-## 14. Receipt verification
+- trusted host compromise remains powerful;
+- external Miner truth/availability is not guaranteed;
+- the public UI's permission fields are a hackathon/demo interface, not a complete enterprise policy administration system;
+- the repository-local SDK is not yet a public package release;
+- Content Trust live-client capability exists but does not imply a publicly preserved real Content Trust run;
+- higher-risk evidence plans do not override the 10-USDC autonomous payment ceiling.
 
-Auctorail exposes a Verify surface for payment and content receipts.
+## Naming compatibility
 
-Payment receipt verification recomputes the receipt integrity and checks the action, Mandate, evidence, decision, permit and execution bindings represented by the receipt schema.
+Current product: **Auctorail**.
 
-Content receipt verification recomputes the receipt hash, exact subject/action binding, evidence commitment and deterministic decision aggregation.
+Historical stable names such as `proofgate.action.v2`, `proofgate.*` evidence/receipt schemas and `ProofGateVendor` may remain because they are part of deployed or hashed provenance.
 
-A valid receipt proves integrity and binding under Auctorail's verification rules. It does **not** turn a Miner assessment into objective truth.
+Do not rename those without a deliberate migration plan.
 
----
+## Final architecture rule
 
-## 15. Public API boundary
-
-The current web payment path separates policy preflight, live evidence authorization and execution:
-
-```text
-POST /api/authorize  (policy preflight)
-        ↓
-freeze fingerprint
-        ↓
-POST /api/authorize  (live Telegraph/x402)
-        ↓
-ALLOW + one-use execution token
-        ↓
-POST /api/execute
-```
-
-Important controls include request validation, rate limits, bounded evidence budget, idempotency, frozen-request TTL, execution-session TTL, exact fingerprint matching and one-use permit consumption.
-
-The repository-local SDK is a hackathon integration package. It should not be described as a production public SDK until a real hosted authentication boundary and public package release exist.
-
----
-
-## 16. Track 3 role
-
-Auctorail is a **consumption-side Telegraph application**.
-
-```text
-Agent / user action
-       ↓
-Auctorail authorization request
-       ↓
-Telegraph Miner evidence via x402
-       ↓
-Auctorail policy + enforcement
-       ↓
-receipt / protected external effect
-```
-
-Auctorail is not a Miner. Its value is turning external intelligence into an enforceable pre-execution decision boundary rather than merely displaying a signal.
-
-The canonical publicly committed real proof remains the genuine Telegraph/x402 payment evidence plus the protected Base Sepolia execution described in [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) and [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md).
-
----
-
-## 17. What this architecture does not claim
-
-Auctorail does **not** claim that:
-
-- a model process is impossible to compromise;
-- a hostile host with another unrestricted tool path can be contained by a TypeScript library alone;
-- arbitrary third-party adapters are safe without review;
-- Content Trust demo output is real Telegraph output;
-- a Miner verdict proves objective truth;
-- the project has undergone an independent production security audit.
-
-The deployment must preserve the actual trust boundary: the agent must not have a second direct route to the protected tool.
-
----
-
-## Source of truth
-
-When prose and implementation disagree, use this order:
-
-1. current source code and constants;
-2. committed evidence and receipts;
-3. newest green CI / Playwright results;
-4. root README and `docs/README.md`;
-5. current architecture/risk docs;
-6. older milestone documentation.
-
-See [`README.md`](README.md) for the full documentation map.
+**The protected credential belongs behind Auctorail, not inside the agent. The agent proposes; the principal delegates; evidence informs; deterministic policy decides; one-use authority enables; the protected executor acts.**
