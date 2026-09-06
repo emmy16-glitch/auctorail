@@ -1,0 +1,18 @@
+name: live-probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: arena/01a07716-auctorail }
+      - name: network test
+        run: |
+          curl -sS -o /dev/null -w "vercel %{http_code}\n" https://auctorail.vercel.app/ || echo "vercel FAIL"
+          curl -sS -o /dev/null -w "basescan %{http_code}\n" https://sepolia.basescan.org/ || echo "basescan FAIL"
+      - name: marker + push
+        run: |
+          git config user.name "arena-bot" && git config user.email "arena@bots.local"
+          echo "probe $(date -u +%FT%TZ)" > probe-result.txt
+          git add probe-result.txt && git commit -m "live-probe result" && git push origin HEAD:arena/01a07716-auctorail
