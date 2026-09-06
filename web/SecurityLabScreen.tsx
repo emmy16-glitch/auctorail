@@ -170,30 +170,6 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         </div>
       </div>
 
-      <div className="scenario-cards attack-cards" role="group" aria-label="Attack scenarios">
-        {PRESETS.map((item, index) => {
-          const result = report?.scenarios.find((s) => s.id === item.id);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`scenario-card ${presetId === item.id ? "active" : ""}`}
-              onClick={() => chooseAttack(item.id)}
-              aria-pressed={presetId === item.id}
-            >
-              <span className="sc-top">
-                <span className="sc-num">ATK {String(index + 1).padStart(2, "0")}</span>
-                <span className={`sc-result ${result ? (result.passed ? "mint" : "rose") : ""}`}>
-                  {result ? (result.passed ? "BLOCKED" : "FAILED") : CATEGORY_TAG[item.category]}
-                </span>
-              </span>
-              <strong>{item.label}</strong>
-              <small>{item.boundary} · {item.stoppedAt}</small>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="demo-layout v2-grid" style={{ marginTop: 6 }}>
         <section aria-label="Attack console">
           <div className="demo-console fade-rise">

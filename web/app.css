@@ -2439,9 +2439,6 @@ details.technical .kv { padding: 8px 14px 12px; }
 
 /* attack cards: 3-up grid for the 9 lab attacks */
 
-.attack-cards { grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 760px) { .attack-cards { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 520px) { .attack-cards { grid-template-columns: 1fr; } }
 .verdict-count { font-family: var(--mono); font-weight: 620; }
 
 /* wire terminal (live authorization) */
