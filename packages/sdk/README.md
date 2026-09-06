@@ -57,11 +57,11 @@ Import:
 import { Auctorail } from "@auctorail/sdk";
 ```
 
-## Recommended development runtime
+## Required development runtime
 
-Use **Node 24** for current local development where possible.
+Current `main` requires **Node `>=24.15.0`** through the root `package.json`. `.nvmrc` selects Node 24 and current GitHub Actions workflows run Node 24.
 
-The redesigned repository includes modern browser/DOM development dependencies that officially target Node 22/24. Some CI jobs still exercise Node 20 for compatibility, but that should not be interpreted as the preferred SDK/runtime baseline.
+Node 20 is not a supported current baseline.
 
 ## Start Auctorail locally
 
