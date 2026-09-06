@@ -7,7 +7,7 @@ import {
   type AuthorizationPresentationResult,
   type PresentationDetail
 } from "./authorization-presenter";
-import "./checking-disclosure.css";
+import { FileIcon, LockIcon, CheckIcon, ShieldIcon } from "./icons";
 
 export type CheckPhase = "checking" | "ready" | "error";
 export type CheckStage = "rules" | "miners" | "decision";
@@ -60,21 +60,11 @@ function durationLabel(seconds: number): string {
   return "24 hours";
 }
 
-function FileIcon() {
-  return <svg viewBox="0 0 38 44" aria-hidden="true"><path d="M7 2h16l8 8v32H7V2Z" fill="none" stroke="currentColor" strokeWidth="2.5" /><path d="M23 2v9h8M12 21h14M12 27h14M12 33h10" fill="none" stroke="currentColor" strokeWidth="2" /></svg>;
-}
-function LockIcon() {
-  return <svg viewBox="0 0 40 44" aria-hidden="true"><path d="M11 18v-6a9 9 0 0 1 18 0v6M6 18h28v23H6V18Z" fill="none" stroke="currentColor" strokeWidth="2.5" /><path d="M20 27v7" stroke="currentColor" strokeWidth="2.5" /></svg>;
-}
-function CheckIcon() {
-  return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="m7 17 6 6L26 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" /></svg>;
-}
-
 function stageSymbol(state: TimelineState) {
-  if (state === "done") return <CheckIcon />;
+  if (state === "done") return <CheckIcon style={{ width: 13, height: 13 }} />;
   if (state === "running") return <span className="status-spinner" />;
-  if (state === "warning") return <span className="status-symbol">!</span>;
-  if (state === "error") return <span className="status-symbol">×</span>;
+  if (state === "warning") return <span className="status-symbol warn">!</span>;
+  if (state === "error") return <span className="status-symbol err">×</span>;
   return <span className="status-dash">−</span>;
 }
 
@@ -106,7 +96,7 @@ function errorTechnical(errorCode: string | null, minerAttempted: boolean): Pres
   return [
     { label: "Result", value: "STOPPED SAFELY" },
     { label: "Error code", value: errorCode, mono: true },
-    { label: "Source", value: errorCode === "live_rate_limited" ? "ProofGate deployment safety quota" : errorCode === "live_daily_budget_exhausted" ? "ProofGate deployment evidence budget" : errorCode.startsWith("live_") ? "Live authorization path" : "ProofGate authorization path" },
+    { label: "Source", value: errorCode === "live_rate_limited" ? "Auctorail deployment safety quota" : errorCode === "live_daily_budget_exhausted" ? "Auctorail deployment evidence budget" : errorCode.startsWith("live_") ? "Live authorization path" : "Auctorail authorization path" },
     { label: "Telegraph call", value: minerAttempted ? "ATTEMPTED" : "NOT SENT" },
     { label: "Permit issued", value: "NO" },
     { label: "Vendor execution", value: "NO" }
@@ -165,17 +155,14 @@ export function CheckingScreen(props: CheckingScreenProps) {
   const rulesRunning = phase === "checking" && stage === "rules";
   const rulesStopped = phase === "error" && !rulesDone;
   const minersRunning = phase === "checking" && stage === "miners";
-  const minerSkipped = stage === "decision" && result?.evidence.status === "NOT_REQUESTED";
+  const minerSkipped = stage === "decision" && phase !== "error" && result?.evidence.status === "NOT_REQUESTED";
   const minersStopped = phase === "error" && Boolean(times?.miners);
   const decision = result?.decision;
 
-  // A structurally complete bundle is not automatically a passing signal.
-  // Quorum, confidence, veto and other policy checks still decide whether the
-  // evidence stage is green, amber or red.
   const evidencePassed = stage === "decision" && result?.evidence.status === "COMPLETE" && decision === "ALLOW";
   const evidenceHeld = stage === "decision" && Boolean(result) && !minerSkipped && decision === "HOLD";
   const evidenceBlocked = stage === "decision" && Boolean(result) && !minerSkipped && decision === "BLOCK";
-  const evidenceIncomplete = stage === "decision" && Boolean(result) && !minerSkipped && !evidencePassed && !evidenceHeld && !evidenceBlocked;
+  const evidenceIncomplete = stage === "decision" && phase !== "error" && Boolean(result) && !minerSkipped && !evidencePassed && !evidenceHeld && !evidenceBlocked;
 
   const rows = useMemo<TimelineDisclosure[]>(() => {
     const requestRow: TimelineDisclosure = {
@@ -185,7 +172,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
       state: "done",
       time: times?.request,
       detailLabel: "WHAT HAPPENED",
-      explanation: "ProofGate captured the exact proposed action before authorization. The amount, recipient, reason and reference now belong to the frozen request snapshot used by this check.",
+      explanation: "Auctorail captured the exact proposed action before authorization. The amount, recipient, reason and reference now belong to the frozen request snapshot used by this check.",
       technical: requestTechnical(snapshot, result, agentId, recipientLabel, recipientAddress)
     };
 
@@ -196,20 +183,20 @@ export function CheckingScreen(props: CheckingScreenProps) {
       copy: rulesRunning ? "Agent permission is being verified" : rulesDone ? "Agent permission allows this request to continue" : rulesStopped ? "Permission check did not complete" : "Waiting to verify agent permission",
       state: rulesState,
       time: times?.rules,
-      detailLabel: rulesDone ? "WHY IT PASSED" : rulesStopped ? "WHY IT STOPPED" : "WHAT PROOFGATE IS CHECKING",
+      detailLabel: rulesDone ? "WHY IT PASSED" : rulesStopped ? "WHY IT STOPPED" : "WHAT AUCTORAIL IS CHECKING",
       explanation: rulesDone
         ? `${formatUsdc(snapshot.amount)} USDC is within the ${formatUsdc(snapshot.limit)} USDC permission, the recipient matches the pinned Base Sepolia recipient, and the request was accepted by the real policy preflight.`
         : rulesStopped
-          ? "ProofGate could not complete the local permission preflight, so it failed closed before granting authority."
-          : "ProofGate first checks the delegated permission, exact recipient, amount, network, asset and permission window. No Miner needs to be paid until these local rules allow the request to continue.",
+          ? "Auctorail could not complete the local permission preflight, so it failed closed before granting authority."
+          : "Auctorail first checks the delegated permission, exact recipient, amount, network, asset and permission window. No Miner needs to be paid until these local rules allow the request to continue.",
       technical: rulesStopped ? errorTechnical(errorCode, false) : ruleTechnical(snapshot, result, agentId, recipientLabel, recipientAddress, rulesDone)
     };
 
     let evidenceTitle = "REAL CHECKS PENDING";
     let evidenceCopy = "Waiting for permission rules";
     let evidenceState: TimelineState = "pending";
-    let evidenceLabel = "WHAT PROOFGATE WILL CHECK";
-    let evidenceDetail = "If the local rules pass, ProofGate requests the consequence-derived intelligence through Telegraph /v1/ask and binds returned evidence to this exact action.";
+    let evidenceLabel = "WHAT AUCTORAIL WILL CHECK";
+    let evidenceDetail = "If the local rules pass, Auctorail requests the consequence-derived intelligence through Telegraph /v1/ask and binds returned evidence to this exact action.";
     let evidenceDetails: PresentationDetail[] = [
       { label: "Telegraph route", value: "/v1/ask · TELEGRAPH_AUTO_INTENT", mono: true },
       { label: "x402 spend", value: "NOT STARTED" },
@@ -228,7 +215,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
       evidenceCopy = "Telegraph is routing required intelligence to real Miners";
       evidenceState = "running";
       evidenceLabel = "WHAT IS HAPPENING NOW";
-      evidenceDetail = "ProofGate is requesting the required intelligence through Telegraph automatic Intent routing. Any bounded x402 evidence payment is for Miner intelligence only; the vendor payment has not started.";
+      evidenceDetail = "Auctorail is requesting the required intelligence through Telegraph automatic Intent routing. Any bounded x402 evidence payment is for Miner intelligence only; the vendor payment has not started.";
       evidenceDetails = result ? evidenceTechnical(result) : evidenceDetails;
     } else if (evidencePassed && result) {
       evidenceTitle = "EVIDENCE VERIFIED";
@@ -253,7 +240,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
       evidenceDetails = evidenceTechnical(result);
     } else if (evidenceIncomplete && result) {
       evidenceTitle = "EVIDENCE INCOMPLETE";
-      evidenceCopy = "ProofGate did not obtain a complete authorization result from the evidence stage";
+      evidenceCopy = "Auctorail did not obtain a complete authorization result from the evidence stage";
       evidenceState = "warning";
       evidenceLabel = "WHY IT DIDN'T PASS";
       evidenceDetail = evidenceExplanation(result);
@@ -261,17 +248,17 @@ export function CheckingScreen(props: CheckingScreenProps) {
     } else if (minersStopped) {
       const preMinerStop = stopsBeforeTelegraph(errorCode);
       evidenceTitle = preMinerStop ? "LIVE CHECK NOT STARTED" : "REAL CHECKS STOPPED";
-      evidenceCopy = preMinerStop ? "ProofGate stopped this attempt before a Miner call" : "Live verification did not produce a trusted result";
+      evidenceCopy = preMinerStop ? "Auctorail stopped this attempt before a Miner call" : "Live verification did not produce a trusted result";
       evidenceState = preMinerStop ? "warning" : "error";
       evidenceLabel = preMinerStop ? "WHY IT DIDN'T START" : "WHY IT STOPPED";
-      evidenceDetail = error ?? "ProofGate failed closed because the live intelligence step did not return a trustworthy result.";
+      evidenceDetail = error ?? "Auctorail failed closed because the live intelligence step did not return a trustworthy result.";
       evidenceDetails = errorTechnical(errorCode, !preMinerStop);
     } else if (rulesStopped) {
       evidenceTitle = "REAL CHECKS NOT STARTED";
       evidenceCopy = "Rules did not complete, so no Miner call was made";
       evidenceState = "skipped";
       evidenceLabel = "WHY IT DIDN'T START";
-      evidenceDetail = "ProofGate never spends on external intelligence when the local permission preflight has not completed successfully.";
+      evidenceDetail = "Auctorail never spends on external intelligence when the local permission preflight has not completed successfully.";
       evidenceDetails = errorTechnical(errorCode, false);
     }
 
@@ -284,7 +271,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
     let decisionCopy = "Waiting for all checks to complete";
     let decisionBadge: string | undefined;
     let decisionLabel = "WHAT THE DECISION WILL MEAN";
-    let decisionDetail = "ProofGate will only create execution authority if every required check for the exact action reaches an ALLOW decision.";
+    let decisionDetail = "Auctorail will only create execution authority if every required check for the exact action reaches an ALLOW decision.";
     let decisionTechnical: PresentationDetail[] = [{ label: "Decision", value: "PENDING" }, { label: "Permit issued", value: "NO" }];
 
     if (phase === "error") {
@@ -328,44 +315,88 @@ export function CheckingScreen(props: CheckingScreenProps) {
         ? "Telegraph is routing the required intelligence to real Miners. Bounded x402 evidence fees may be paid; the vendor payment has not started."
         : "The real policy engine is checking the delegated permission first. No Miner has been paid at this stage.";
 
+  const statusClass = phase === "error"
+    ? "error"
+    : phase === "ready"
+      ? (decision === "HOLD" ? "ready-hold" : decision === "BLOCK" ? "ready-block" : "ready-allow")
+      : "";
+
   return (
-    <main className="checking-shell" data-testid="checking-screen">
-      <h1>CHECKING REQUEST</h1>
-      <section className="checking-request-card" aria-label="Request being checked">
-        <FileIcon />
-        <div><strong>{formatUsdc(snapshot.amount)} USDC → {recipientLabel}</strong><span>{snapshot.reason} <b aria-hidden="true">•</b> Ref: {snapshot.reference || "—"}</span></div>
+    <div className="check-layout" data-testid="checking-screen">
+      <section aria-label="Request being checked">
+        <span className="eyebrow">LIVE AUTHORIZATION</span>
+        <h1 style={{ margin: "10px 0 20px" }}>CHECKING REQUEST</h1>
+
+        <div className="card card-pad" style={{ marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 14, alignItems: "center" }}>
+            <FileIcon style={{ width: 26, height: 30, color: "var(--text-3)" }} />
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ fontSize: 15, fontWeight: 650, overflowWrap: "anywhere", display: "block" }}>{formatUsdc(snapshot.amount)} USDC → {recipientLabel}</strong>
+              <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>{snapshot.reason} · Ref: {snapshot.reference || "—"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className={`check-status ${statusClass}`} role="status" aria-live="polite">
+          <div className="cs-icon" aria-hidden="true">&gt;_</div>
+          <div>
+            <strong>{workingTitle}</strong>
+            <p>{workingCopy}</p>
+          </div>
+        </div>
+
+        <button className="btn btn-ghost" type="button" onClick={onSecondaryAction} disabled={secondaryDisabled} aria-label={secondaryLabel}
+          title={secondaryDisabled ? "A real Miner request is already in flight, so the browser cannot safely promise cancellation." : undefined}
+          style={{ marginTop: 14 }}>
+          <span>{secondaryLabel}</span><span aria-hidden="true">{phase === "checking" ? "×" : "←"}</span>
+        </button>
       </section>
 
-      <section className="check-timeline disclosure-timeline" aria-label="Live authorization progress">
-        {rows.map((row) => {
-          const open = expanded === row.id;
-          return (
-            <article className={`timeline-stage timeline-${row.state} ${open ? "is-open" : ""}`} data-stage={row.id} key={row.id}>
-              <button className="timeline-row timeline-disclosure-trigger" type="button" aria-expanded={open} aria-controls={`timeline-detail-${row.id}`} onClick={() => setExpanded(open ? null : row.id)}>
-                <div className="timeline-number">{row.id}</div>
-                <div className="timeline-copy"><strong>{row.title}</strong><span>{row.copy}</span><i>{open ? "HIDE DETAILS ↑" : "SEE DETAILS ↓"}</i></div>
-                <div className="timeline-status-wrap"><div className="timeline-status" aria-label={row.badge ?? row.state}>{stageSymbol(row.state)}</div><span className="timeline-time">{row.badge ?? (row.state === "skipped" ? "NOT NEEDED" : row.time ?? (row.state === "pending" ? "PENDING" : "—"))}</span></div>
-              </button>
-              {open && (
-                <div className="timeline-disclosure" id={`timeline-detail-${row.id}`} data-testid={`timeline-detail-${row.id}`}>
-                  <div className="timeline-plain"><strong>{row.detailLabel}</strong><p>{row.explanation}</p></div>
-                  <details className="timeline-technical">
-                    <summary>VIEW TECHNICAL DETAILS ↓</summary>
-                    <dl>{row.technical.map((detail, index) => <div key={`${row.id}:${detail.label}:${index}`}><dt>{detail.label}</dt><dd className={detail.mono ? "mono" : ""} title={detail.value}>{detail.value}</dd></div>)}</dl>
-                  </details>
-                </div>
-              )}
-            </article>
-          );
-        })}
-      </section>
+      <aside aria-label="Live authorization progress">
+        <div className="timeline">
+          {rows.map((row) => {
+            const open = expanded === row.id;
+            return (
+              <article className={`timeline-stage ${row.state} ${open ? "is-open" : ""}`} data-stage={row.id} key={row.id}>
+                <button className="timeline-row" type="button" aria-expanded={open} aria-controls={`timeline-detail-${row.id}`} onClick={() => setExpanded(open ? null : row.id)}>
+                  <div className="timeline-number">{row.id}</div>
+                  <div className="timeline-copy">
+                    <strong>{row.title}</strong>
+                    <span>{row.copy}</span>
+                    <i>{open ? "HIDE DETAILS ↑" : "SEE DETAILS ↓"}</i>
+                  </div>
+                  <div className="timeline-status-wrap">
+                    <div className="timeline-status" aria-label={row.badge ?? row.state}>{stageSymbol(row.state)}</div>
+                    <span className="timeline-time">{row.badge ?? (row.state === "skipped" ? "NOT NEEDED" : row.time ?? (row.state === "pending" ? "PENDING" : "—"))}</span>
+                  </div>
+                </button>
+                {open && (
+                  <div className="timeline-disclosure" id={`timeline-detail-${row.id}`} data-testid={`timeline-detail-${row.id}`}>
+                    <span className="disc-label">{row.detailLabel}</span>
+                    <p className="disc-copy">{row.explanation}</p>
+                    <details className="technical">
+                      <summary>VIEW TECHNICAL DETAILS ↓</summary>
+                      <dl className="kv">{row.technical.map((detail, index) => <div key={`${row.id}:${detail.label}:${index}`}><dt>{detail.label}</dt><dd className={detail.mono ? "mono" : ""} title={detail.value}>{detail.value}</dd></div>)}</dl>
+                    </details>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
 
-      <section className={`checking-work-box ${phase} ${decision === "HOLD" ? "held" : decision === "BLOCK" ? "blocked" : ""}`} role="status" aria-live="polite">
-        <div className="terminal-icon" aria-hidden="true">&gt;_</div><div><strong>{workingTitle}</strong><p>{workingCopy}</p></div>
-      </section>
-
-      <button className="cancel-check-button" type="button" onClick={onSecondaryAction} disabled={secondaryDisabled} aria-label={secondaryLabel} title={secondaryDisabled ? "A real Miner request is already in flight, so the browser cannot safely promise cancellation." : undefined}><span>{secondaryLabel}</span><span className="cancel-x" aria-hidden="true">{phase === "checking" ? "×" : "←"}</span></button>
-      <section className="checking-safety-note"><div className="checking-lock-box"><LockIcon /></div><p><strong>No vendor payment is made on this screen.</strong><br />ProofGate is deciding whether a signed execution permit can be issued.</p></section>
-    </main>
+        <div className="note" style={{ marginTop: 16 }}>
+          <LockIcon />
+          <div>
+            <strong>No vendor payment is made on this screen.</strong>
+            <p>{phase === "checking"
+              ? "Auctorail is deciding whether a signed execution permit can be issued."
+              : phase === "error"
+                ? "Nothing was executed and no permit was issued."
+                : "Authority is issued only when every check allows the exact action."}</p>
+          </div>
+        </div>
+      </aside>
+    </div>
   );
 }

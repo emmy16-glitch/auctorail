@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import "./security-lab-screen.css";
 
 export interface SecurityLabScenario {
   id: string;
@@ -109,71 +108,144 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
   const recent = report?.scenarios.filter((item) => item.id !== "baseline").slice(0, 4) ?? [];
 
   return (
-    <main className="lab-workbench" data-testid="security-lab-screen">
-      <header className="lab-intro">
+    <main data-testid="security-lab-screen">
+      <div className="lab-intro">
         <div>
-          <span className="lab-kicker">SECURITY LAB · DETERMINISTIC</span>
+          <span className="eyebrow">SECURITY LAB · DETERMINISTIC</span>
           <h1>Try to break Auctorail.</h1>
-          <p>Mutate a valid authorization and see exactly where Auctorail stops it. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
+          <p className="lab-lede">Mutate a valid authorization and see exactly where Auctorail stops it. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
         </div>
-        <aside className="lab-safety">
-          <span className="lab-flask" aria-hidden="true">△</span>
-          <div><strong>SAFE · OFFLINE · ZERO REAL PAYMENTS</strong><p>The lab is isolated from LIVE CHECK. No Telegraph/x402 purchase or blockchain write is made. Every result comes from the deterministic attack harness.</p></div>
-        </aside>
-      </header>
+        <div className="note">
+          <span style={{ fontSize: 20, color: "var(--accent)", display: "grid", placeItems: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: 8 }} aria-hidden="true">△</span>
+          <div>
+            <strong>SAFE · OFFLINE · ZERO REAL PAYMENTS</strong>
+            <p>The lab is isolated from live checks. No Telegraph/x402 purchase or blockchain write is made. Every result comes from the deterministic attack harness.</p>
+          </div>
+        </div>
+      </div>
 
       <div className="lab-layout">
         <aside className="lab-categories" aria-label="Attack categories">
-          <span className="section-label">ATTACK CATEGORIES</span>
           {(Object.keys(CATEGORY_META) as Category[]).map((key) => {
             const meta = CATEGORY_META[key];
-            return <button key={key} className={`lab-category ${category === key ? "active" : ""} cat-${key}`} onClick={() => chooseCategory(key)} type="button">
+            return <button key={key} className={`lab-category ${category === key ? "active" : ""}`} onClick={() => chooseCategory(key)} type="button">
               <b>{meta.n}</b><span><strong>{meta.title}</strong><small>{meta.copy}</small></span>
             </button>;
           })}
-          <div className="lab-examples">
-            <span className="section-label">JUDGE QUICK PATH</span>
-            <p>1. Modify payment amount</p><p>2. Replay consumed permit</p><p>3. Remove / corrupt evidence</p>
-          </div>
         </aside>
 
-        <section className="attack-builder hard-shadow">
-          <div className={`builder-title cat-${category}`}><b>{CATEGORY_META[category].n}</b><div><strong>{CATEGORY_META[category].title}</strong><span>{CATEGORY_META[category].copy}</span></div></div>
-          <div className="builder-body">
-            <label className="attack-type"><span>ATTACK TYPE</span><select value={selected.id} onChange={(e) => setPresetId(e.target.value)}>{presets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-            <div className="attack-description">{selected.description}</div>
-            <div className="mutation-grid">
-              <div className="mutation-card original"><span>ORIGINAL REQUEST (AUTHORIZED)</span><dl><dt>State</dt><dd>{selected.original}</dd><dt>Recipient</dt><dd>Auctorail Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
-              <div className="mutation-card mutated"><span>MUTATED REQUEST (ATTACK)</span><dl><dt>State</dt><dd>{selected.mutated}</dd><dt>Recipient</dt><dd>Auctorail Vendor</dd><dt>Mandate</dt><dd>INV-4471</dd><dt>Valid for</dt><dd>1 hour</dd></dl></div>
+        <section style={{ display: "grid", gap: 20 }}>
+          <div className="card card-pad">
+            <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 12, alignItems: "center", marginBottom: 16 }}>
+              <span className="mono" style={{ color: "var(--accent)", fontSize: 12 }}>{CATEGORY_META[category].n}</span>
+              <div>
+                <strong style={{ display: "block", fontSize: 15, fontWeight: 650 }}>{CATEGORY_META[category].title}</strong>
+                <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>{CATEGORY_META[category].copy}</span>
+              </div>
             </div>
-            <div className="builder-note"><strong>CONTROLLED MUTATION</strong><p>You are mutating a valid deterministic authorization. Auctorail runs the real local attack-harness check for this boundary; no live external effect is attempted.</p></div>
-            <button className="run-attack" onClick={runAttack} disabled={running} type="button"><span>{running ? "RUNNING ATTACK..." : "RUN ATTACK"}</span><b>→</b></button>
+
+            <label className="field" style={{ marginBottom: 14 }}>
+              <span>ATTACK TYPE</span>
+              <select className="select" value={selected.id} onChange={(e) => setPresetId(e.target.value)}>
+                {presets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+
+            <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--text-2)", lineHeight: 1.55 }}>{selected.description}</p>
+
+            <div className="mutation-grid" style={{ marginBottom: 14 }}>
+              <div className="mutation-card">
+                <span className="mc-label">ORIGINAL · AUTHORIZED</span>
+                <dl>
+                  <div><dt>State</dt><dd>{selected.original}</dd></div>
+                  <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
+                  <div><dt>Mandate</dt><dd>INV-4471</dd></div>
+                  <div><dt>Valid for</dt><dd>1 hour</dd></div>
+                </dl>
+              </div>
+              <div className="mutation-card mutated">
+                <span className="mc-label">MUTATED · ATTACK</span>
+                <dl>
+                  <div><dt>State</dt><dd>{selected.mutated}</dd></div>
+                  <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
+                  <div><dt>Mandate</dt><dd>INV-4471</dd></div>
+                  <div><dt>Valid for</dt><dd>1 hour</dd></div>
+                </dl>
+              </div>
+            </div>
+
+            <p className="editor-note" style={{ marginBottom: 16 }}>
+              <strong>Controlled mutation.</strong> You are mutating a valid deterministic authorization. Auctorail runs the real local attack-harness check for this boundary; no live external effect is attempted.
+            </p>
+
+            <button className="btn btn-primary btn-block" onClick={runAttack} disabled={running} type="button">
+              <span>{running ? "RUNNING ATTACK..." : "RUN ATTACK"}</span><span className="arrow" aria-hidden="true">→</span>
+            </button>
           </div>
-        </section>
 
-        <aside className="last-result hard-shadow">
-          <div className="result-heading">LAST RESULT</div>
-          {lastResult && lastPreset ? <>
-            <div className={`result-status ${lastResult.passed ? "blocked" : "failed"}`}><span>✓</span><div><strong>{lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}</strong><p>{lastResult.passed ? "Auctorail stopped this mutated request before protected execution." : "The expected security boundary did not hold."}</p></div></div>
-            <dl className="result-facts"><dt>BOUNDARY</dt><dd>{lastPreset.boundary}</dd><dt>REASON</dt><dd>{lastResult.observed}</dd><dt>STOPPED AT</dt><dd>{lastPreset.stoppedAt}</dd><dt>TIME</dt><dd>{lastTime}</dd></dl>
-            <div className="compare-row"><div><span>EXPECTED</span><strong>{lastResult.expected}</strong></div><div><span>OBSERVED</span><strong>{lastResult.observed}</strong></div></div>
-            <div className="result-explain"><strong>WHY IT MATTERS</strong><p>The mutated state no longer matches the authorized integrity boundary, so no protected execution authority is accepted.</p></div>
-            <details className="technical-trace"><summary>VIEW TECHNICAL TRACE ↓</summary><pre>{JSON.stringify(lastResult, null, 2)}</pre></details>
-            <button className="try-again" type="button" onClick={() => { setLastResult(null); setLastPreset(null); }}>TRY ANOTHER MUTATION ↻</button>
-          </> : <div className="empty-result"><strong>NO ATTACK RUN YET</strong><p>Choose a mutation and run it. The exact enforcement boundary will appear here.</p></div>}
-        </aside>
-      </div>
+          <div className="card card-pad last-result" aria-label="Last result">
+            <span className="eyebrow" style={{ display: "block", marginBottom: 12 }}>LAST RESULT</span>
+            {lastResult && lastPreset ? <>
+              <div className={`lr-status ${lastResult.passed ? "blocked" : "failed"}`}>
+                <span>{lastResult.passed ? "✓" : "×"}</span>
+                <div>
+                  <strong>{lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}</strong>
+                  <p>{lastResult.passed ? "Auctorail stopped this mutated request before protected execution." : "The expected security boundary did not hold."}</p>
+                </div>
+              </div>
+              <dl className="kv">
+                <div><dt>BOUNDARY</dt><dd>{lastPreset.boundary}</dd></div>
+                <div><dt>REASON</dt><dd className="mono">{lastResult.observed}</dd></div>
+                <div><dt>STOPPED AT</dt><dd>{lastPreset.stoppedAt}</dd></div>
+                <div><dt>TIME</dt><dd className="mono">{lastTime}</dd></div>
+              </dl>
+              <div className="compare-row">
+                <div><span>EXPECTED</span><strong>{lastResult.expected}</strong></div>
+                <div><span>OBSERVED</span><strong>{lastResult.observed}</strong></div>
+              </div>
+              <details className="technical" style={{ marginBottom: 14 }}>
+                <summary>VIEW TECHNICAL TRACE ↓</summary>
+                <div className="verify-json" style={{ border: 0, borderRadius: 0 }}><pre>{JSON.stringify(lastResult, null, 2)}</pre></div>
+              </details>
+              <button className="btn btn-ghost btn-block" type="button" onClick={() => { setLastResult(null); setLastPreset(null); }}>TRY ANOTHER MUTATION ↻</button>
+            </> : report ? <div className="empty-result"><strong>SUITE COMPLETE · {report.passed}/{report.total}</strong><p>{report.allPassed ? "Every deterministic attack was rejected by its expected security boundary." : "The full suite did not hold — review the scenario report below."} Pick a single mutation above to see one boundary in detail.</p></div> : <div className="empty-result"><strong>NO ATTACK RUN YET</strong><p>Choose a mutation and run it. The exact enforcement boundary will appear here.</p></div>}
+          </div>
 
-      {error && <div className="lab-error" role="alert"><strong>LAB STOPPED</strong><span>{error}</span></div>}
+          {error && <div className="lab-error" role="alert"><strong>LAB STOPPED</strong><span>{error}</span></div>}
 
-      <div className="lab-bottom">
-        <section className="recent-attacks">
-          <div className="bottom-heading"><strong>RECENT ATTACKS</strong><span>{recent.length ? "LATEST SUITE" : "NO RESULTS YET"}</span></div>
-          {recent.length ? <div className="recent-list">{recent.map((item) => <div key={item.id}><span>{item.attack}</span><b>{item.passed ? "BLOCKED" : "FAILED"}</b></div>)}</div> : <p className="recent-empty">Run an attack or the full suite to populate deterministic results.</p>}
-        </section>
-        <section className="suite-card">
-          <div><strong>⚡ RUN FULL ATTACK SUITE</strong><p>Execute every deterministic adversarial test against the authorization boundary.</p><button onClick={runFullSuite} disabled={runningSuite} type="button">{runningSuite ? "RUNNING SUITE..." : "RUN SUITE →"}</button></div>
-          <aside className={report?.allPassed ? "suite-score passed" : "suite-score"}><b>{report ? `${report.passed}/${report.total}` : "—/—"}</b><strong>{report?.allPassed ? "RAIL HELD" : "AWAITING RUN"}</strong><span>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</span></aside>
+          <div className="card card-pad suite-card">
+            <div className="suite-copy">
+              <strong>RUN FULL ATTACK SUITE</strong>
+              <p>Execute every deterministic adversarial test against the authorization boundary.</p>
+              <button className="btn" onClick={runFullSuite} disabled={runningSuite} type="button">
+                <span>{runningSuite ? "RUNNING SUITE..." : "RUN SUITE"}</span><span className="arrow" aria-hidden="true">→</span>
+              </button>
+            </div>
+            <div className={`suite-score ${report?.allPassed ? "passed" : ""}`}>
+              <b>{report ? `${report.passed}/${report.total}` : "—/—"}</b>
+              <strong>{report?.allPassed ? "RAIL HELD" : "AWAITING RUN"}</strong>
+              <span>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</span>
+            </div>
+          </div>
+
+          <div className="card card-pad">
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+              <span className="eyebrow">RECENT ATTACKS</span>
+              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{recent.length ? "LATEST SUITE" : "NO RESULTS YET"}</span>
+            </div>
+            {recent.length ? (
+              <div className="recent-list">
+                {recent.map((item) => (
+                  <div key={item.id}>
+                    <span>{item.attack}</span>
+                    <b className={item.passed ? "ok" : "fail"}>{item.passed ? "BLOCKED" : "FAILED"}</b>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-3)" }}>Run an attack or the full suite to populate deterministic results.</p>
+            )}
+          </div>
         </section>
       </div>
     </main>

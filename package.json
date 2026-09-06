@@ -9,7 +9,9 @@
     "./sdk": "./src/sdk/auctorail.ts",
     "./legacy-proofgate": "./src/sdk/proofgate.ts"
   },
-  "directories": { "doc": "docs" },
+  "directories": {
+    "doc": "docs"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -41,7 +43,14 @@
     "web:preview": "vite preview --host 0.0.0.0",
     "web:api": "tsx web/api-bundle.ts"
   },
-  "keywords": ["auctorail", "telegraph", "ai-agents", "authorization", "x402", "security"],
+  "keywords": [
+    "auctorail",
+    "telegraph",
+    "ai-agents",
+    "authorization",
+    "x402",
+    "security"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -54,13 +63,17 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@types/node": "^26.4.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.11",
+    "jsdom": "^30.0.1",
     "pg": "^8.23.0",
+    "puppeteer": "^25.10.0",
+    "puppeteer-core": "^25.10.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsx": "^4.23.13",

@@ -1,71 +1,171 @@
 import React from "react";
-import "./home-landing.css";
+import { PlayIcon, BoltIcon } from "./icons";
 
 interface HomeLandingScreenProps {
   onDemo: () => void;
   onLive: () => void;
   onContent: () => void;
   onVerify: () => void;
-}
-type SvgProps = React.SVGProps<SVGSVGElement>;
-function FileIcon(props: SvgProps) { return <svg viewBox="0 0 44 52" aria-hidden="true" {...props}><path d="M8 3h19l9 9v37H8z" fill="none" stroke="currentColor" strokeWidth="2.5"/><path d="M27 3v10h9M14 24h16M14 31h16M14 38h12" fill="none" stroke="currentColor" strokeWidth="2.2"/></svg>; }
-function ShieldIcon(props: SvgProps) { return <svg viewBox="0 0 48 56" aria-hidden="true" {...props}><path d="M24 3 43 10v15c0 12-7.6 22.4-19 28C12.6 47.4 5 37 5 25V10z" fill="none" stroke="currentColor" strokeWidth="3"/></svg>; }
-function DatabaseIcon(props: SvgProps) { return <svg viewBox="0 0 48 52" aria-hidden="true" {...props}><ellipse cx="24" cy="9" rx="16" ry="6" fill="none" stroke="currentColor" strokeWidth="2.4"/><path d="M8 9v30c0 3.3 7.2 6 16 6s16-2.7 16-6V9M8 24c0 3.3 7.2 6 16 6s16-2.7 16-6" fill="none" stroke="currentColor" strokeWidth="2.4"/></svg>; }
-function ReceiptIcon(props: SvgProps) { return <svg viewBox="0 0 44 52" aria-hidden="true" {...props}><path d="M8 3h20l8 8v38l-5-3-4 3-5-3-5 3-4-3-5 3z" fill="none" stroke="currentColor" strokeWidth="2.4"/><path d="M28 3v9h8M14 23h16M14 30h16M14 37h11" fill="none" stroke="currentColor" strokeWidth="2.1"/></svg>; }
-function PlayIcon(props: SvgProps) { return <svg viewBox="0 0 32 32" aria-hidden="true" {...props}><path d="M9 6 25 16 9 26z" fill="none" stroke="currentColor" strokeWidth="2.3"/></svg>; }
-function BoltIcon(props: SvgProps) { return <svg viewBox="0 0 32 40" aria-hidden="true" {...props}><path d="M18 2 6 22h10l-2 16 12-22H16z" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="miter"/></svg>; }
-
-function GateFlowGraphic() {
-  return <svg className="gate-flow-svg" viewBox="0 0 430 390" role="img" aria-label="Agent request passes through Auctorail before authorized execution">
-    <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="miter"><path d="M35 70 215 15l179 63-180 59z" fill="#fff"/><path d="M35 70v19l179 59 180-60V78" fill="#f8f8f8"/><path d="M26 159 212 101l191 63-189 65z" fill="#e3d1ff"/><path d="M26 159v20l188 65 189-66v-14" fill="#efe6ff"/><path d="M27 257 214 198l192 64-191 67z" fill="#fff"/><path d="M27 257v20l188 68 191-68v-15" fill="#f8f8f8"/><path d="M45 91v55M385 97v52M212 151v45" strokeDasharray="4 4"/></g>
-    <g fill="none" stroke="currentColor" strokeWidth="2"><path d="M201 50h18l8 8v24h-26zM219 50v9h8M206 66h15M206 72h15"/><path d="M214 145 229 151v11c0 9-5.8 16.8-15 21-9.2-4.2-15-12-15-21v-11z"/><path d="m203 280 8 8 17-22" strokeWidth="3"/></g>
-    <g fill="currentColor" fontFamily="Courier New, monospace" fontWeight="700" fontSize="11"><text x="214" y="112" textAnchor="middle">AGENT REQUEST</text><text x="214" y="204" textAnchor="middle">AUCTORAIL</text><text x="215" y="316" textAnchor="middle">AUTHORIZED EXECUTION</text></g>
-  </svg>;
+  onSecurity: () => void;
 }
 
-const safeguards = [
-  { title: "ACTION BINDING", copy: "Prevents amount and mandate substitution.", icon: FileIcon },
-  { title: "PERMIT VALIDATION", copy: "Blocks replay, forgery and expiry.", icon: ShieldIcon },
-  { title: "EVIDENCE CHECKS", copy: "Verifies Miner and runtime evidence.", icon: DatabaseIcon },
-  { title: "RECEIPT INTEGRITY", copy: "Ensures post-execution results are untampered.", icon: ReceiptIcon }
-];
-const demoSteps = [
-  { n: "01", title: "VALID REQUEST", copy: "Exact authorization", state: "✓  EXECUTED (DEMO)", tone: "mint" },
-  { n: "02", title: "MODIFIED AMOUNT", copy: "Tampered after approval", state: "⊘  BLOCKED", tone: "rose" },
-  { n: "03", title: "REPLAYED PERMIT", copy: "Already consumed", state: "⊘  BLOCKED", tone: "purple" },
-  { n: "04", title: "MISSING EVIDENCE", copy: "Did not reach threshold", state: "!  HELD", tone: "yellow" }
+const steps = [
+  { n: "01", title: "CAPTURE", copy: "The exact proposed action — amount, recipient, reason — is frozen and hashed. Nothing can be substituted afterwards." },
+  { n: "02", title: "DELEGATE", copy: "Auctorail checks what the principal actually delegated: permission, limit, recipient, window. Before a Miner is paid." },
+  { n: "03", title: "EVIDENCE", copy: "When the consequence requires it, Telegraph Miner intelligence is bought via x402, bounded, and bound to the exact action." },
+  { n: "04", title: "ENFORCE", copy: "A short-lived one-use permit is the only thing that can cause the effect. A tamper-evident receipt records the outcome." }
 ];
 
-export function HomeLandingScreen({ onDemo, onLive, onContent, onVerify }: HomeLandingScreenProps) {
-  return <main className="home-landing" data-testid="home-landing-screen">
-    <section className="home-hero"><div className="home-hero-copy"><h1>Prove authority<br/>before execution.</h1><p>Auctorail enforces real authorization for agent actions.<br className="desktop-break"/> It checks, verifies, and only allows what is proven.</p>
-      <div className="home-primary-actions"><button className="home-mode-card demo" type="button" onClick={onDemo}><span className="home-mode-icon"><PlayIcon/></span><span className="home-mode-copy"><strong>WATCH DEMO</strong><small>Run a guided demo with<br/>deterministic results.<br/>No real payments.</small></span><span className="home-mode-arrow">→</span></button><button className="home-mode-card live" type="button" onClick={onLive}><span className="home-mode-icon"><BoltIcon/></span><span className="home-mode-copy"><strong>ENTER LIVE MODE</strong><small>Use real Telegraph, x402<br/>and Base Sepolia.<br/>May incur miner costs.</small></span><span className="home-mode-arrow">→</span></button></div></div>
-      <div className="home-gate-visual"><GateFlowGraphic/><div className="gate-steps"><div><strong>CAPTURE</strong><span>Exact request snapshot</span></div><div><strong>VERIFY</strong><span>Rules, evidence, permits</span></div><div><strong>ENFORCE</strong><span>Only proven actions execute</span></div></div></div></section>
+const demos = [
+  {
+    kicker: "GUIDED DEMO",
+    title: "Watch Auctorail in action",
+    copy: "A deterministic run through success, a tampered amount, a replayed permit and a held decision. No real payments.",
+    cta: "PLAY DEMO",
+    action: "onDemo" as const
+  },
+  {
+    kicker: "SECURITY LAB",
+    title: "Try to break the rails",
+    copy: "Mutate a valid authorization and watch the exact boundary where Auctorail stops it. Offline and fully deterministic.",
+    cta: "OPEN THE LAB",
+    action: "onSecurity" as const
+  },
+  {
+    kicker: "PUBLIC VERIFIER",
+    title: "Verify a receipt",
+    copy: "Recompute receipt integrity and binding from a hash, an ID, or the receipt JSON itself. Proof, not screenshots.",
+    cta: "VERIFY A RECEIPT",
+    action: "onVerify" as const
+  }
+];
 
-    <section className="home-safeguards" aria-label="Auctorail safeguards">{safeguards.map((item) => { const Icon=item.icon; return <article key={item.title}><Icon/><div><strong>{item.title}</strong><p>{item.copy}</p></div></article>; })}</section>
-
-    <section className="home-content-trust" aria-labelledby="content-trust-title">
-      <div className="home-content-copy">
-        <span>CONTENT TRUST / SAME AUTHORIZATION CORE</span>
-        <h2 id="content-trust-title">Paste it. Check the evidence before you act.</h2>
-        <p>Use the same fail-closed ALLOW / HOLD / BLOCK model on suspicious text. Demo mode is zero-cost; Live mode can route real Telegraph/x402 evidence when enabled.</p>
-        <div className="home-content-actions">
-          <button type="button" onClick={onContent}>CHECK CONTENT <b>→</b></button>
-          <button type="button" onClick={onVerify}>VERIFY A RECEIPT</button>
+function GateDiagram() {
+  return (
+    <div className="gate-figure" aria-label="Agent request passes through Auctorail before authorized execution">
+      <div className="gate-row">
+        <div className="gate-node">
+          <span className="eyebrow">AGENT REQUEST</span>
+          <strong>invoice-bot proposes</strong>
+          <span className="copy">1.00 USDC → Auctorail Vendor · Base Sepolia. One exact, hashable action.</span>
+        </div>
+        <div className="gate-node mid">
+          <span className="eyebrow" style={{ color: "var(--accent)" }}>AUCTORAIL</span>
+          <strong>authority + evidence</strong>
+          <span className="copy">Mandate checked first. Telegraph evidence bounded, verified and bound to this action.</span>
+        </div>
+        <div className="gate-node">
+          <span className="eyebrow">AUTHORIZED EXECUTION</span>
+          <strong>one-use permit</strong>
+          <span className="copy">Only a signed permit for this exact action may cause the external effect.</span>
         </div>
       </div>
-      <div className="home-content-flow" aria-label="Content Trust flow">
-        <div><b>01</b><strong>EXACT CONTENT</strong><span>hash the subject</span></div>
-        <i>→</i>
-        <div><b>02</b><strong>TELEGRAPH EVIDENCE</strong><span>live when enabled</span></div>
-        <i>→</i>
-        <div><b>03</b><strong>ALLOW / HOLD / BLOCK</strong><span>fail closed</span></div>
-        <i>→</i>
-        <div><b>04</b><strong>VERIFIABLE RECEIPT</strong><span>same share text</span></div>
-      </div>
-    </section>
+    </div>
+  );
+}
 
-    <section className="home-demo-preview" aria-labelledby="demo-preview-title"><div className="demo-preview-intro"><span>DEMO PREVIEW</span><h2 id="demo-preview-title">See how it works.</h2><p>A short, automatic run showing success,<br/>blocked attacks and a hold case.</p><button type="button" onClick={onDemo}>PLAY DEMO <b>→</b></button></div><div className="demo-step-track">{demoSteps.map((step,index)=><React.Fragment key={step.n}><article className={`demo-step ${step.tone}`}><div className="demo-step-top"><b>{step.n}</b><div><strong>{step.title}</strong><span>{step.copy}</span></div></div><div className="demo-step-state">{step.state}</div></article>{index<demoSteps.length-1&&<span className="demo-arrow">→</span>}</React.Fragment>)}</div></section>
-    <footer className="home-footer"><div className="footer-brand"><ShieldIcon/><div><strong>AUCTORAIL</strong><span>Authorization rails</span></div></div><p>BUILT FOR AN OPEN AGENT ECONOMY.</p><nav aria-label="Landing links"><a href="https://github.com/emmy16-glitch/proof-gate" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://github.com/emmy16-glitch/proof-gate#readme" target="_blank" rel="noreferrer">Docs ↗</a><span>Privacy</span><span>Terms</span></nav></footer>
-  </main>;
+export function HomeLandingScreen(props: HomeLandingScreenProps) {
+  const { onDemo, onLive, onContent, onVerify, onSecurity } = props;
+  const demoHandlers = { onDemo, onSecurity, onVerify } as Record<"onDemo" | "onSecurity" | "onVerify", () => void>;
+
+  return (
+    <main data-testid="home-landing-screen">
+      <section className="landing-hero">
+        <span className="hero-chips">
+          <span className="badge accent"><span className="status-dot" aria-hidden="true" />REAL AUTHORIZATION · PROVABLE SECURITY</span>
+        </span>
+        <h1>Prove authority before execution.</h1>
+        <p className="hero-sub">
+          Auctorail is a pre-execution authorization layer for autonomous agents.
+          It freezes the exact action, checks what the human actually delegated, and only then
+          lets a signed one-use permit cause the effect.
+        </p>
+        <div className="hero-actions">
+          <button className="btn btn-primary btn-lg" type="button" onClick={onLive}>
+            <BoltIcon style={{ width: 15, height: 19 }} />
+            <span>ENTER LIVE MODE</span>
+            <span className="arrow" aria-hidden="true">→</span>
+          </button>
+          <button className="btn btn-lg" type="button" onClick={onDemo}>
+            <PlayIcon style={{ width: 15, height: 15 }} />
+            <span>WATCH DEMO</span>
+          </button>
+        </div>
+        <GateDiagram />
+      </section>
+
+      <div className="stats-band">
+        <div className="stats-inner">
+          <div className="stat"><b>268/268</b><span>tests passing</span></div>
+          <div className="stat"><b>7,400</b><span>fuzz cases contained</span></div>
+          <div className="stat"><b>1</b><span>protected Base Sepolia execution</span></div>
+          <div className="stat"><b>0</b><span>production vulnerabilities</span></div>
+        </div>
+      </div>
+
+      <section className="landing-section" aria-labelledby="how-title">
+        <div className="page-inner" style={{ padding: 0 }}>
+          <div className="section-head">
+            <span className="eyebrow"><span className="num">01</span>HOW IT WORKS</span>
+            <h2 className="section-title" id="how-title">Four gates. No shortcuts.</h2>
+            <p className="section-lede">The agent may decide what it wants to do. It cannot create, expand, or bypass the authority required to do it.</p>
+          </div>
+          <div className="steps-grid">
+            {steps.map((step) => (
+              <article className="step-card" key={step.n}>
+                <span className="step-num">{step.n}</span>
+                <strong>{step.title}</strong>
+                <p>{step.copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="demos-title" style={{ background: "var(--bg-soft)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+        <div className="page-inner" style={{ padding: "84px 28px" }}>
+          <div className="section-head">
+            <span className="eyebrow"><span className="num">02</span>SEE IT WORKING</span>
+            <h2 className="section-title" id="demos-title">These are not illustrations.</h2>
+            <p className="section-lede">They are working demonstrations of the enforcement built into every layer of the platform.</p>
+          </div>
+          <div className="demo-cards">
+            {demos.map((demo) => (
+              <button className="demo-card" type="button" key={demo.title} onClick={demoHandlers[demo.action]}>
+                <span className="demo-card-kicker">{demo.kicker}</span>
+                <strong>{demo.title}</strong>
+                <p>{demo.copy}</p>
+                <span className="demo-card-cta">{demo.cta} →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="content-trust-title">
+        <div className="page-inner" style={{ padding: 0 }}>
+          <div className="split-section">
+            <div>
+              <span className="eyebrow"><span className="num">03</span>CONTENT TRUST · SAME AUTHORIZATION CORE</span>
+              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 12 }}>Paste it. Check the evidence before you act.</h2>
+              <p className="section-lede">
+                The same fail-closed ALLOW / HOLD / BLOCK model, applied to suspicious text.
+                Demo mode is zero-cost; live mode routes real Telegraph/x402 evidence when enabled.
+              </p>
+              <div className="split-actions">
+                <button className="btn btn-primary" type="button" onClick={onContent}>CHECK CONTENT <span className="arrow" aria-hidden="true">→</span></button>
+                <button className="btn" type="button" onClick={onVerify}>VERIFY A RECEIPT</button>
+              </div>
+            </div>
+            <div className="mini-flow" aria-label="Content Trust flow">
+              <div className="mini-flow-item"><b>01</b><div><strong>EXACT CONTENT</strong><span>hash the subject</span></div></div>
+              <div className="mini-flow-item"><b>02</b><div><strong>TELEGRAPH EVIDENCE</strong><span>live when enabled</span></div></div>
+              <div className="mini-flow-item"><b>03</b><div><strong>ALLOW / HOLD / BLOCK</strong><span>fail closed</span></div></div>
+              <div className="mini-flow-item"><b>04</b><div><strong>VERIFIABLE RECEIPT</strong><span>one shared source of truth</span></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }

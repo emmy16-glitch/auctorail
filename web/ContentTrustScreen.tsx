@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import "./content-trust-screen.css";
 
 type ContentMode = "demo" | "live";
 type ProposedAction = "view" | "share" | "publish";
@@ -50,6 +49,12 @@ function utilityUrl(path: string): string {
 
 function confidence(value: number | null): string {
   return value === null ? "NOT PROVIDED" : `${Math.round(value * 100)}%`;
+}
+
+function kindClass(kind: ContentSignal["kind"]): string {
+  if (kind === "SCAM") return "s-scam";
+  if (kind === "DEEPFAKE") return "s-deepfake";
+  return "s-ai";
 }
 
 export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps) {
@@ -119,127 +124,127 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
   }
 
   return (
-    <main className="content-trust" data-testid="content-trust-screen">
-      <section className="content-trust-hero">
-        <div>
-          <span className="content-eyebrow">CONTENT TRUST / POLICY content.strict.v1</span>
-          <h1>Check the evidence<br />before you act.</h1>
-          <p>Paste a message. Auctorail binds the exact content, evaluates evidence, and returns one conservative decision: ALLOW, HOLD, or BLOCK.</p>
-        </div>
-        <aside className={`content-mode-note ${mode}`}>
-          <strong>{mode === "live" ? "LIVE TELEGRAPH + x402" : "DETERMINISTIC DEMO"}</strong>
-          <span>{mode === "live" ? "Real Miner calls may spend the configured evidence budget." : "Zero Miner payments. Zero blockchain writes."}</span>
-        </aside>
-      </section>
+    <main data-testid="content-trust-screen">
+      <div className="screen-head">
+        <span className="eyebrow">CONTENT TRUST · POLICY content.strict.v1</span>
+        <h1>Check the evidence before you act.</h1>
+        <p>Paste a message. Auctorail binds the exact content, evaluates evidence, and returns one conservative decision: ALLOW, HOLD, or BLOCK.</p>
+      </div>
 
-      <section className="content-workbench">
-        <div className="content-input-panel">
-          <div className="content-panel-head">
-            <div><span>01</span><strong>PASTE CONTENT</strong></div>
-            <button type="button" onClick={() => setText(sample)}>LOAD SCAM SAMPLE</button>
+      <div className="content-layout">
+        <section className="card card-pad">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <span className="eyebrow">01 · PASTE CONTENT</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setText(sample)}>LOAD SCAM SAMPLE</button>
           </div>
+
           <textarea
+            className="input"
             aria-label="Content to check"
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder="Paste a suspicious message, post text, or claim here…"
             maxLength={8000}
           />
-          <div className="content-count">{text.length.toLocaleString()} / 8,000</div>
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-3)", fontFamily: "var(--mono)" }}>{text.length.toLocaleString()} / 8,000</div>
 
-          <fieldset className="content-choice">
-            <legend>02 · WHAT ARE YOU ABOUT TO DO?</legend>
-            <div className="content-segments">
+          <div style={{ margin: "16px 0" }}>
+            <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>02 · WHAT ARE YOU ABOUT TO DO?</span>
+            <div className="mode-switch" role="group" aria-label="Proposed action">
               {(["view", "share", "publish"] as ProposedAction[]).map((action) => (
                 <button
                   key={action}
                   type="button"
                   className={proposedAction === action ? "active" : ""}
+                  style={{ gridColumn: "span 1" }}
                   onClick={() => setProposedAction(action)}
                 >{action.toUpperCase()}</button>
               ))}
             </div>
-          </fieldset>
+          </div>
 
           {proposedAction === "publish" && (
-            <fieldset className="content-choice content-authorship">
-              <legend>AUTHORSHIP CLAIM</legend>
-              <div className="content-segments content-segments-three">
-                {([
-                  ["unspecified", "UNSPECIFIED"],
-                  ["human", "HUMAN"],
-                  ["ai-assisted", "AI-ASSISTED"]
-                ] as [AuthorshipClaim, string][]).map(([value, label]) => (
+            <div style={{ margin: "0 0 16px" }}>
+              <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>AUTHORSHIP CLAIM</span>
+              <div className="mode-switch" role="group" aria-label="Authorship claim">
+                {([["unspecified", "UNSPECIFIED"], ["human", "HUMAN"], ["ai-assisted", "AI-ASSISTED"]] as [AuthorshipClaim, string][]).map(([value, label]) => (
                   <button key={value} type="button" className={authorshipClaim === value ? "active" : ""} onClick={() => setAuthorshipClaim(value)}>{label}</button>
                 ))}
               </div>
-            </fieldset>
+            </div>
           )}
 
-          <fieldset className="content-choice">
-            <legend>03 · EVIDENCE MODE</legend>
-            <div className="content-mode-switch">
+          <div style={{ margin: "0 0 18px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+              <span className="eyebrow">03 · EVIDENCE MODE</span>
+              <span className={`badge ${mode === "demo" ? "muted" : "accent"}`} style={{ textTransform: "none", letterSpacing: 0.02 }}>
+                {mode === "demo" ? "DETERMINISTIC DEMO" : "LIVE TELEGRAPH + x402"}
+              </span>
+            </div>
+            <div className="mode-switch" role="group" aria-label="Evidence mode">
               <button type="button" className={mode === "demo" ? "active" : ""} onClick={() => setMode("demo")}>DEMO · FREE</button>
               <button type="button" className={mode === "live" ? "active" : ""} onClick={() => setMode("live")}>LIVE TELEGRAPH</button>
             </div>
-          </fieldset>
+          </div>
 
-          <button className="content-run" type="button" disabled={!canRun} onClick={runCheck}>
+          <button className="btn btn-primary btn-lg btn-block" type="button" disabled={!canRun} onClick={runCheck}>
             {status === "running" ? "CHECKING EVIDENCE…" : mode === "live" ? "CHECK WITH TELEGRAPH" : "RUN CONTENT CHECK"}
           </button>
-          {error && <div className="content-error" role="alert"><strong>CHECK STOPPED</strong><span>{error}</span></div>}
-        </div>
+          {error && <div className="lab-error" role="alert" style={{ marginTop: 14 }}><strong>CHECK STOPPED</strong><span>{error}</span></div>}
+        </section>
 
-        <div className={`content-result-panel ${verdictClass}`} aria-live="polite">
+        <aside aria-live="polite" style={{ display: "grid", gap: 16 }}>
           {!result ? (
-            <div className="content-empty-state">
-              <span>RESULT</span>
+            <div className="result-empty">
+              <span className="eyebrow">RESULT</span>
               <strong>{status === "running" ? "ACQUIRING EVIDENCE" : "WAITING FOR CONTENT"}</strong>
               <p>{status === "running" ? "The exact content hash is frozen while evidence is evaluated." : "A decision appears here. Missing or inconclusive required evidence becomes HOLD — never a guessed ALLOW."}</p>
             </div>
           ) : (
             <>
-              <div className="content-verdict">
-                <span>DECISION</span>
+              <div className={`content-verdict v-${verdictClass}`}>
+                <span className="eyebrow">DECISION</span>
                 <strong>{result.decision}</strong>
-                <p>{result.summaryLine}</p>
-                <small>{result.realTelegraph ? `REAL TELEGRAPH · x402 SPEND RAW ${result.spendRaw}` : "DEMO EVIDENCE · NOT TELEGRAPH OUTPUT"}</small>
+                <p className="cv-reason">{result.summaryLine}</p>
+                <small className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{result.realTelegraph ? `REAL TELEGRAPH · x402 SPEND RAW ${result.spendRaw}` : "DEMO EVIDENCE · NOT TELEGRAPH OUTPUT"}</small>
               </div>
 
-              <div className="content-signals">
-                <div className="content-section-label">EVIDENCE</div>
+              <div className="signal-list">
+                <span className="eyebrow" style={{ display: "block", marginBottom: 4 }}>EVIDENCE</span>
                 {result.signals.map((signal) => (
-                  <article key={`${signal.kind}-${signal.minerId}`}>
+                  <article className="signal-item" key={`${signal.kind}-${signal.minerId}`}>
                     <div>
-                      <strong>{signal.kind.replaceAll("_", " ")}</strong>
-                      <span>{signal.intent}</span>
+                      <strong className={`signal-kind ${kindClass(signal.kind)}`}>{signal.kind.replaceAll("_", " ")}</strong>
+                      <small>{signal.intent}</small>
                     </div>
-                    <div className="content-signal-value">
-                      <b>{signal.label.toUpperCase()}</b>
-                      <span>{confidence(signal.confidence)}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <b style={{ fontSize: 13 }}>{signal.label.toUpperCase()}</b>
+                      <div><small>{confidence(signal.confidence)}</small></div>
                     </div>
-                    <small>{signal.source === "telegraph" ? `${signal.minerName} · Miner ${signal.minerId}` : "Deterministic demo classifier"}</small>
                   </article>
                 ))}
               </div>
 
-              <div className="content-receipt-card">
-                <div className="content-section-label">AUCTORAIL CONTENT RECEIPT</div>
-                <p>{result.receipt.receiptHash}</p>
-                <div className="content-receipt-actions">
-                  <button type="button" onClick={() => onVerifyReceipt(JSON.stringify(result.receipt, null, 2))}>VERIFY RECEIPT</button>
-                  <button type="button" onClick={shareResult}>{copied ? "COPIED" : "SHARE RESULT"}</button>
+              <div className="card card-pad" style={{ padding: 18 }}>
+                <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>AUCTORAIL CONTENT RECEIPT</span>
+                <code style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", overflowWrap: "anywhere" }}>{result.receipt.receiptHash}</code>
+                <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => onVerifyReceipt(JSON.stringify(result.receipt, null, 2))}>VERIFY RECEIPT</button>
+                  <button type="button" className="btn btn-sm" onClick={shareResult}>{copied ? "COPIED" : "SHARE RESULT"}</button>
                 </div>
               </div>
             </>
           )}
-        </div>
-      </section>
 
-      <section className="content-policy-note">
-        <strong>FAIL-CLOSED BY DESIGN</strong>
-        <p>Strong scam evidence can BLOCK. Missing or inconclusive required evidence becomes HOLD. AI-written text is informational by itself; it only becomes a policy conflict when a publication explicitly claims human authorship and the AI-generation evidence crosses the configured threshold.</p>
-      </section>
+          <div className="note">
+            <span style={{ fontSize: 18, display: "grid", placeItems: "center", width: 30, height: 30, margin: "2px auto 0", border: "1px solid var(--line)", borderRadius: 8, color: "var(--accent)" }} aria-hidden="true">✓</span>
+            <div>
+              <strong>FAIL-CLOSED BY DESIGN</strong>
+              <p>Strong scam evidence can BLOCK. Missing or inconclusive required evidence becomes HOLD. AI-written text is informational by itself; it only becomes a policy conflict when a publication explicitly claims human authorship and the AI-generation evidence crosses the configured threshold.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

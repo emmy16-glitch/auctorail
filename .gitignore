@@ -12,3 +12,7 @@ coverage/
 
 # ProofGate runtime state
 .proofgate/
+data/evidence/adaptive/
+
+# QA runtime artifacts
+playwright-artifacts/

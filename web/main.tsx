@@ -1,43 +1,62 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  ExecutionScreen,
-  type ExecutionIntelligenceSource,
-  type ExecutionPermitSummary,
-  type ExecutionResponse,
-  type ExecutionUiPhase
-} from "./ExecutionScreen";
-import {
-  ActivityScreen,
-  type ActivityItem,
-  type ActivityTechnicalDetail
-} from "./ActivityScreen";
+import { ExecutionScreen, type ExecutionIntelligenceSource, type ExecutionPermitSummary, type ExecutionResponse, type ExecutionUiPhase } from "./ExecutionScreen";
+import { ActivityScreen, type ActivityItem, type ActivityTechnicalDetail } from "./ActivityScreen";
 import { PermissionsScreen } from "./PermissionsScreen";
 import { SecurityLabScreen } from "./SecurityLabScreen";
-import { CheckingScreen } from "./CheckingScreen";
-import {
-  buildAuthorizationTechnical,
-  describeAuthorizationOutcome,
-  type AuthorizationCheck
-} from "./authorization-presenter";
-import "./styles.css";
-import "./checking-screen.css";
-import "./mobile-readability.css";
-import "./surface-router.css";
-import "./ui-fixes.css";
+import { CheckingScreen, type CheckPhase, type CheckStage, type EventTimes } from "./CheckingScreen";
+import { HomeLandingScreen } from "./HomeLandingScreen";
+import { ContentTrustScreen } from "./ContentTrustScreen";
+import { VerifyScreen } from "./VerifyScreen";
+import { GuidedDemoScreen } from "./GuidedDemoScreen";
+import { SdkScreen } from "./SdkScreen";
+import { ShieldIcon, FileIcon, LockIcon } from "./icons";
+import "./app.css";
 
-const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? "").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_PROOFGATE_API_URL ?? import.meta.env.VITE_AUCTORAIL_API_URL ?? "").replace(/\/$/, "");
 const VENDOR_ADDRESS = "0xB38d0405DF1b15961aEf29C7c45f2ED285822c14";
-const VENDOR_LABEL = "ProofGate Vendor";
+const VENDOR_LABEL = "Auctorail Vendor";
 const AGENT_ID = "invoice-bot";
 const MAX_USDC = 10;
 const BASE_SEPOLIA_CHAIN_ID = 84532;
 const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
+const GITHUB_URL = "https://github.com/emmy16-glitch/auctorail";
 
-type Surface = "check" | "activity" | "permissions" | "security";
-type CheckPhase = "checking" | "ready" | "error";
-type Phase = "idle" | CheckPhase | ExecutionUiPhase;
-type CheckStage = "rules" | "miners" | "decision";
+export type Route = "home" | "check" | "activity" | "permissions" | "security" | "content" | "verify" | "demo" | "docs";
+
+const ROUTE_BY_PATH: Record<string, Route> = {
+  "": "home",
+  check: "check",
+  activity: "activity",
+  permissions: "permissions",
+  "security-lab": "security",
+  content: "content",
+  verify: "verify",
+  demo: "demo",
+  docs: "docs"
+};
+
+function parseRoute(): Route {
+  const raw = window.location.hash.replace(/^#\/?/, "").split(/[?#]/, 1)[0];
+  return ROUTE_BY_PATH[raw] ?? "home";
+}
+
+function routePath(route: Route): string {
+  const byRoute: Record<Route, string> = {
+    home: "",
+    check: "check",
+    activity: "activity",
+    permissions: "permissions",
+    security: "security-lab",
+    content: "content",
+    verify: "verify",
+    demo: "demo",
+    docs: "docs"
+  };
+  return `#/${byRoute[route]}`;
+}
+
+type CheckDecisionPhase = "idle" | CheckPhase | ExecutionUiPhase;
 type Decision = "ALLOW" | "HOLD" | "BLOCK";
 
 type AuthorizationResponse = {
@@ -62,7 +81,7 @@ type AuthorizationResponse = {
     reference: string;
   };
   mandate: { id: string; hash: string; maxPerAction: string; expiresAt: string };
-  checks?: AuthorizationCheck[];
+  checks?: { name: string; status: "PASS" | "HOLD" | "BLOCK"; reason: string; code?: string }[];
   evidence: {
     status: string;
     code?: string;
@@ -78,8 +97,6 @@ type AuthorizationResponse = {
 };
 
 type ApiError = { error?: string; detail?: string };
-type EventTimes = { request: string; rules?: string; miners?: string; decision?: string };
-type SvgProps = React.SVGProps<SVGSVGElement>;
 type RequestSnapshot = {
   limit: number;
   amount: number;
@@ -87,19 +104,6 @@ type RequestSnapshot = {
   reason: string;
   reference: string;
 };
-
-function ShieldIcon(props: SvgProps) {
-  return <svg viewBox="0 0 48 56" aria-hidden="true" {...props}><path d="M24 3 43 10v15c0 12-7.6 22.4-19 28C12.6 47.4 5 37 5 25V10L24 3Z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="miter" /></svg>;
-}
-function MenuIcon(props: SvgProps) {
-  return <svg viewBox="0 0 28 28" aria-hidden="true" {...props}><path d="M4 7h20M4 14h20M4 21h20" fill="none" stroke="currentColor" strokeWidth="2" /></svg>;
-}
-function FileIcon(props: SvgProps) {
-  return <svg viewBox="0 0 38 44" aria-hidden="true" {...props}><path d="M7 2h16l8 8v32H7V2Z" fill="none" stroke="currentColor" strokeWidth="2.5" /><path d="M23 2v9h8M12 21h14M12 27h14M12 33h10" fill="none" stroke="currentColor" strokeWidth="2" /></svg>;
-}
-function LockIcon(props: SvgProps) {
-  return <svg viewBox="0 0 40 44" aria-hidden="true" {...props}><path d="M11 18v-6a9 9 0 0 1 18 0v6M6 18h28v23H6V18Z" fill="none" stroke="currentColor" strokeWidth="2.5" /><path d="M20 27v7" stroke="currentColor" strokeWidth="2.5" /></svg>;
-}
 
 function formatUsdc(value: number): string { return value.toFixed(2); }
 function durationLabel(seconds: number): string {
@@ -126,18 +130,18 @@ function friendlyError(code: string): string {
     case "live_authorization_disabled": return "Live checks are not enabled on this deployment.";
     case "telegraph_credentials_unavailable": return "The live Telegraph wallet is not connected yet.";
     case "permit_signer_unavailable": return "The production permit signer is unavailable. No Miner or vendor payment was started.";
-    case "permit_issuance_failed": return "ProofGate could not issue a valid execution permit. The vendor payment was not started.";
+    case "permit_issuance_failed": return "Auctorail could not issue a valid execution permit. The vendor payment was not started.";
     case "executor_credentials_unavailable": return "The protected Base Sepolia executor is unavailable. No Miner or vendor payment was started.";
-    case "live_rate_limited": return "ProofGate paused new live Miner calls because this deployment reached its hourly safety quota. Telegraph was not called for this attempt.";
+    case "live_rate_limited": return "Auctorail paused new live Miner calls because this deployment reached its hourly safety quota. Telegraph was not called for this attempt.";
     case "policy_rate_limited": return "The local rules service is receiving too many requests. Try again in a moment.";
-    case "live_daily_budget_exhausted": return "ProofGate reached this deployment's daily budget for real x402 evidence. No new Miner call was started.";
+    case "live_daily_budget_exhausted": return "Auctorail reached this deployment's daily budget for real x402 evidence. No new Miner call was started.";
     case "live_verification_failed": return "The real Miner check did not finish safely. Nothing was approved.";
-    case "frozen_request_mismatch": return "The request changed after the rules check. ProofGate rejected the changed request before using the old authorization.";
+    case "frozen_request_mismatch": return "The request changed after the rules check. Auctorail rejected the changed request before using the old authorization.";
     case "frozen_request_required":
     case "frozen_request_invalid":
     case "frozen_request_expired":
     case "frozen_request_consumed": return "The verified preflight is no longer valid. Start a new check before any live Miner request.";
-    case "origin_not_allowed": return "This page is not allowed to use the ProofGate API.";
+    case "origin_not_allowed": return "This page is not allowed to use the Auctorail API.";
     default: return "The request could not be checked safely. Nothing was approved.";
   }
 }
@@ -150,9 +154,9 @@ function friendlyExecutionError(code: string): string {
     case "execution_session_invalid":
     case "execution_session_expired":
     case "execution_session_consumed": return "The protected execution session is no longer usable. No new transaction was started by this request.";
-    case "execution_rate_limited": return "ProofGate reached its protected execution safety quota. No transaction was started by this request.";
+    case "execution_rate_limited": return "Auctorail reached its protected execution safety quota. No transaction was started by this request.";
     case "executor_credentials_unavailable": return "The protected Base Sepolia executor is unavailable. No transaction was started by this request.";
-    case "proof_receipt_verification_failed": return "Execution may have occurred, but ProofGate could not verify its receipt. Automatic retry is locked.";
+    case "proof_receipt_verification_failed": return "Execution may have occurred, but Auctorail could not verify its receipt. Automatic retry is locked.";
     case "execution_response_mismatch": return "The execution response did not match the exact authorized request. Automatic retry is locked.";
     default: return "The execution request did not return a trustworthy final receipt. Automatic retry is locked.";
   }
@@ -161,8 +165,30 @@ function friendlyExecutionError(code: string): string {
 function executionHttpFailureIsDefinitelyPreBroadcast(code: string): boolean {
   return ["execution_token_invalid","idempotency_key_required","idempotency_key_conflict","execution_session_invalid","execution_session_expired","execution_session_consumed","executor_credentials_unavailable","execution_rate_limited","request_too_large","request_body_invalid","invalid_execution_request"].includes(code);
 }
-function isExecutionPhase(phase: Phase): phase is ExecutionUiPhase {
+function isExecutionPhase(phase: CheckDecisionPhase): phase is ExecutionUiPhase {
   return phase === "executing" || phase === "executed" || phase === "execution_failed" || phase === "execution_ambiguous";
+}
+
+function buildAuthorizationTechnical(auth: AuthorizationResponse, recipientLabel: string): ActivityTechnicalDetail[] {
+  return [
+    { label: "Decision", value: auth.decision ?? "—" },
+    { label: "Policy", value: `${auth.policyId} · v${auth.policyVersion}`, mono: true },
+    { label: "Risk tier", value: auth.riskTier },
+    { label: "Agent", value: AGENT_ID, mono: true },
+    { label: "Amount", value: `${auth.action.amount} USDC` },
+    { label: "Recipient", value: `${recipientLabel} · ${auth.action.recipient}`, mono: true },
+    { label: "Action hash", value: auth.action.hash, mono: true },
+    { label: "Freeze fingerprint", value: auth.freezeFingerprint, mono: true },
+    { label: "Evidence", value: auth.evidence.status },
+    { label: "Mandate hash", value: auth.mandate.hash, mono: true }
+  ];
+}
+
+function describeAuthorizationOutcome(result: AuthorizationResponse): string {
+  if (result.decision === "ALLOW") return result.reason || "All required checks passed for the exact action.";
+  if (result.decision === "HOLD") return result.reason || "Required evidence did not reach the policy threshold, so the request is held.";
+  if (result.decision === "BLOCK") return result.reason || "A policy or trusted evidence check blocked this request.";
+  return result.reason || "The authorization has not been decided yet.";
 }
 
 function executionTechnical(auth: AuthorizationResponse, response: ExecutionResponse | null, errorCode?: string): ActivityTechnicalDetail[] {
@@ -178,8 +204,244 @@ function executionTechnical(auth: AuthorizationResponse, response: ExecutionResp
   ];
 }
 
+/* ------------------------------------------------------------------ */
+/*  Shell                                                               */
+/* ------------------------------------------------------------------ */
+
+const NAV_LINKS: { route: Route; label: string }[] = [
+  { route: "check", label: "CHECK" },
+  { route: "activity", label: "ACTIVITY" },
+  { route: "permissions", label: "PERMISSIONS" },
+  { route: "security", label: "SECURITY LAB" }
+];
+
+function TopNav({ route }: { route: Route }) {
+  const go = (target: string) => { window.location.hash = target; };
+
+  const NavButton = ({ target, label }: { target: Route; label: string }) => (
+    <button type="button" className={route === target ? "active" : ""} onClick={() => go(routePath(target))}>{label}</button>
+  );
+
+  return (
+    <header className="top-nav">
+      <div className="top-nav-inner">
+        <a className="brand-lockup home-brand" href={routePath("home")}>
+          <ShieldIcon className="brand-shield" />
+          <span>
+            <strong>AUCTORAIL</strong>
+            <small>Authorization rails</small>
+          </span>
+        </a>
+        <nav className="nav-links" aria-label="Auctorail sections">
+          {NAV_LINKS.map((link) => <NavButton key={link.route} target={link.route} label={link.label} />)}
+        </nav>
+        <div className="nav-side">
+          <NavButton target="verify" label="VERIFY" />
+          <NavButton target="docs" label="DOCS" />
+          <span className="status-pill"><span className="status-dot" aria-hidden="true" />BASE SEPOLIA · TESTNET</span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div className="site-footer-inner">
+        <a className="brand-lockup" href={routePath("home")}>
+          <ShieldIcon className="brand-shield" />
+          <span><strong>AUCTORAIL</strong><small>Authorization rails</small></span>
+        </a>
+        <p>Prove authority before execution · Base Sepolia testnet build</p>
+        <nav aria-label="Footer">
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
+          <a href={routePath("docs")}>Docs</a>
+          <a href={routePath("verify")}>Verify</a>
+        </nav>
+      </div>
+    </footer>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Check surface (idle form)                                          */
+/* ------------------------------------------------------------------ */
+
+interface CheckSurfaceProps {
+  authorityActive: boolean;
+  limit: number;
+  durationSeconds: number;
+  amount: number;
+  reason: string;
+  reference: string;
+  requestDetailsOpen: boolean;
+  requestEditMode: boolean;
+  canCheck: boolean;
+  statusMessage: string;
+  onToggleDetails: () => void;
+  onEnterEditMode: () => void;
+  onExitEditMode: () => void;
+  onAdjustLimit: (delta: number) => void;
+  onAdjustDuration: (delta: number) => void;
+  onAdjustAmount: (delta: number) => void;
+  onAmountInput: (value: number) => void;
+  onReasonChange: (value: string) => void;
+  onReferenceChange: (value: string) => void;
+  onCheck: () => void;
+}
+
+function CheckFormSurface(props: CheckSurfaceProps) {
+  const {
+    authorityActive, limit, durationSeconds, amount, reason, reference,
+    requestDetailsOpen, requestEditMode, canCheck, statusMessage,
+    onToggleDetails, onEnterEditMode, onExitEditMode,
+    onAdjustLimit, onAdjustDuration, onAdjustAmount, onAmountInput,
+    onReasonChange, onReferenceChange, onCheck
+  } = props;
+
+  return (
+    <>
+      <section className="check-heading">
+        <h1>Control what an agent can do.</h1>
+        <p>Set the permission, give it a request. Auctorail enforces the decision automatically.</p>
+      </section>
+
+      <section className="card card-pad" aria-label="Agent permission">
+        <div className="agent-row">
+          <div className="agent-id">
+            <span>AGENT PERMISSION</span>
+            <strong>{AGENT_ID}</strong>
+          </div>
+          <span className={`badge ${authorityActive ? "ok" : "block"}`}>{authorityActive ? "ACTIVE" : "REVOKED"}</span>
+        </div>
+
+        <div className="form-row">
+          <div className="form-row-head"><span>MAX PAYMENT</span><span className="mono">{formatUsdc(limit)} USDC</span></div>
+          <div className="stepper" role="group" aria-label="Maximum payment">
+            <button type="button" aria-label="Decrease maximum payment" onClick={() => onAdjustLimit(-1)} disabled={limit <= 0.01}>−</button>
+            <output data-testid="limit-value">{formatUsdc(limit)} USDC</output>
+            <button type="button" aria-label="Increase maximum payment" onClick={() => onAdjustLimit(1)} disabled={limit >= MAX_USDC}>+</button>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-row-head"><span>ALLOWED RECIPIENT</span><span className="badge muted">PINNED</span></div>
+          <div className="recipient-row-body" data-testid="locked-recipient">
+            <div className="recipient-id">
+              <strong>{VENDOR_LABEL}</strong>
+              <small title={VENDOR_ADDRESS}>{shortAddress(VENDOR_ADDRESS)} · Base Sepolia test recipient</small>
+            </div>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-row-head"><span>PERMISSION WINDOW</span></div>
+          <div className="stepper" role="group" aria-label="Permission duration">
+            <button type="button" aria-label="Shorten permission duration" onClick={() => onAdjustDuration(-1)} disabled={durationSeconds === DURATION_STEPS[0]}>−</button>
+            <output data-testid="duration-value">{durationLabel(durationSeconds)}</output>
+            <button type="button" aria-label="Extend permission duration" onClick={() => onAdjustDuration(1)} disabled={durationSeconds === DURATION_STEPS[DURATION_STEPS.length - 1]}>+</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card card-pad" aria-label="Current request">
+        <button className="request-summary" type="button" aria-expanded={requestDetailsOpen} onClick={onToggleDetails}>
+          <div className="rs-copy">
+            <span className="eyebrow">CURRENT REQUEST</span>
+            <strong>{formatUsdc(amount)} USDC → {VENDOR_LABEL}</strong>
+            <small>{reason} · Ref: {reference || "—"}</small>
+          </div>
+          <FileIcon className="rs-icon" />
+        </button>
+
+        {requestDetailsOpen && (
+          <div className="request-editor" data-testid="request-editor">
+            <p className="editor-note">
+              <strong>Agent request.</strong> In an integration, {AGENT_ID} supplies this action automatically. Editing below is only a hackathon/test control.
+            </p>
+            <div className="editor-grid">
+              <div className="field">
+                <label htmlFor="request-amount">AMOUNT (USDC)</label>
+                <div className="stepper">
+                  <button type="button" aria-label="Decrease request amount" onClick={() => onAdjustAmount(-1)} disabled={amount <= 0.01}>−</button>
+                  <input
+                    id="request-amount"
+                    className="input"
+                    inputMode="decimal"
+                    value={Number.isFinite(amount) ? amount.toFixed(2) : ""}
+                    onChange={(event) => { const next = Number(event.target.value); onAmountInput(Number.isFinite(next) ? next : 0); }}
+                  />
+                  <button type="button" aria-label="Increase request amount" onClick={() => onAdjustAmount(1)} disabled={amount >= MAX_USDC}>+</button>
+                </div>
+              </div>
+              <label className="field full">
+                <span>REASON</span>
+                <input className="input" value={reason} maxLength={256} onChange={(event) => onReasonChange(event.target.value)} />
+              </label>
+              <label className="field full">
+                <span>REFERENCE</span>
+                <input className="input" value={reference} maxLength={200} onChange={(event) => onReferenceChange(event.target.value)} />
+              </label>
+            </div>
+            {requestEditMode ? (
+              <button className="btn btn-block" type="button" onClick={onExitEditMode}>DONE EDITING</button>
+            ) : (
+              <button className="btn btn-ghost btn-block" type="button" onClick={onEnterEditMode} data-testid="edit-test-request">EDIT TEST REQUEST</button>
+            )}
+          </div>
+        )}
+      </section>
+
+      <div className="request-check-actions">
+        <button className="btn btn-primary btn-lg btn-block" type="button" onClick={onCheck} disabled={!canCheck}>
+          <span>CHECK THIS REQUEST</span><span className="arrow" aria-hidden="true">→</span>
+        </button>
+        <div className={`note ${authorityActive ? "" : "block"}`} role="status" aria-live="polite">
+          <LockIcon />
+          <div>
+            <strong>{authorityActive ? "Nothing is sent yet." : "Permission revoked."}</strong>
+            <p>{statusMessage}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Result rail (idle preview)                                         */
+/* ------------------------------------------------------------------ */
+
+function ResultPreview() {
+  const steps = [
+    "Request frozen & hashed",
+    "Permission checked first",
+    "Evidence bound to the action",
+    "Decision: ALLOW · HOLD · BLOCK"
+  ];
+  return (
+    <div className="result-empty">
+      <ShieldIcon />
+      <strong>The decision appears here.</strong>
+      <p>Run the check and every stage — rules, evidence, decision — is shown exactly as it happens.</p>
+      <div className="result-preview">
+        {steps.map((step, index) => (
+          <div className="result-preview-row" key={step}><i>{String(index + 1).padStart(2, "0")}</i><span>{step}</span></div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  App                                                                 */
+/* ------------------------------------------------------------------ */
+
 function App() {
-  const [surface, setSurface] = useState<Surface>("check");
+  const [route, setRoute] = useState<Route>(() => parseRoute());
+  const [verifyInput, setVerifyInput] = useState("");
+
   const [authorityActive, setAuthorityActive] = useState(true);
   const [limit, setLimit] = useState(5);
   const [durationIndex, setDurationIndex] = useState(2);
@@ -188,8 +450,7 @@ function App() {
   const [reference, setReference] = useState("INV-4471");
   const [requestDetailsOpen, setRequestDetailsOpen] = useState(false);
   const [requestEditMode, setRequestEditMode] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState<CheckDecisionPhase>("idle");
   const [checkStage, setCheckStage] = useState<CheckStage>("rules");
   const [eventTimes, setEventTimes] = useState<EventTimes | null>(null);
   const [checkSnapshot, setCheckSnapshot] = useState<RequestSnapshot | null>(null);
@@ -205,6 +466,16 @@ function App() {
   const abortRef = useRef<AbortController | null>(null);
   const snapshotRef = useRef<RequestSnapshot | null>(null);
 
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseRoute());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, [route]);
+
   const durationSeconds = DURATION_STEPS[durationIndex];
   const amountValid = Number.isFinite(amount) && amount > 0 && amount <= MAX_USDC;
   const limitValid = Number.isFinite(limit) && limit > 0 && limit <= MAX_USDC;
@@ -212,8 +483,8 @@ function App() {
   const canCheck = authorityActive && amountValid && limitValid && reason.trim().length > 0 && phase === "idle";
 
   const statusMessage = useMemo(() => {
-    if (!authorityActive) return "Agent permission is revoked. Restore it in PERMISSIONS before starting a new request.";
-    if (!withinLimit) return "This request is above the current maximum. ProofGate will block it locally before any Miner is paid.";
+    if (!authorityActive) return "Agent permission is revoked. Restore it in Permissions before starting a new request.";
+    if (!withinLimit) return "This request is above the current maximum. Auctorail will block it locally before any Miner is paid.";
     return "The request is normally supplied by the agent. This hackathon UI lets you trigger the same automated authorization path manually.";
   }, [authorityActive, withinLimit]);
 
@@ -325,10 +596,8 @@ function App() {
         setExecutionError(message);
         setPhase(preBroadcast ? "execution_failed" : "execution_ambiguous");
         pushActivity({
-          id: `execution:${executionId}`,
-          status: preBroadcast ? "FAILED" : "UNCERTAIN",
-          amount: formatUsdc(snapshot.amount), recipient: VENDOR_LABEL,
-          detail: preBroadcast ? `${message} No vendor transaction was started by this attempt.` : `${message} ProofGate will not broadcast a replacement transaction automatically.`,
+          id: `execution:${executionId}`, status: preBroadcast ? "FAILED" : "UNCERTAIN", amount: formatUsdc(snapshot.amount), recipient: VENDOR_LABEL,
+          detail: preBroadcast ? `${message} No vendor transaction was started by this attempt.` : `${message} Auctorail will not broadcast a replacement transaction automatically.`,
           time: activityTime(), technical: executionTechnical(liveResult, null, code)
         });
         return;
@@ -353,7 +622,7 @@ function App() {
         setPhase("executed");
         pushActivity({
           id: `executed:${body.receipt.hash}`, status: "EXECUTED", amount: body.payment.amount, recipient: VENDOR_LABEL,
-          detail: "ProofGate authorized the exact request, executed it once on Base Sepolia, confirmed the transaction, and recorded a verifiable receipt.",
+          detail: "Auctorail authorized the exact request, executed it once on Base Sepolia, confirmed the transaction, and recorded a verifiable receipt.",
           time: activityTime(), proofAvailable: true, technical: executionTechnical(liveResult, body)
         });
       } else if (body.status === "AMBIGUOUS") {
@@ -361,23 +630,25 @@ function App() {
         setExecutionError(message);
         setPhase("execution_ambiguous");
         pushActivity({ id: `execution:${executionId}`, status: "UNCERTAIN", amount: body.payment.amount, recipient: VENDOR_LABEL,
-          detail: "Execution was dispatched, but ProofGate could not establish a trustworthy final confirmation. Automatic retry is locked to avoid a duplicate payment.",
+          detail: "Execution was dispatched, but Auctorail could not establish a trustworthy final confirmation. Automatic retry is locked to avoid a duplicate payment.",
           time: activityTime(), technical: executionTechnical(liveResult, body, body.code) });
       } else {
         const message = body.error ?? "The protected executor did not complete the authorized payment.";
         setExecutionError(message);
         setPhase("execution_failed");
         pushActivity({ id: `execution:${executionId}`, status: "FAILED", amount: body.payment.amount, recipient: VENDOR_LABEL,
-          detail: "The authorized execution did not complete with a confirmed receipt. ProofGate did not automatically retry it.",
+          detail: "The authorized execution did not complete with a confirmed receipt. Auctorail did not automatically retry it.",
           time: activityTime(), technical: executionTechnical(liveResult, body, body.code) });
       }
     } catch {
       if (requestDispatched) {
-        const message = "The execution request lost its trustworthy response after dispatch. The payment may have reached Base Sepolia, so ProofGate will not retry automatically.";
+        const message = "The execution request lost its trustworthy response after dispatch. The payment may have reached Base Sepolia, so Auctorail will not retry automatically.";
         setExecutionError(message);
         setPhase("execution_ambiguous");
-        pushActivity({ id: `execution:${executionId}`, status: "UNCERTAIN", amount: formatUsdc(snapshot.amount), recipient: VENDOR_LABEL,
-          detail: message, time: activityTime(), technical: executionTechnical(liveResult, null, "transport_response_lost") });
+        pushActivity({
+          id: `execution:${executionId}`, status: "UNCERTAIN", amount: formatUsdc(snapshot.amount), recipient: VENDOR_LABEL,
+          detail: message, time: activityTime(), technical: executionTechnical(liveResult, null, "transport_response_lost")
+        });
       } else {
         setExecutionError("The protected execution request could not be started.");
         setPhase("execution_failed");
@@ -471,7 +742,7 @@ function App() {
           { label: "Result", value: "STOPPED SAFELY" }, { label: "Error code", value: code, mono: true },
           { label: "Stage", value: checkStage === "miners" ? "LIVE INTELLIGENCE" : "LOCAL RULES" },
           { label: "Telegraph call", value: minerCallStarted }, { label: "Permit issued", value: "NO" }, { label: "Vendor execution", value: "NO" },
-          ...(code === "live_rate_limited" ? [{ label: "Limit source", value: "ProofGate deployment hourly safety quota" }] : [])
+          ...(code === "live_rate_limited" ? [{ label: "Limit source", value: "Auctorail deployment hourly safety quota" }] : [])
         ]
       });
     }
@@ -498,95 +769,111 @@ function App() {
   } : null;
 
   const checkSurface = phase === "idle" ? (
-    <main className="content-shell">
-      <section className="hero-block">
-        <div><h1>Control what an<br />agent can do.</h1><p>Set the permission. Give it a request.<br />ProofGate enforces the decision automatically.</p></div>
-        <div className="hero-mark" aria-hidden="true"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><ShieldIcon /></div>
-      </section>
-
-      <section className="authority-panel hard-shadow" aria-label="Agent permission">
-        <div className="panel-heading"><div><span className="eyebrow">AGENT PERMISSION</span><strong className="agent-name">invoice-bot</strong></div><span className={`active-badge ${authorityActive ? "" : "revoked"}`}>{authorityActive ? "ACTIVE" : "REVOKED"}</span></div>
-        <div className="control-section"><label>MAX PAYMENT</label><div className="stepper" role="group" aria-label="Maximum payment">
-          <button type="button" aria-label="Decrease maximum payment" onClick={() => adjustLimit(-1)} disabled={limit <= 0.01}>−</button>
-          <output data-testid="limit-value">{formatUsdc(limit)} USDC</output>
-          <button type="button" aria-label="Increase maximum payment" onClick={() => adjustLimit(1)} disabled={limit >= MAX_USDC}>+</button>
-        </div></div>
-        <div className="control-section"><label>ALLOWED RECIPIENT</label><div className="locked-recipient" data-testid="locked-recipient"><div><strong>{VENDOR_LABEL}</strong><span title={VENDOR_ADDRESS}>{shortAddress(VENDOR_ADDRESS)} · Base Sepolia test recipient</span></div><b>PINNED</b></div></div>
-        <div className="control-section"><label>PERMISSION WINDOW</label><div className="stepper" role="group" aria-label="Permission duration">
-          <button type="button" aria-label="Shorten permission duration" onClick={() => adjustDuration(-1)} disabled={durationIndex === 0}>−</button>
-          <output data-testid="duration-value">{durationLabel(durationSeconds)}</output>
-          <button type="button" aria-label="Extend permission duration" onClick={() => adjustDuration(1)} disabled={durationIndex === DURATION_STEPS.length - 1}>+</button>
-        </div></div>
-      </section>
-
-      <section className={`request-panel hard-shadow ${requestDetailsOpen ? "editing" : ""}`} aria-label="Current request">
-        <button className="request-summary" type="button" aria-expanded={requestDetailsOpen} onClick={() => { setRequestDetailsOpen((open) => !open); if (requestDetailsOpen) setRequestEditMode(false); }}>
-          <div><span className="eyebrow">CURRENT REQUEST</span><strong>{formatUsdc(amount)} USDC → {VENDOR_LABEL}</strong><span>{reason}</span><span>Ref: {reference || "—"}</span></div><FileIcon />
-        </button>
-        {requestDetailsOpen && (
-          <div className="request-editor request-details" data-testid="request-editor">
-            <div className="request-origin-note"><strong>AGENT REQUEST</strong><span>In an integration, {AGENT_ID} supplies this action automatically. Editing below is only a hackathon/test control.</span></div>
-            <dl className="request-readout">
-              <div><dt>Agent</dt><dd>{AGENT_ID}</dd></div><div><dt>Recipient</dt><dd>{VENDOR_LABEL}<br /><code>{VENDOR_ADDRESS}</code></dd></div>
-              <div><dt>Amount</dt><dd>{formatUsdc(amount)} USDC</dd></div><div><dt>Reason</dt><dd>{reason}</dd></div><div><dt>Reference</dt><dd>{reference || "—"}</dd></div>
-            </dl>
-            {!requestEditMode ? (
-              <button className="edit-test-request" type="button" onClick={() => setRequestEditMode(true)}>EDIT TEST REQUEST</button>
-            ) : (
-              <div className="test-request-editor" data-testid="test-request-editor">
-                <div className="editor-row"><label htmlFor="request-amount">AMOUNT</label><div className="mini-stepper">
-                  <button type="button" aria-label="Decrease request amount" onClick={() => adjustAmount(-1)} disabled={amount <= 0.01}>−</button>
-                  <input id="request-amount" inputMode="decimal" value={Number.isFinite(amount) ? amount.toFixed(2) : ""} onChange={(event) => { const next = Number(event.target.value); setAmount(Number.isFinite(next) ? next : 0); resetDecision(); }} />
-                  <span>USDC</span><button type="button" aria-label="Increase request amount" onClick={() => adjustAmount(1)} disabled={amount >= MAX_USDC}>+</button>
-                </div></div>
-                <label className="editor-field">REASON<input value={reason} maxLength={256} onChange={(event) => { setReason(event.target.value); resetDecision(); }} /></label>
-                <label className="editor-field">REFERENCE<input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); resetDecision(); }} /></label>
-                <button className="done-editing" type="button" onClick={() => setRequestEditMode(false)}>DONE EDITING</button>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      <button className="check-button" type="button" onClick={checkRequest} disabled={!canCheck}><span>CHECK THIS REQUEST</span><span className="arrow" aria-hidden="true">→</span></button>
-      <div className="safety-note idle" role="status" aria-live="polite"><LockIcon /><div><strong>{authorityActive ? "Nothing is sent yet." : "Permission revoked."}</strong><p>{statusMessage}</p></div></div>
-    </main>
+    <div className="check-layout" data-testid="checking-screen">
+      <div className="check-form-col">
+        <CheckFormSurface
+          authorityActive={authorityActive}
+          limit={limit}
+          durationSeconds={durationSeconds}
+          amount={amount}
+          reason={reason}
+          reference={reference}
+          requestDetailsOpen={requestDetailsOpen}
+          requestEditMode={requestEditMode}
+          canCheck={canCheck}
+          statusMessage={statusMessage}
+          onToggleDetails={() => { setRequestDetailsOpen((open) => !open); if (requestDetailsOpen) setRequestEditMode(false); }}
+          onEnterEditMode={() => setRequestEditMode(true)}
+          onExitEditMode={() => setRequestEditMode(false)}
+          onAdjustLimit={adjustLimit}
+          onAdjustDuration={adjustDuration}
+          onAdjustAmount={adjustAmount}
+          onAmountInput={(value) => { setAmount(value); resetDecision(); }}
+          onReasonChange={(value) => { setReason(value); resetDecision(); }}
+          onReferenceChange={(value) => { setReference(value); resetDecision(); }}
+          onCheck={checkRequest}
+        />
+      </div>
+      <aside className="result-col" aria-label="Decision panel">
+        <ResultPreview />
+      </aside>
+    </div>
   ) : isExecutionPhase(phase) && executionAuthorization ? (
     <ExecutionScreen phase={phase} authorization={executionAuthorization} response={executionResult} error={executionError} proofOpen={proofOpen} onToggleProof={() => setProofOpen((open) => !open)} onNewRequest={clearCheckState} />
   ) : (
-    <CheckingScreen snapshot={shownSnapshot} phase={phase as CheckPhase} stage={checkStage} times={eventTimes} result={result} error={error} errorCode={errorCode} secondaryLabel={secondaryLabel} secondaryDisabled={secondaryDisabled} onSecondaryAction={onSecondaryAction} agentId={AGENT_ID} recipientLabel={VENDOR_LABEL} recipientAddress={VENDOR_ADDRESS} />
+    <CheckingScreen
+      snapshot={shownSnapshot}
+      phase={phase as CheckPhase}
+      stage={checkStage}
+      times={eventTimes}
+      result={result}
+      error={error}
+      errorCode={errorCode}
+      secondaryLabel={secondaryLabel}
+      secondaryDisabled={secondaryDisabled}
+      onSecondaryAction={onSecondaryAction}
+      agentId={AGENT_ID}
+      recipientLabel={VENDOR_LABEL}
+      recipientAddress={VENDOR_ADDRESS}
+    />
   );
 
+  function openVerifyWith(input: string) {
+    setVerifyInput(input);
+    window.location.hash = routePath("verify");
+  }
+
   return (
-    <div className="app-page">
-      <div className="live-strip" aria-label="Live environment"><span className="live-dot" /><span>LIVE</span><i>·</i><span>BASE SEPOLIA</span><i>·</i><span>REAL MINERS</span></div>
-      <header className="brand-row"><div className="brand-lockup"><ShieldIcon className="brand-shield" /><div><strong>PROOFGATE</strong><span>Real authorization</span></div></div><div className="menu-wrap">
-        <button className="menu-button" type="button" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><MenuIcon /></button>
-        {menuOpen && <div className="menu-popover" role="menu"><a href="https://github.com/emmy16-glitch/proof-gate" target="_blank" rel="noreferrer" role="menuitem">View source ↗</a><div className="menu-note">Real path<br />Telegraph /v1/ask + x402</div></div>}
-      </div></header>
-      <nav className="top-tabs pg-surface-tabs" aria-label="ProofGate sections">
-        <button type="button" className={surface === "check" ? "active" : ""} aria-current={surface === "check" ? "page" : undefined} onClick={() => setSurface("check")}>CHECK</button>
-        <button type="button" className={surface === "activity" ? "active" : ""} aria-current={surface === "activity" ? "page" : undefined} onClick={() => setSurface("activity")}>ACTIVITY</button>
-        <button type="button" className={surface === "permissions" ? "active" : ""} aria-current={surface === "permissions" ? "page" : undefined} onClick={() => setSurface("permissions")}>PERMISSIONS</button>
-        <button type="button" className={surface === "security" ? "active" : ""} aria-current={surface === "security" ? "page" : undefined} onClick={() => setSurface("security")}>SECURITY LAB</button>
-      </nav>
-      {surface === "check" ? checkSurface : surface === "activity" ? (
-        <ActivityScreen activities={activities} />
-      ) : surface === "permissions" ? (
-        <PermissionsScreen
-          agentId={AGENT_ID}
-          active={authorityActive}
-          limit={limit}
-          durationSeconds={durationSeconds}
-          recipientLabel={VENDOR_LABEL}
-          recipientAddress={VENDOR_ADDRESS}
-          onLimitChange={setControlLimit}
-          onDurationChange={setControlDuration}
-          onToggleActive={() => setAuthorityActive((current) => !current)}
-        />
-      ) : <SecurityLabScreen apiBase={API_BASE} />}
+    <div id="auctorail-home-root" className="app">
+      <TopNav route={route} />
+      <div className="page">
+        <div className={`page-inner ${route === "content" || route === "verify" || route === "docs" ? "narrow" : ""}`}>
+          {route === "home" && (
+            <HomeLandingScreen
+              onDemo={() => { window.location.hash = routePath("demo"); }}
+              onLive={() => { window.location.hash = routePath("check"); }}
+              onContent={() => { window.location.hash = routePath("content"); }}
+              onVerify={() => { window.location.hash = routePath("verify"); }}
+              onSecurity={() => { window.location.hash = routePath("security"); }}
+            />
+          )}
+          {route === "check" && checkSurface}
+          {route === "activity" && <ActivityScreen activities={activities} />}
+          {route === "permissions" && (
+            <PermissionsScreen
+              agentId={AGENT_ID}
+              active={authorityActive}
+              limit={limit}
+              durationSeconds={durationSeconds}
+              recipientLabel={VENDOR_LABEL}
+              recipientAddress={VENDOR_ADDRESS}
+              onLimitChange={setControlLimit}
+              onDurationChange={setControlDuration}
+              onToggleActive={() => setAuthorityActive((current) => !current)}
+            />
+          )}
+          {route === "security" && <SecurityLabScreen apiBase={API_BASE} />}
+          {route === "content" && <ContentTrustScreen onVerifyReceipt={openVerifyWith} />}
+          {route === "verify" && <VerifyScreen initialInput={verifyInput} />}
+          {route === "demo" && (
+            <GuidedDemoScreen
+              onBack={() => { window.location.hash = routePath("home"); }}
+              onLive={() => { window.location.hash = routePath("check"); }}
+              onActivity={() => { window.location.hash = routePath("activity"); }}
+              onPermissions={() => { window.location.hash = routePath("permissions"); }}
+              onSecurityLab={() => { window.location.hash = routePath("security"); }}
+            />
+          )}
+          {route === "docs" && <SdkScreen />}
+        </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }
 
-createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
