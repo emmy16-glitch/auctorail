@@ -1,363 +1,344 @@
-# Auctorail Locked Decisions
+# Auctorail locked decisions and design record
 
-This document prevents architecture drift during the Telegraph hackathon.
+This file records important product/security decisions that should not be casually changed because they define the trust model.
 
-If a new feature conflicts with this document or `ARCHITECTURE.md`, do not weaken an existing authorization invariant just to make the feature easier to demo.
+Some decisions originated when the project was named ProofGate. The current product name is **Auctorail**. Historical protocol identifiers are preserved where compatibility/provenance requires it.
 
-## Product thesis
+## How to read this document
 
-**Agent confidence is not permission to act.**
+Each item is labeled:
 
-Auctorail is a pre-execution authorization runtime for autonomous agents.
+- **CURRENT** — still aligned with current implementation.
+- **HISTORICAL** — records an earlier milestone and should not be treated as current behavior without checking source.
+- **COMPATIBILITY** — old naming/format retained intentionally.
 
-A principal defines bounded standing authority. The agent may propose an action. Telegraph/other trusted evidence sources provide intelligence. Auctorail deterministically decides whether the exact authority + exact evidence are sufficient. Only a short-lived, single-use Permit may authorize the protected effect.
+Current source and tests remain authoritative.
 
-## Public flow
+## D1 — Agent proposals are not authority
 
-```text
-MANDATE
-→ PROPOSE
-→ FREEZE EXACT ACTION
-→ DETERMINE REQUIRED EVIDENCE
-→ COLLECT / COMMIT EVIDENCE
-→ ALLOW / HOLD / BLOCK
-→ PERMIT
-→ CONTROLLED EXECUTION
-→ RECEIPT / RESULT
-```
+**Status: CURRENT**
 
-The public story remains simple even when the evidence graph is more sophisticated.
+The agent may propose an action but cannot grant itself permission to execute the protected effect.
 
-## Authority model
+Reason:
 
-Locked rules:
+A compromised or manipulated agent must not be the root of trust for its own permissions.
 
-- the agent cannot authorize itself;
-- a Miner cannot authorize an action by itself;
-- an LLM confidence score cannot authorize an action by itself;
-- the agent cannot create or expand the principal's Mandate;
-- the agent cannot lower the authoritative risk tier/quorum/evidence requirements;
-- the protected executor cannot run without a valid Permit;
-- the protected tool must not have a second agent-accessible bypass around Auctorail.
+## D2 — Principal-controlled Mandate is the standing authority boundary
 
-Normal successful operation does **not** require a human approval click for every action. Human/principal authority is expressed in the standing Mandate ahead of time.
+**Status: CURRENT**
 
-## Canonical action rule
+Authority originates from trusted principal configuration/Mandate state.
 
-All protected effects begin with an exact canonical action.
+Client fields may describe a request but must not become authoritative merely because the agent supplied them.
 
-### Payment path
+## D3 — Freeze exact action before authorization
 
-The v1 payment Action Contract remains Base Sepolia USDC-specific and is preserved as the concrete live-proven adapter.
+**Status: CURRENT**
 
-### General path
+Security-relevant semantics are normalized/canonicalized and committed before evidence acquisition/final policy.
 
-`proofgate.action.v2` binds:
+Reason:
 
-- namespaced action type;
-- exact target;
-- bounded JSON-safe parameters;
-- policy ID/version;
-- canonical payload/hash.
+An authorization for one action must not silently become authority for a modified action.
 
-Any protected semantic change creates a different action hash and requires fresh authorization.
+## D4 — Evidence is not authority
 
-Infrastructure may vary; protected effect semantics may not.
+**Status: CURRENT**
 
-## Mandate rule
+A Miner response is evidence evaluated inside the authority boundary.
 
-The standing Mandate is principal authority, not agent metadata.
+A favorable verdict cannot increase the agent's spending limit, change the permitted recipient or bypass another principal/policy constraint.
 
-Payment uses `proofgate.mandate.v1`.
+## D5 — Authority preflight occurs before paid evidence
 
-General actions use `proofgate.mandate.v2`, which binds:
+**Status: CURRENT**
 
-- principal/agent identity;
-- allowed action types;
-- exact allowed targets;
-- delegated evidence Intents;
-- policy ID/version;
-- lifecycle/timestamps/version;
-- canonical mandate hash.
+If the action is already outside authority, Auctorail should not pay for evidence that cannot make the request authorized.
 
-Authority must be checked **before potentially paid evidence acquisition** so an unauthorized action cannot spend the principal's evidence budget.
+This protects security and x402 budget.
 
-Authority must also be rechecked at Permit mint and immediately before generic execution. A Permit cannot outlive an invalid/expired Mandate.
+## D6 — Missing required evidence fails closed
 
-## Decision semantics
+**Status: CURRENT**
 
-Only three outcomes exist:
+Insufficient or unavailable required proof returns `HOLD` rather than optimistic permission.
 
-### ALLOW
-Every required authority and evidence check passes. Permit minting may proceed.
+`HOLD` is non-executable.
 
-### HOLD
-Proof is insufficient/uncertain but a known authorization violation is not established. Examples:
+## D7 — Explicit hard policy failure returns BLOCK
 
-- missing evidence;
-- stale evidence;
-- insufficient Miner diversity;
-- insufficient positive quorum;
-- confidence below floor;
-- unavailable/unknown provider result;
-- bounded deadline/attempt exhaustion;
-- required evidence commitment missing.
+**Status: CURRENT**
 
-No Permit. No execution.
+Examples:
 
-### BLOCK
-A known authority/security invariant failed. Examples:
+- outside Mandate;
+- action binding mismatch;
+- explicit negative evidence when policy says block;
+- revoked/expired authority;
+- invalid/replayed permit;
+- autonomous ceiling exceeded.
 
-- wrong agent/action/target/policy;
-- invalid/revoked/expired Mandate;
-- adaptive-plan downgrade;
-- un-delegated Intent;
-- explicit negative evidence;
-- tampered commitment/bundle/Permit;
-- prohibited x402 payment provenance;
-- execution kill switch disabled/unavailable.
+## D8 — Evidence must be explicitly bound to the exact context
 
-No Permit. No execution.
+**Status: CURRENT**
 
-`BLOCK` dominates `HOLD`.
+For the payment lane this includes exact subject/destination and chain.
 
-## Telegraph boundary
+Request metadata sent to Telegraph is routing context, not substitute proof of what the Miner asserted.
 
-Telegraph provides intelligence.
+## D9 — Provider diversity is counted by Miner ID
 
-A Miner result is **evidence**, not permission.
+**Status: CURRENT**
 
-The adaptive/quorum path is **Intent-first and provider-neutral**. Auctorail asks for a capability; Telegraph determines the serving Miner. Auctorail records the actual provider and validates the returned evidence.
+Repeated responses from one Miner cannot fake independent quorum.
 
-Historical v1 capability/direct-routing behavior remains part of the old canonical real execution path where the evidence contract required a specific compatible provider profile. It is not the design of the v1.2 quorum path.
+## D10 — Consequence can raise evidence requirements
 
-## Multi-Miner quorum rule
+**Status: CURRENT**
 
-v1.2 implements real same-Intent provider-diversity logic; it does **not** fabricate consensus.
-
-Locked rules:
-
-1. quorum counts **distinct serving Miner IDs**, not request count;
-2. repeated responses from the same Miner do not create independent votes;
-3. positive votes count only if they meet the configured positive-confidence floor;
-4. quorum requirements are deterministically derived from the frozen action;
-5. the agent cannot lower distinct-Miner/positive-vote/confidence/attempt/veto thresholds;
-6. additional same-Intent requests remain bounded by max attempts, total evidence budget and deadline;
-7. inability to obtain required diversity becomes `HOLD`;
-8. MEDIUM/HIGH have a `0.90` high-confidence negative early-veto threshold;
-9. final policy is stricter: **any explicit known-negative result blocks**, even below the early-veto threshold;
-10. the canonical Evidence Bundle commits every attempt and quorum summary.
-
-### Current adaptive payment quorum
+Current adaptive tiers:
 
 ```text
-LOW
-FRAUD_DETECTION
-  1 distinct Miner
-  1 positive
-  positive confidence >= 0.70
-
-MEDIUM
-FRAUD_DETECTION
-  2 distinct Miners
-  2 positives
-  positive confidence >= 0.75
-  max 4 attempts
-+ ONCHAIN_TX_LOOKUP
-
-HIGH
-FRAUD_DETECTION
-  3 distinct Miners
-  2 positives
-  positive confidence >= 0.80
-  max 5 attempts
-+ ONCHAIN_TX_LOOKUP
-+ WALLET_BALANCE_CHECK
+LOW     <= 5 USDC
+MEDIUM  > 5 to 50 USDC
+HIGH    > 50 USDC
 ```
 
-MEDIUM/HIGH early negative veto confidence is `0.90`.
+Current LOW deadline is **12 seconds**, not the older 35-second value.
 
-## Evidence Bundle rule
+## D11 — Stronger evidence cannot bypass execution ceiling
 
-Adaptive payment authorization uses a canonical Evidence Bundle.
+**Status: CURRENT**
 
-It commits:
-
-- exact action and plan;
-- every routed attempt;
-- exact serving Miner identity;
-- Intent/result/confidence/applicability;
-- signal/raw-response hashes;
-- x402 evidence-payment provenance/cost;
-- attempt number;
-- canonical quorum summaries;
-- aggregate evidence spend;
-- bundle hash.
-
-A self-consistent hash proves integrity, not source authenticity.
-
-Live provenance must be established inside the trusted acquisition boundary. Arbitrary agent-supplied JSON must not be treated as authenticated Telegraph evidence at a Permit-minting boundary.
-
-## x402 evidence-spend rule
-
-Buying intelligence is a consequential machine side effect and therefore bounded.
-
-Locked rules:
-
-- validate the actual 402 challenge before signing;
-- use the approved Base Sepolia USDC evidence-payment lane;
-- maximum per evidence request: `0.01 USDC`;
-- enforce the remaining aggregate tier budget before each payment;
-- signing must remain bound to the validated challenge/requirements;
-- one payment-bearing attempt per challenge;
-- require provable settlement;
-- never blindly retry an ambiguous paid request;
-- if the paid outcome is uncertain, reconcile rather than guessing.
-
-Current aggregate adaptive budgets:
+Current adaptive payment autonomous ceiling:
 
 ```text
-LOW    0.015 USDC
-MEDIUM 0.050 USDC
-HIGH   0.070 USDC
+10 USDC per action
 ```
 
-## General Action Adapter rule
+A HIGH evidence plan does not grant higher authority.
 
-v1.2 generalizes the authorization core through **trusted Action Adapters**.
+## D12 — x402 spending is bounded
 
-An adapter is trusted deployment code, not arbitrary agent-controlled/plugin code.
+**Status: CURRENT**
 
-It must define:
+Evidence payment is a side effect and must use an approved lane within a frozen evidence budget.
 
-- action type + policy ID/version;
-- `freeze(proposal)`;
-- `requiredIntents(action)`;
-- `evaluateTrusted(...)`;
-- `execute(action)`.
-
-Locked SDK rules:
-
-- `freeze()` output must match registered type/policy/version;
-- Mandate scope is checked before evidence acquisition;
-- every adapter-required Intent must be delegated by the principal;
-- trusted evaluation must explicitly declare exact `coveredIntents`;
-- missing required coverage → HOLD;
-- unrequested coverage → BLOCK;
-- required evidence with no cryptographic commitment → HOLD;
-- required evidence with no trusted checks → HOLD;
-- only all-PASS ALLOW can mint a Permit.
-
-Auctorail does not claim arbitrary third-party adapters are safe/sandboxed. Adapter code must be reviewed and must not accept replacement execution semantics from the agent.
-
-## General decision/Permit rule
-
-`proofgate.decision.v2` must bind:
-
-- Mandate hash;
-- action hash;
-- exact agent;
-- policy ID/version;
-- evidence commitment hash;
-- checks;
-- final decision/reason/time;
-- decision hash.
-
-Decision verification checks semantics as well as hashes. An attacker cannot recompute a self-consistent hash around a wrong agent or an `ALLOW` whose checks contain HOLD/BLOCK.
-
-`proofgate.permit.v2` binds:
-
-- Permit ID;
-- Mandate hash;
-- action hash;
-- decision hash;
-- evidence commitment hash;
-- policy ID/version;
-- nonce;
-- issue/expiry timestamps;
-- signer metadata/signature.
-
-Production mode rejects the HMAC development signer. Production-oriented signing is asymmetric (Ed25519/KMS/HSM-compatible).
-
-## Controlled execution rule
-
-Before a generic external effect:
-
-1. read the fail-closed execution kill switch;
-2. verify decision and Permit;
-3. re-evaluate the current Mandate;
-4. verify time/bindings/signature;
-5. atomically consume the Permit;
-6. only then call the trusted adapter.
-
-Kill-switch read failure is not interpreted as permission.
-
-The Permit is claimed before the protected callback.
-
-## Ambiguous effects rule
-
-An external-effect exception after Permit consumption may mean the remote system already performed the action.
-
-Therefore:
+Current maximum evidence budgets:
 
 ```text
-callback throws after claim
-→ AMBIGUOUS
-→ Permit remains consumed
-→ no automatic replay
-→ integration reconciles external state
+LOW     0.035 USDC
+MEDIUM  0.060 USDC
+HIGH    0.100 USDC
 ```
 
-This applies to general adapters and is consistent with the existing stricter transaction-specific ambiguity handling.
+## D13 — Evidence latency is bounded
 
-## Replay rule
+**Status: CURRENT**
 
-`permitId + nonce` identify one authorization use.
+Current overall deadlines:
 
-One Permit may cause at most one protected callback attempt.
-
-Multi-worker deployments should use the shared PostgreSQL replay store, not separate local filesystem stores.
-
-## Real proof vs architecture claims
-
-Locked claim boundaries:
-
-### We may say
-
-- v1.0 contains a real Telegraph/x402-backed Base Sepolia USDC execution;
-- v1.2 implements/tests same-Intent distinct-Miner quorum;
-- v1.2 implements/tests a general Action/Mandate/Decision/Permit/Executor core;
-- developers can register trusted custom adapters;
-- deterministic security harnesses cover the implemented invariants.
-
-### We must not say without evidence
-
-- a successful real 3-Miner Telegraph quorum has already been captured;
-- the historical v1.0 transaction exercised v1.2 quorum/general code;
-- GitHub/cloud/database example adapters are shipped live production integrations;
-- arbitrary untrusted adapters are sandboxed;
-- the historical transaction used Ed25519/PostgreSQL production paths;
-- Auctorail has undergone an independent production security audit.
-
-## Security validation rule
-
-Every release/freeze SHA must pass:
-
-```bash
-npm ci
-npm run ci
-npm run audit:prod
-npm run attack:lab
-npm run security:fuzz
-npm run security:fuzz:adaptive
-npm run security:fuzz:general
-npm run vendor:verify
+```text
+LOW     12s
+MEDIUM  60s
+HIGH    90s
 ```
 
-GitHub CI must also perform the pinned native Solidity reproducibility check on Linux x64.
+The deployed live payment API also bounds individual Telegraph calls.
 
-Do not move an existing release tag. Create a new immutable tag for a new frozen SHA.
+## D14 — Retry does not weaken policy
 
-## Final principle
+**Status: CURRENT**
 
-**Telegraph tells autonomous software what the outside world says. The principal defines what the agent may do. Auctorail determines how much breadth and provider independence the consequence deserves, then turns sufficient evidence plus standing authority into one-use permission for one exact action.**
+Bounded retry may seek usable evidence for the same frozen action and requirement.
+
+Retry must not change:
+
+- Intent;
+- target;
+- chain;
+- confidence floor;
+- quorum;
+- budget;
+- deadline;
+- action semantics.
+
+## D15 — Paid ambiguity requires reconciliation
+
+**Status: CURRENT**
+
+If x402 payment state is ambiguous, do not blindly purchase again.
+
+## D16 — Protected execution ambiguity requires reconciliation
+
+**Status: CURRENT**
+
+An external timeout is not proof that the side effect failed.
+
+Auctorail does not use blind retry for potentially irreversible effects.
+
+## D17 — Executable ALLOW uses short-lived one-use authority
+
+**Status: CURRENT**
+
+The authorization decision and the external effect remain separate stages.
+
+The agent does not receive a reusable protected credential.
+
+## D18 — Executor revalidates security state
+
+**Status: CURRENT**
+
+Execution-time checks can include:
+
+- permit integrity;
+- action/decision/evidence binding;
+- expiration;
+- Mandate status/version;
+- permit consumption;
+- kill switch.
+
+## D19 — Permit replay is rejected
+
+**Status: CURRENT**
+
+Consumed one-use authority cannot be used again.
+
+Durable deployments require shared persistent consumption state.
+
+## D20 — Kill-switch failure is fail-closed
+
+**Status: CURRENT**
+
+If trusted execution-enable state is unavailable, protected execution should not proceed.
+
+## D21 — Proof receipts are evidence of integrity/binding, not universal truth
+
+**Status: CURRENT**
+
+A valid Auctorail receipt can prove that the artifact matches Auctorail's recorded commitments.
+
+It does not prove a Miner conclusion is objectively true.
+
+## D22 — Deterministic demo is distinct from live usage
+
+**Status: CURRENT**
+
+Guided Demo, Security Lab, tests and fuzzing are not counted as genuine Telegraph usage.
+
+The public usage ledger counts only inspectable real external artifacts.
+
+## D23 — Canonical public real proof remains historical and immutable
+
+**Status: CURRENT / COMPATIBILITY**
+
+The 2026-09-02 Base Sepolia payment and related evidence/receipt are preserved with their historical identifiers.
+
+Do not rewrite the old artifact just to rename ProofGate to Auctorail.
+
+## D24 — Product branding is Auctorail
+
+**Status: CURRENT**
+
+Public product/interface/documentation copy should say Auctorail.
+
+Stable historical identifiers can remain:
+
+- `proofgate.*` schemas;
+- `ProofGateVendor` contract/artifacts;
+- compatibility exports;
+- old immutable proof strings.
+
+## D25 — SDK remains thin and unprivileged
+
+**Status: CURRENT**
+
+The repository-local SDK requests authorization and submits returned execution authority.
+
+It does not hold protected private keys or permit-signing authority.
+
+## D26 — Public SDK is not claimed as published npm release
+
+**Status: CURRENT**
+
+The package remains repository-local/private unless publication status changes explicitly.
+
+## D27 — Content Trust reuses generic authorization model
+
+**Status: CURRENT**
+
+Content Trust demonstrates reuse of Action/Mandate/Decision semantics outside payments.
+
+The project does not claim a publicly committed genuine live Content Trust Miner artifact unless one is actually preserved.
+
+## D28 — AI-generation evidence is not automatically malicious evidence
+
+**Status: CURRENT**
+
+Content policy must interpret evidence semantically. “AI-generated” alone is not equivalent to phishing/scam/malicious.
+
+## D29 — Browser/UI is not the security boundary
+
+**Status: CURRENT**
+
+Disabled buttons, hidden fields, client limits and routing guards are usability controls, not authoritative permission enforcement.
+
+Server/trusted code revalidates protected semantics.
+
+## D30 — Mobile/responsive quality is part of release validation
+
+**Status: CURRENT**
+
+The redesigned product is checked at desktop and narrow/mobile viewports. Long hashes, grids and technical content must not create horizontal overflow.
+
+## D31 — Reduced-motion should preserve information, not freeze the product
+
+**Status: CURRENT**
+
+Home terminal animations use a calmer reduced-motion mode while continuing to progress rather than becoming permanently static.
+
+## D32 — Modern Node runtime is recommended
+
+**Status: CURRENT operational guidance**
+
+Node 24 is recommended for current development because several redesigned browser/DOM development dependencies officially target Node 22/24.
+
+Some existing CI workflow configuration still runs Node 20 for compatibility and currently emits engine warnings.
+
+## D33 — Honest claim boundaries are a product requirement
+
+**Status: CURRENT**
+
+Auctorail should not claim:
+
+- unhackable;
+- guaranteed safe AI;
+- independent audit without one;
+- production certification without one;
+- live proof that is only deterministic demo;
+- public package release before publication.
+
+## Historical decisions
+
+Earlier planning docs may include temporary choices that were later superseded, including older evidence tier boundaries, old test counts, older UI architecture and ProofGate branding.
+
+Those documents are kept for development history but should include a historical-status warning.
+
+## Change process for a locked decision
+
+A locked decision can change, but not accidentally.
+
+Before changing one:
+
+1. state why the threat/product assumptions changed;
+2. update implementation;
+3. add/update tests and fuzz cases;
+4. review security consequences;
+5. update architecture/risk/security docs;
+6. update public demo/submission copy if behavior changes;
+7. preserve compatibility/migration where old artifacts depend on the previous rule.
+
+## Final decision principle
+
+**Auctorail should optimize availability and product clarity around the security boundary, not by weakening the boundary. The agent remains a requester; the trusted authorization/execution path remains the authority.**
