@@ -1,295 +1,412 @@
-# Auctorail Defensive Security Harnesses
+# Auctorail Attack Lab and adversarial validation
 
-Auctorail v1.2 uses **four deterministic offline security layers**:
+This document explains the deterministic adversarial testing used to validate Auctorail's authorization invariants.
 
-1. the focused **Attack Lab**;
-2. the original **1,100-case exact-action authorization fuzz gate**;
-3. the **3,100-case adaptive + distinct-Miner quorum fuzz gate**;
-4. the **3,100-case general action authorization fuzz gate**.
+Attack Lab is not a penetration-test certification and it is not real Telegraph usage. It is a reproducible way to show that known classes of action, evidence, authority and execution tampering do not silently become authorized.
 
-All security harnesses are intentionally isolated from live side effects:
+## Why Attack Lab exists
+
+Happy-path tests answer:
+
+> Does a valid action work?
+
+Security tests must also answer:
+
+> What happens when an attacker changes one security-relevant thing while trying to preserve the rest of the authorization context?
+
+Auctorail protects consequential external effects, so mutation/replay/fail-closed behavior is part of the product, not only a test concern.
+
+## Core invariant under test
 
 ```text
-Telegraph requests: 0
-x402 payments:      0
-blockchain writes:  0
+A valid authorization for action A
+must not become authority for action B
 ```
 
-Synthetic evidence in these harnesses is test material only. It must never be represented as live Telegraph/Miner activity.
+Related invariants:
 
-## 1. Focused Attack Lab
+```text
+missing proof must not become ALLOW
+forged proof must not become ALLOW
+duplicate providers must not fake quorum
+expired/revoked authority must not execute
+consumed authority must not replay
+ambiguous external effects must not be blindly duplicated
+```
 
-Run:
+## Deterministic vs live testing
+
+The attack/fuzz suites are intentionally offline/deterministic.
+
+They do not count toward the real Telegraph/x402 usage ledger.
+
+Expected properties:
+
+```text
+Telegraph requests:   0
+x402 payments:        0
+blockchain writes:    0
+```
+
+This keeps adversarial validation repeatable and avoids spending funds to test every mutation family.
+
+## Current validation snapshot
+
+Latest green `main`:
+
+```text
+53 test files
+268 / 268 tests passed
+```
+
+Fuzz suites:
+
+```text
+1100 payment-authorization adversarial cases
+3200 adaptive + quorum adversarial cases
+3100 general-authorization adversarial cases
+----
+7400 total adversarial cases contained
+
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
+```
+
+Production dependency audit:
+
+```text
+0 vulnerabilities reported
+```
+
+## Run the validation
+
+```bash
+npm ci
+npm run ci
+npm run security:fuzz
+npm run security:fuzz:adaptive
+npm run security:fuzz:general
+npm run audit:prod
+```
+
+If the attack-lab script is needed separately:
 
 ```bash
 npm run attack:lab
 ```
 
-The Attack Lab contains one valid baseline plus ten adversarial scenarios:
+## Mutation families: payment authorization
 
-1. valid exact Permit executes once;
-2. consumed Permit replay is blocked;
-3. amount mutation breaks action binding;
-4. evidence-subject substitution breaks binding;
-5. forged Permit signature fails;
-6. expired Permit fails;
-7. decision tampering breaks commitment;
-8. Mandate substitution breaks binding;
-9. negative Telegraph result still blocks despite supplemental runtime proof;
-10. runtime-attestation tampering blocks;
-11. Proof Receipt tampering fails verification.
+The deterministic payment fuzz harness attacks the relationship between exact action, evidence, decision and permit.
 
-Expected summary:
+Representative families include:
+
+### Amount mutation with stale hash
+
+An attacker changes the amount while trying to reuse an authorization commitment.
+
+Expected:
 
 ```text
-RESULT: 10/10 attacks contained
-Telegraph requests: 0
-x402 payments: 0
-Blockchain writes: 0
+BLOCK / validation failure
 ```
 
-The valid baseline is not counted as an attack.
+### Destination swap
 
-## 2. Original exact-action fuzz gate
+The recipient is changed after authorization.
 
-Run:
+Expected: old authority does not apply.
 
-```bash
-npm run security:fuzz
-```
+### Chain confusion
 
-Current validated result:
+Evidence or action semantics are moved to another chain while preserving other fields.
+
+Expected: binding failure.
+
+### Asset substitution
+
+The token/asset changes after authorization.
+
+Expected: action mismatch / block.
+
+### Reason/semantic mutation
+
+A security-relevant action field changes while stale commitments are retained.
+
+Expected: mismatch detected.
+
+### Permit-signature forgery
+
+The permit is altered or replaced without trusted signing authority.
+
+Expected: signature/integrity failure.
+
+### Evidence subject swap
+
+Valid-looking evidence for another subject is substituted.
+
+Expected: evidence cannot satisfy current action.
+
+### Evidence chain swap
+
+Evidence for another chain is substituted.
+
+Expected: evidence rejected.
+
+### Decision commitment tamper
+
+A decision is modified while attempting to retain stale downstream authority.
+
+Expected: decision/permit binding failure.
+
+### Mandate-version substitution
+
+A different authority version is inserted.
+
+Expected: exact authority/version validation failure.
+
+### Expired permit
+
+A valid but expired permit is submitted.
+
+Expected: no execution.
+
+## Mutation families: adaptive evidence and quorum
+
+The adaptive fuzz harness targets evidence-plan and quorum downgrades.
+
+Representative families:
+
+### Risk-tier downgrade
+
+Attempt to make a higher-consequence action use a weaker evidence tier.
+
+Expected: rejected plan/policy binding.
+
+### Required-Intent removal
+
+Remove an Intent required by the frozen plan.
+
+Expected: insufficient evidence / no authorization.
+
+### Distinct-Miner downgrade
+
+Reduce the required provider diversity.
+
+Expected: policy detects mismatched quorum rule.
+
+### Positive-vote downgrade
+
+Lower the number of required qualified positives.
+
+Expected: rejected.
+
+### Confidence-floor downgrade
+
+Lower the policy confidence requirement after the plan is frozen.
+
+Expected: rejected.
+
+### Negative-veto disable
+
+Attempt to alter negative evidence semantics.
+
+Expected: rejected.
+
+### Attempt-limit expansion
+
+Increase the allowed attempts beyond the frozen plan.
+
+Expected: plan mismatch/rejection.
+
+### Evidence-budget expansion
+
+Increase allowed x402 evidence spend.
+
+Expected: rejected.
+
+### Evidence-latency expansion
+
+Increase the maximum evidence window beyond the frozen plan.
+
+Expected: rejected.
+
+This test is especially important after the current LOW deadline changed from 35 seconds to **12 seconds**.
+
+### Duplicate-Miner Sybil count
+
+Count repeated responses from one Miner as multiple independent providers.
+
+Expected: distinct-provider quorum remains unsatisfied.
+
+### Insufficient positive quorum
+
+Required provider count exists but too few positives qualify.
+
+Expected: no ALLOW.
+
+### Below-confidence positives
+
+Positive verdicts below the tier threshold try to count as quorum.
+
+Expected: do not count.
+
+### High-confidence negative veto
+
+A qualifying negative appears.
+
+Expected: fail closed according to policy.
+
+### Explicit negative averaged away
+
+Positive responses attempt to overpower known explicit negative evidence.
+
+Expected: negative cannot be silently averaged away.
+
+### Missing required evidence
+
+A required fraud/transaction Intent is absent.
+
+Expected: `HOLD`/no execution authority.
+
+### Stale evidence
+
+Expired evidence tries to satisfy current policy.
+
+Expected: rejected/insufficient.
+
+### Missing signal hash
+
+A required commitment is absent.
+
+Expected: evidence unusable.
+
+### x402 network / asset / price mutation
+
+Payment challenge tries to move outside the approved evidence-payment lane.
+
+Expected: no uncontrolled evidence payment.
+
+### Evidence-bundle tamper
+
+Signal/quorum/raw-response commitments are modified.
+
+Expected: bundle integrity failure.
+
+### Subject / chain substitution
+
+Evidence for another action context is inserted.
+
+Expected: binding failure.
+
+### Valid bundle from another action
+
+A completely valid bundle is reused for a different action.
+
+Expected: exact-action binding rejects it.
+
+### High consequence bypass
+
+Strong evidence tries to override the 10-USDC autonomous execution ceiling.
+
+Expected: still blocked.
+
+Evidence cannot create authority.
+
+## Mutation families: general authorization
+
+The general fuzz harness targets the reusable Action/Mandate/Decision/Permit architecture.
+
+Representative families include:
+
+- target substitution;
+- parameter substitution;
+- stale action-hash tamper;
+- policy substitution;
+- agent substitution;
+- Mandate target/action scope mutation;
+- Mandate revocation/expiry;
+- decision agent/status/check tampering;
+- evidence commitment substitution;
+- permit signature forgery;
+- permit action/decision/evidence binding tamper;
+- permit expiry;
+- kill-switch disabled/unavailable;
+- permit replay;
+- ambiguous-effect replay;
+- missing required Intent coverage;
+- unrequested Intent claims;
+- missing trusted checks;
+- undelegated action/Intent;
+- adapter freeze-contract mismatch;
+- unregistered adapter;
+- non-finite parameter rejection.
+
+## Guided Demo relationship
+
+The Watch Demo exposes four attack/security cases in product form:
 
 ```text
-Mutation families:        11
-Cases per family:         100
-Adversarial contained:    1100/1100
-Valid controls:           100/100
-Unauthorized executions: 0
-Uncaught errors:          0
+valid request       → allowed/executed demo
+modified amount     → BLOCK
+permit replay       → BLOCK
+missing evidence    → HOLD
 ```
 
-Families include:
+The fuzz harnesses go much deeper, but the Guided Demo makes the underlying invariants understandable to a non-security reviewer.
 
-- stale amount/action hash
-- destination substitution
-- chain confusion
-- asset substitution
-- reason mutation
-- Permit signature forgery
-- evidence subject swap
-- evidence chain swap
-- decision commitment tampering
-- Mandate version substitution
-- Permit expiry
+## Security Lab relationship
 
-This remains the original exact-action/evidence/Permit security gate used by the proven payment flow.
+Security Lab provides an interactive deterministic surface for selected adversarial cases.
 
-## 3. Adaptive + distinct-Miner quorum fuzz gate
+Do not describe Security Lab traffic as genuine Telegraph usage.
 
-Run:
+Its value is reproducible policy demonstration.
 
-```bash
-npm run security:fuzz:adaptive
-```
+## What a passing attack test means
 
-Current validated result:
+It means the tested implementation rejected/contained that mutation under the deterministic scenario.
 
-```text
-Mutation families:             31
-Cases per family:              100
-Adversarial contained:         3100/3100
-Valid controls:                100/100
-Unauthorized authorizations:  0
-Uncaught errors:               0
-```
+It does **not** prove:
 
-The v1.2 adaptive suite attacks both vertical multi-Intent evidence and horizontal same-Intent provider diversity.
+- no undiscovered bugs exist;
+- no deployment misconfiguration can weaken the system;
+- external providers are always trustworthy/available;
+- the trusted host cannot be compromised;
+- the project has received an independent professional security audit.
 
-Families include:
+## How to add a new attack test
 
-- risk-tier downgrade
-- distinct-Miner quorum downgrade
-- positive-vote threshold downgrade
-- positive-confidence-floor downgrade
-- disabling high-confidence negative veto
-- expanding the bounded attempt limit
-- duplicate-Miner / fake-provider-diversity counting
-- insufficient positive quorum
-- below-confidence positive votes
-- high-confidence negative veto suppression
-- lower-confidence explicit negative suppression
-- missing `FRAUD_DETECTION`
-- missing `ONCHAIN_TX_LOOKUP`
-- missing `WALLET_BALANCE_CHECK`
-- negative secondary signal
-- stale required evidence
-- missing signal hash
-- x402 wrong network
-- x402 asset substitution
-- x402 per-request over-cap
-- Evidence Bundle signal tampering
-- quorum-summary tampering
-- Miner-identity substitution
-- quorum-attempt collision/tampering
-- evidence subject substitution
-- substitution of another internally valid bundle after Permit mint
-- Permit signature forgery
-- Permit expiry
-- action semantic mutation
-- un-delegated Intent
-- raw-response-hash tampering
+When a security-relevant feature is added:
 
-### Important quorum invariants
+1. identify what the attacker controls;
+2. identify the trusted value the attacker wants to substitute;
+3. create a valid baseline control;
+4. mutate one semantic at a time;
+5. assert no unauthorized `ALLOW`/execution occurs;
+6. test both stale-hash and self-consistent malicious variants where relevant;
+7. add a fuzz family if the input space is meaningful;
+8. keep the test offline unless live external interaction is essential to the invariant.
 
-The harness verifies that:
+## Recommended review questions
 
-- repeated responses from one Miner do not become multiple independent providers;
-- a positive fraud vote only counts if it meets the tier confidence floor;
-- HIGH risk cannot be downgraded from 3 distinct providers / 2 positive votes;
-- an explicit known-negative signal cannot be averaged away;
-- an attacker cannot alter the committed quorum summary while keeping authorization valid;
-- changing a serving Miner identity invalidates the committed evidence context.
+A reviewer should challenge the system with questions such as:
 
-## 4. General action authorization fuzz gate
+- Can I change the amount after approval?
+- Can I change the recipient?
+- Can I reuse evidence for another wallet?
+- Can I make Base mainnet evidence satisfy Base Sepolia?
+- Can I remove a required Intent?
+- Can I count one Miner three times?
+- Can I lower the confidence floor?
+- Can I raise the evidence budget?
+- Can I reuse a consumed permit?
+- Can I bypass the kill switch?
+- Can I repeat an ambiguous external effect?
+- Can strong evidence let me exceed delegated authority?
 
-Run:
+The expected answer should be no.
 
-```bash
-npm run security:fuzz:general
-```
+## Final adversarial-testing principle
 
-Current validated result:
-
-```text
-Mutation families:        31
-Cases per family:         100
-Adversarial contained:    3100/3100
-Valid controls:           100/100
-Unauthorized executions: 0
-Uncaught errors:          0
-```
-
-This is a separate gate for `proofgate.action.v2`, `mandate.v2`, `decision.v2`, `permit.v2` and the trusted Action Adapter execution path.
-
-Families include:
-
-- valid target substitution
-- valid parameter substitution
-- stale action hash after semantic mutation
-- policy substitution
-- Mandate agent substitution
-- Mandate target-scope substitution
-- Mandate action-type substitution
-- revoked Mandate substitution
-- Mandate expiry while Permit is still alive
-- self-consistent wrong-agent decision forgery
-- forged `ALLOW` inconsistent with decision checks
-- stale decision hash after check mutation
-- evidence-commitment substitution
-- Permit signature forgery
-- Permit action-binding tampering
-- Permit decision-binding tampering
-- Permit evidence-binding tampering
-- Permit expiry
-- disabled execution kill switch
-- unavailable kill-switch state
-- Permit replay
-- replay after ambiguous external effect
-- missing required Intent coverage from trusted adapter
-- adapter claiming unrequested Intent coverage
-- missing required evidence commitment
-- missing trusted evidence checks
-- undelegated action attempting to reach evidence acquisition
-- undelegated required Intent attempting to reach evidence acquisition
-- adapter freeze-contract mismatch
-- unregistered adapter
-- non-finite/malformed action parameter rejection
-
-### Generic boundary invariants
-
-The general harness specifically proves the tested path fails closed when:
-
-- the agent/action is outside standing authority;
-- current Mandate authority disappears after Permit mint;
-- an adapter cannot account for every required evidence class;
-- the evidence commitment is missing/substituted;
-- the execution kill switch cannot be trusted;
-- Permit replay is attempted;
-- an external effect becomes ambiguous after the Permit has already been consumed.
-
-## Combined current deterministic result
-
-On the validated v1.2 code snapshot:
-
-```text
-Original fuzz:              1100/1100
-Adaptive + quorum fuzz:     3100/3100
-General authorization fuzz: 3100/3100
-
-Total adversarial cases:    7300/7300
-
-Valid controls:
-  original: 100/100
-  adaptive: 100/100
-  general:  100/100
-
-Unauthorized executions:      0
-Unauthorized authorizations:  0
-Uncaught fuzz errors:          0
-```
-
-The normal deterministic suite additionally passed:
-
-```text
-43/43 test files
-225/225 tests
-```
-
-## Additional direct regression coverage
-
-Some invariants are clearer as focused deterministic tests rather than fuzz mutation families. The normal suite covers, among other things:
-
-- x402 challenge-swap/TOCTOU prevention;
-- wrong paid-evidence network/asset rejection;
-- per-request evidence payment cap;
-- malformed signal/raw-response hashes even after outer bundle rehash;
-- `UNKNOWN` / `UNAVAILABLE` secondary status becoming `HOLD`;
-- valid alternate Evidence Bundle rejected after Permit mint;
-- bundle-aware single-use Permit behavior;
-- Proof Receipt v3 tamper rejection;
-- generic exact target/agent/action/policy Mandate enforcement;
-- authority rejected before trusted evidence acquisition;
-- missing/custom adapter Intent coverage rejected;
-- execution-time Mandate expiry rejection;
-- kill switch disabled/unavailable rejection;
-- ambiguous generic effect consumes authority and cannot be blindly retried;
-- wrong-agent self-consistent decision cannot mint a Permit.
-
-## What these harnesses prove
-
-They prove that the **tested authorization invariants** fail closed under the covered deterministic mutations while valid controls continue to execute/authorize correctly.
-
-The central security criterion is:
-
-> **Unauthorized, incorrectly bound or insufficiently evidenced input must never reach executable authority or the protected external callback.**
-
-## What they do not prove
-
-These harnesses are not a substitute for:
-
-- live Telegraph availability/reliability testing;
-- a successful real multi-Miner quorum artifact;
-- live x402 facilitator reliability testing;
-- independent smart-contract audit;
-- independent production application audit;
-- production key-management review;
-- PostgreSQL infrastructure/failover review;
-- full distributed-systems chaos testing;
-- security review/sandboxing of arbitrary third-party Action Adapters.
-
-The repository contains older authorized assessment artifacts. Those reports apply to the exact revisions they identify and must not be represented as an independent audit of v1.2.
-
-## Current release validation
-
-See `docs/V1_2_VALIDATION.md` for the exact v1.2 release snapshot, GitHub CI run, vendor reproducibility result, deterministic tests, all three fuzz gates and production dependency audit.
+**Auctorail's security value is visible when changing one protected semantic breaks the old authorization. The system should fail closed around uncertainty, reject replay, and never allow evidence or client input to expand principal authority.**
