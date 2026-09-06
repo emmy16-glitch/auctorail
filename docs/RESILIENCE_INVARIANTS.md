@@ -1,238 +1,357 @@
-# Auctorail Resilience Invariants
+# Auctorail resilience invariants
 
-Auctorail must recover from infrastructure problems **without weakening authorization or duplicating consequential effects**.
+This document defines the reliability and failure-handling properties Auctorail should preserve even when upstream services, networks, storage or external executors behave imperfectly.
 
-## Primary rule
+Security and resilience are linked. A system that handles failures badly can accidentally turn timeouts, retries or partial state into unauthorized effects.
 
-Infrastructure may change automatically.
+## Core resilience rule
 
-The authorized semantic effect may not.
+> **Failure should reduce capability before it reduces authorization safety.**
 
-A retry/failover may change operational details such as:
+When required proof or trusted state is unavailable, Auctorail should fail closed rather than invent permission.
 
-- RPC provider;
-- connection route;
-- timeout/backoff;
-- Telegraph routing result;
-- x402 facilitator/payment route within the approved policy;
-- confirmation provider;
-- transaction fee parameters where the same transaction semantics are preserved.
+## Invariant 1 — missing evidence never becomes implicit ALLOW
 
-A retry/failover may **not** silently change protected action semantics such as:
+If required evidence cannot be acquired, parsed, bound or qualified, the action must not execute.
 
-- payment destination/amount/asset/chain;
-- generic action type;
-- generic target;
-- generic action parameters;
-- policy ID/version;
-- other fields committed in the canonical action hash.
-
-Changing a protected semantic field creates a **new action** and requires fresh:
+Typical safe result:
 
 ```text
-PROPOSE → EVIDENCE → DECIDE → PERMIT
+HOLD
 ```
-
-## Safe read/evidence operations
-
-Read-like evidence acquisition may:
-
-1. use bounded retry/backoff where no payment/irreversible effect occurred;
-2. refresh stale registry metadata;
-3. accept a different Telegraph-routed Miner where protocol routing permits;
-4. perform bounded additional same-Intent requests to satisfy a required distinct-Miner quorum;
-5. stop with `HOLD` when required proof/provider diversity cannot be established.
-
-### Miner-diversity invariant
-
-Retrying a request does not automatically create independent evidence.
-
-```text
-Miner A
-Miner A again
-Miner A again
-```
-
-still represents one distinct serving Miner for quorum accounting.
-
-Distinct-provider requirements are satisfied only by distinct Miner IDs committed into the Evidence Bundle/quorum summary.
-
-## Paid x402 evidence operations
-
-A paid evidence request is not treated as an ordinary idempotent read.
-
-Before payment:
-
-- validate the exact challenge/payment requirements;
-- enforce the per-request cap;
-- enforce the remaining aggregate evidence budget;
-- enforce attempt/deadline bounds.
-
-After a payment-bearing request becomes transport-ambiguous:
-
-- do not blindly submit another payment;
-- inspect/reconcile the existing result/settlement state where possible;
-- return `HOLD` when sufficient evidence cannot be proven safely.
-
-Provider-diversity goals never justify unlimited payment retries.
-
-## Irreversible payment writes
-
-Never blindly retry an ambiguous blockchain write.
-
-After a possible broadcast:
-
-1. reconcile the locally computed transaction hash across available RPCs;
-2. inspect sender nonce;
-3. inspect destination/on-chain state;
-4. determine whether execution already happened;
-5. only create new authorization if a new attempt is actually required and safe.
-
-If a transaction replacement is required, it may alter fee mechanics while preserving the exact authorized semantic action. It must never silently change destination, token or amount.
-
-## Generic external effects
-
-Generic adapters cannot assume all external systems provide blockchain-style transaction reconciliation.
-
-Therefore the generic executor follows this invariant:
-
-```text
-Permit claimed
-→ adapter callback invoked
-→ callback throws / outcome uncertain
-→ AMBIGUOUS
-→ Permit remains consumed
-→ no automatic replay
-```
-
-The adapter/integration must provide service-specific reconciliation before another action/Permit is created.
-
-Examples may include checking:
-
-- whether a pull request already merged;
-- whether an infrastructure resource already changed state;
-- whether an API-created object/idempotency key already exists;
-- whether a remote workflow already completed.
-
-Auctorail does not guess that a thrown client error means the external effect did not happen.
-
-## Execution kill-switch invariant
-
-The generic executor checks the operational kill switch **before Permit consumption and before the protected callback**.
-
-```text
-kill switch says disabled → BLOCK
-kill-switch state unavailable → BLOCK
-```
-
-An infrastructure failure reading the emergency control is never treated as permission.
-
-## Execution-time authority invariant
-
-Current Mandate authority is re-evaluated immediately before generic execution.
-
-A still-unexpired Permit cannot be used when its standing Mandate has meanwhile become invalid/expired.
-
-This keeps the Permit subordinate to current principal authority.
-
-## Failure classification
-
-### TRANSIENT
-
-Examples:
-
-- non-paid registry/read timeout;
-- temporary safe RPC read error.
-
-Response:
-
-- bounded retry/failover where doing so cannot duplicate a side effect or evidence payment.
-
-### AMBIGUOUS
-
-Examples:
-
-- transaction may have broadcast but confirmation is unavailable;
-- generic external callback may have completed before connection/runtime failure;
-- paid evidence request may have settled while response delivery failed.
-
-Response:
-
-- reconcile state;
-- do not automatically replay the same protected effect/payment.
-
-### INSUFFICIENT PROOF
 
 Examples:
 
 - Telegraph unavailable;
-- insufficient distinct Miner diversity;
-- insufficient positive quorum;
-- stale/low-confidence/uncertain evidence;
-- evidence budget/deadline exhausted.
+- route not currently routable;
+- wrong returned Intent;
+- subject not asserted;
+- chain not asserted;
+- confidence below floor;
+- signal commitment missing;
+- required provider diversity unavailable;
+- deadline reached;
+- evidence budget exhausted.
 
-Response:
+## Invariant 2 — upstream latency is bounded
 
-- `HOLD`;
-- no Permit/execution.
+External evidence providers should not be able to leave an authorization request waiting indefinitely.
 
-### POLICY / SECURITY FAILURE
+Current adaptive deadlines:
 
-Examples:
+```text
+LOW:     12 seconds
+MEDIUM:  60 seconds
+HIGH:    90 seconds
+```
 
-- wrong target/destination;
-- prohibited action type;
-- expired/revoked Mandate;
-- quorum/risk-plan downgrade;
-- tampered evidence/Permit;
-- explicit negative evidence;
-- kill switch disabled/unavailable.
+The deployed payment API also applies bounded Telegraph HTTP timeouts so a single upstream request does not monopolize the LOW interactive flow.
 
-Response:
+A timeout is not positive evidence.
 
-- `BLOCK`;
-- no protected callback.
+## Invariant 3 — retries cannot weaken policy
 
-### COMPLETED
+Retrying evidence acquisition must not alter:
 
-Examples:
+- required Intent;
+- subject;
+- chain;
+- action hash;
+- confidence floor;
+- quorum requirement;
+- evidence budget;
+- overall deadline.
 
-- Permit already consumed;
-- blockchain transaction confirmed;
-- generic adapter callback returned successfully after claim.
+Retries are an availability mechanism, not a way to search for an easier policy.
 
-Response:
+## Invariant 4 — retry spend is bounded
 
-- never execute the same Permit again.
+Paid evidence attempts must remain inside the frozen evidence budget.
 
-## Idempotency and replay
+Current maxima:
 
-`permitId + nonce` identify one authorization use.
+```text
+LOW:     0.035 USDC
+MEDIUM:  0.060 USDC
+HIGH:    0.100 USDC
+```
 
-One Permit may cause at most one protected callback attempt.
+A retry path must account for prior paid attempts rather than resetting the budget.
 
-Atomic replay state must be shared between executor replicas in production-oriented deployments.
+## Invariant 5 — paid ambiguity is reconciled
 
-Local filesystem replay state is not sufficient for independent multi-worker authority.
+If an x402 payment payload may have been created/sent but the transport outcome is unclear, Auctorail must not assume no payment occurred and immediately pay again.
 
-## Adapter responsibility
+The correct model is:
 
-A trusted generic adapter must:
+```text
+known not paid   → safe retry may be possible
+known paid       → continue/reconcile result
+ambiguous paid   → reconcile before retry
+```
 
-- derive side-effect parameters from the frozen action;
-- use external idempotency/reconciliation facilities where available;
-- not accept replacement semantics from the autonomous agent at execution time;
-- distinguish known failure from uncertain outcome;
-- never retry an ambiguous irreversible effect automatically.
+## Invariant 6 — external execution ambiguity is reconciled
 
-## Wallet-maintenance exception
+The same rule applies even more strongly to protected external effects.
 
-Operational maintenance such as sweeping a test wallet may dynamically calculate safe transferable ETH after reserving gas.
+A failed HTTP/RPC response does not prove the side effect failed.
 
-That operational action is **not permission to mutate a Auctorail-protected Action Contract**.
+For a payment:
 
-## Design goal
+```text
+broadcast may have succeeded
+response may have been lost
+```
 
-Auctorail should recover automatically when infrastructure can change without changing or duplicating the authorized effect.
+Blind retry could create a duplicate payment.
 
-When recovery could create uncertainty about whether money, evidence payment, code, infrastructure or another external effect already happened, Auctorail **reconciles instead of guessing**.
+Auctorail treats ambiguous effects as durable state/reconciliation problems.
+
+## Invariant 7 — failover cannot change action semantics
+
+RPC or transport failover may change which provider is used for confirmation or read operations.
+
+It must never change:
+
+- amount;
+- recipient;
+- chain;
+- asset;
+- encoded transaction semantics;
+- action commitment.
+
+Availability failover must not become semantic failover.
+
+## Invariant 8 — duplicate evidence sources do not become independent quorum
+
+Repeated routing to one Miner is still one independent source.
+
+Provider diversity is counted by Miner ID.
+
+This protects quorum semantics when the routing layer has limited provider availability.
+
+## Invariant 9 — evidence rejection is not action mutation
+
+If a particular Miner result is unusable, Auctorail may perform another bounded attempt for the **same frozen action and same requirement**.
+
+It must not change the action to fit available evidence.
+
+## Invariant 10 — authority is checked before paid evidence
+
+An action that is already outside delegated authority should be rejected before Auctorail spends evidence budget.
+
+This prevents denial-of-wallet behavior where an agent repeatedly requests impossible actions merely to force paid external queries.
+
+## Invariant 11 — an unavailable kill switch fails closed
+
+If the executor relies on a trusted execution-enable/kill-switch state and that state cannot be established safely, execution should not proceed.
+
+Availability of the protected effect is less important than avoiding unauthorized execution.
+
+## Invariant 12 — permit consumption survives process behavior
+
+Replay resistance should not depend only on in-memory process state.
+
+Durable deployments need persistent permit-consumption/execution state so process restart or concurrency does not recreate unused authority.
+
+See `permit-consumption-store.md`.
+
+## Invariant 13 — concurrent execution does not duplicate side effects
+
+Two requests racing to execute the same permit should not both win.
+
+Permit consumption and execution state need atomic/transactional semantics appropriate to the protected effect.
+
+## Invariant 14 — idempotency does not replace authorization
+
+Idempotency keys help identify repeated requests, but they are not permission.
+
+A request with the same idempotency key still needs valid authority and execution-state handling.
+
+## Invariant 15 — restart/recovery does not mint new authority
+
+After application restart:
+
+- consumed permits remain consumed;
+- expired permits remain invalid;
+- Mandate revocation remains effective;
+- ambiguous executions remain unresolved until reconciliation;
+- evidence budget/accounting state should not be incorrectly reset for the same operation.
+
+## Invariant 16 — stale evidence does not become valid because providers are unavailable
+
+Availability pressure must not cause freshness requirements to be bypassed.
+
+If current policy requires fresh evidence and only stale evidence exists, the result remains non-executable.
+
+## Invariant 17 — external evidence cannot expand standing authority
+
+If the principal allows 5 USDC, a perfect fraud score cannot authorize 7 USDC.
+
+If current policy ceiling is 10 USDC, a HIGH evidence plan cannot authorize 75 USDC.
+
+This must remain true during degraded-mode operation.
+
+## Invariant 18 — explicit negative evidence is not discarded during retry
+
+A system must not continue retrying merely to find a positive provider and forget a blocking negative result that policy says is material.
+
+Negative evidence semantics remain part of the frozen policy.
+
+## Invariant 19 — diagnostics never become authority
+
+Logs, UI progress messages and routing metadata can explain what happened.
+
+They must not be read back as proof that missing evidence existed.
+
+For example:
+
+```text
+request context says target=Wallet A
+```
+
+is not equivalent to:
+
+```text
+Miner response explicitly asserts subject=Wallet A
+```
+
+## Invariant 20 — demo mode and live mode remain distinguishable
+
+A deterministic demo should not accidentally call live paid evidence merely because the UI looks similar.
+
+Live external-effect features should remain explicit and bounded.
+
+## Current LOW failure envelope
+
+For a `<=5 USDC` adaptive payment:
+
+```text
+max fraud attempts:  3
+max evidence spend:  0.035 USDC
+overall deadline:    12 seconds
+positive confidence: 0.70
+```
+
+If valid evidence is not obtained within that envelope:
+
+```text
+HOLD
+no execution authority
+```
+
+## Example failure scenarios
+
+### Scenario A — Telegraph route unavailable
+
+```text
+Attempt 1: route unavailable
+Attempt 2: route unavailable / timeout
+Attempt 3: no usable evidence or deadline reached
+Result: HOLD
+```
+
+### Scenario B — wrong Intent returned
+
+```text
+Required: FRAUD_DETECTION
+Returned: unrelated Intent
+Evidence: rejected
+Retry: bounded
+Final: HOLD unless valid evidence arrives
+```
+
+### Scenario C — paid response lost
+
+```text
+Payment payload created
+Transport response lost
+Settlement state unclear
+Result: reconcile payment before any new paid attempt
+```
+
+### Scenario D — transaction broadcast ambiguous
+
+```text
+Signed transaction submitted
+RPC connection fails
+Do not re-broadcast a new semantic action blindly
+Reconcile chain/execution state first
+```
+
+### Scenario E — datastore unavailable during execution
+
+If permit-consumption/kill-switch state cannot be established safely, fail closed rather than executing without replay protection.
+
+## Operational monitoring suggestions
+
+A production-oriented deployment should monitor:
+
+- authorization decision counts by `ALLOW/HOLD/BLOCK`;
+- HOLD reasons;
+- Telegraph route failures;
+- evidence acquisition latency;
+- evidence spend per authorization;
+- repeated Miner routing;
+- x402 ambiguous settlement events;
+- permit replay attempts;
+- kill-switch failures;
+- ambiguous protected executions;
+- reconciliation backlog;
+- receipt persistence failures.
+
+Monitoring should never log secrets/private keys.
+
+## Backoff and circuit-breaker guidance
+
+External provider outages should not create request storms.
+
+A production deployment may add:
+
+- bounded exponential backoff;
+- circuit breakers;
+- provider-health caching;
+- route availability metrics;
+- operator alerts.
+
+Any such availability optimization must preserve the frozen security plan.
+
+## What resilience does not mean
+
+Resilience does not mean:
+
+- always returning ALLOW;
+- retrying until a positive provider appears;
+- ignoring evidence deadlines;
+- increasing evidence budget automatically;
+- falling back to a weaker chain/Intent;
+- skipping replay persistence when storage is down.
+
+A secure system can be temporarily unavailable while still preserving authority boundaries.
+
+## Validation coverage
+
+Current tests/fuzzing cover resilience-related families including:
+
+- bounded route retries;
+- direct-route unavailability;
+- duplicate-provider handling;
+- evidence-plan mutation;
+- evidence-budget expansion attempts;
+- evidence-latency expansion attempts;
+- x402 settlement ambiguity;
+- executor ambiguity;
+- permit replay;
+- kill-switch unavailable;
+- durable execution behavior.
+
+Current overall validation:
+
+```text
+268 / 268 tests
+7400 / 7400 deterministic adversarial cases contained
+```
+
+## Final resilience rule
+
+**When something external is slow, missing or ambiguous, Auctorail should become less willing to act—not more willing to guess.**
