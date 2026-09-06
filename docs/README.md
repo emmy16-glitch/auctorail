@@ -170,13 +170,11 @@ The current browser/Playwright product-flow audit also passed.
 
 Older docs mentioning 225 or 267 tests are historical snapshots unless explicitly marked current.
 
-### Current Node recommendation
+### Current Node runtime
 
-The redesigned dependency set includes browser/DOM development packages that officially require Node 22/24.
+Current `main` requires **Node `>=24.15.0`** through `package.json`. The repository `.nvmrc` selects Node 24, and both current GitHub Actions workflows run Node 24.
 
-**Node 24 is recommended for current local development.**
-
-Some existing workflow configuration still exercises Node 20 and currently passes, but its `EBADENGINE` warnings should not be interpreted as a long-term supported dependency baseline.
+Use Node 24.15.0 or newer for current development, validation and release work. Node 20 is not a supported baseline for the current dependency set.
 
 ### Public real usage
 
@@ -242,6 +240,8 @@ A favorable evidence result can satisfy a policy requirement only **inside exist
 | [`V1_1_COMPETITIVE_PLAN.md`](V1_1_COMPETITIVE_PLAN.md) | Earlier competitive/product planning. | Historical |
 | [`V1_1_VALIDATION.md`](V1_1_VALIDATION.md) | Earlier validation snapshot. | Historical |
 | [`V1_2_VALIDATION.md`](V1_2_VALIDATION.md) | Later validation snapshot plus current delta. | Historical/current context |
+
+Historical/generated reports under `audit-artifacts/` are preserved evidence, not current product documentation. Read [`../audit-artifacts/README.md`](../audit-artifacts/README.md) before using them for current claims.
 
 ## Code map for documentation verification
 
