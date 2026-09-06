@@ -1,268 +1,377 @@
-# Auctorail — Telegraph Track 3 Architecture
+# Auctorail Telegraph-track architecture
 
-Auctorail is a **consumption-side application** on Telegraph. It is not a Miner and it does not try to rank providers itself.
+This document explains how Auctorail uses Telegraph within the authorization architecture and records the evolution from the earlier ProofGate hackathon design to the current Auctorail implementation.
 
-Its job is to turn a bounded principal Mandate plus real Telegraph intelligence into an enforceable machine authorization decision, then allow the protected action to execute only when that decision is valid.
+It is partly historical, but the current-state sections are aligned with `main`.
 
-## Product thesis
+## Current product thesis
 
-> Agent confidence is not permission to act.
+Auctorail is not primarily a Miner-query frontend.
 
-An agent may decide what it wants to do. Auctorail decides whether that exact action is authorized to happen.
+Its role is:
 
-Telegraph supplies ranked external intelligence. Auctorail consumes that intelligence, applies deterministic authorization policy, issues an exact-action Permit only for an `ALLOW`, executes through a protected adapter, and records verifiable proof afterward.
+> **Use specialist external intelligence as evidence inside a trusted authorization boundary for autonomous execution.**
 
-## End-to-end Track 3 flow
+Telegraph answers intelligence questions. Auctorail combines those answers with principal authority and exact-action policy before execution.
 
-```text
-PRINCIPAL / USER
-  defines bounded authority
-        |
-        v
-SCREEN 1 — REQUEST + AUTHORITY
-  agent + amount + recipient + duration
-        |
-        | freeze exact request
-        v
-POLICY PREFLIGHT
-  deterministic local authority check
-  no paid Miner request yet
-        |
-        | inside authority
-        v
-CONSEQUENCE-ADAPTIVE EVIDENCE PLAN
-  derived from exact frozen action
-        |
-        v
-SCREEN 2 — LIVE VERIFICATION
-  Auctorail declares required Telegraph Intents
-        |
-        v
-TELEGRAPH /v1/ask
-  Telegraph routes to ranked Miners
-  x402 pays real intelligence requests
-        |
-        v
-TRUSTED EVIDENCE BUNDLE
-  actual serving Miner identity
-  Intent / confidence / signal hashes
-  x402 payment provenance
-  distinct-provider quorum
-        |
-        v
-DETERMINISTIC POLICY
-  ALLOW / HOLD / BLOCK
-        |
-        | ALLOW only
-        v
-SIGNED ONE-USE PERMIT
-  exact action + mandate + evidence + decision
-        |
-        v
-SCREEN 3 — AUTOMATIC EXECUTION
-  protected executor re-verifies Permit
-  Permit atomically consumed against replay
-  exactly one Base Sepolia USDC broadcast attempt
-        |
-        v
-CONFIRMATION / AMBIGUITY HANDLING
-  confirmed => EXECUTED
-  uncertain => AMBIGUOUS, never blind rebroadcast
-        |
-        v
-VERIFIABLE PROOFGATE RECEIPT
-  decision lineage + evidence + Permit + execution
-```
-
-## Evidence strength is not spending authority
-
-Auctorail keeps evidence requirements and principal authority separate.
-
-Current product-default payment evidence bands are:
-
-| Evidence tier | Proposed amount | Required Telegraph evidence |
-| --- | ---: | --- |
-| LOW | `<= 5 USDC` | 1 confidence-qualified `FRAUD_DETECTION` Miner; bounded retries only for unusable routes |
-| MEDIUM | `> 5 to 50 USDC` | 2 distinct positive fraud Miners + `ONCHAIN_TX_LOOKUP` |
-| HIGH | `> 50 USDC` | 3 distinct fraud Miners / 2 positive + `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` |
-
-These are consequence-adaptive **evidence defaults**, not universal financial-risk laws. The complete thresholds, confidence floors, deadlines and x402 budgets are documented in [`RISK_POLICY.md`](./RISK_POLICY.md).
-
-The current `payments.adaptive.v1` autonomous execution ceiling remains **10 USDC per action**. Therefore a HIGH evidence plan does not grant an agent authority to execute a >50 USDC payment. Stronger intelligence can satisfy delegated authority; it cannot create new authority. A higher-value live product would need a separate step-up/human-approved Mandate or policy.
-
-## Screen contract
-
-### Screen 1 — Control what an agent can do
-
-Human-facing configuration only.
-
-It shows:
-
-- agent identity;
-- maximum allowed payment;
-- allowed recipient;
-- permission lifetime;
-- the exact current proposal;
-- `CHECK THIS REQUEST`.
-
-It intentionally does **not** lead with hashes, canonical JSON, Miner IDs or x402 internals.
-
-Backend state transition:
-
-`proposal -> frozen action -> mandate evaluation`
-
-If the action is outside authority, Auctorail blocks locally and does not buy Telegraph intelligence.
-
-### Screen 2 — Checking request
-
-This screen visualizes real backend stages, not cosmetic timers.
-
-1. `REQUEST RECEIVED`
-2. `RULES CHECKED`
-3. `REAL CHECKS RUNNING`
-4. `DECISION`
-
-The paid stage begins only after deterministic authority preflight passes.
-
-Auctorail requests **Intents**, not preferred Miner identities. Telegraph performs provider routing. Auctorail records the Miner actually served and only counts distinct providers toward quorum.
-
-A LOW request can retry an unusable route only within its precommitted attempt/deadline/x402 budget. No synthetic fallback is allowed. If sufficient real evidence is not obtained, the result is `HOLD`.
-
-If the final decision is `HOLD` or `BLOCK`, execution stops.
-
-If the final decision is `ALLOW`, Auctorail automatically mints the one-use Permit and moves to Screen 3. There is no second human approval button in the primary autonomous flow.
-
-### Screen 3 — Executing request
-
-Screen 3 is the protected downstream action, not another authorization prompt.
-
-1. `AUTHORIZATION PASSED`
-2. `PERMIT ISSUED`
-3. `EXECUTING ON BASE SEPOLIA`
-4. `CONFIRMATION PENDING / CONFIRMED`
-
-The browser does not construct the transaction. It receives an opaque short-lived execution session created by the trusted authorization server after `ALLOW` and calls the protected execution endpoint.
-
-The server then:
-
-- re-verifies the signed Permit;
-- re-validates action/evidence/decision bindings;
-- atomically consumes the Permit before execution;
-- derives recipient/amount/token/chain from the frozen action;
-- permits one irreversible transaction broadcast attempt;
-- reconciles confirmation using read-only RPC failover;
-- refuses blind automatic rebroadcast after an ambiguous result;
-- generates and verifies the Auctorail receipt.
-
-`VIEW PROOF` is an audit action after the autonomous path. It is not required to continue execution.
-
-## Telegraph role
-
-Telegraph is the external ranked-intelligence market.
-
-Auctorail does not register as a Miner and does not bypass Telegraph routing in the primary Track 3 path.
+## Current high-level Telegraph path
 
 ```text
-Auctorail: require FRAUD_DETECTION for this exact subject
-                 |
-                 v
-          Telegraph /v1/ask
-                 |
-                 v
-        ranked Miner is served
-                 |
-                 v
- Auctorail validates and records the result
+Agent proposes exact action
+        ↓
+Auctorail freezes action
+        ↓
+Mandate / authority preflight
+        ↓
+Adaptive evidence plan
+        ↓
+Telegraph Intent request
+        ↓
+x402 evidence payment when required
+        ↓
+Serving Miner result
+        ↓
+Intent + subject + chain + confidence + signal verification
+        ↓
+Distinct-Miner quorum
+        ↓
+ALLOW / HOLD / BLOCK
+        ↓
+One-use execution authority on executable ALLOW
 ```
 
-For higher consequence, Auctorail may make additional bounded Intent requests. Duplicate responses from the same Miner do not create fake independence.
+## Why Telegraph is useful to Auctorail
 
-## The two payment lanes
+An authorization system should not rely only on the agent's own reasoning about whether an external target is safe.
 
-Auctorail has two intentionally separate financial side effects.
+Telegraph allows Auctorail to request specialized evidence from purpose-built Miners.
 
-### 1. Intelligence acquisition
+Current adaptive payment Intents include:
 
-Small x402 payments to Telegraph Miners while Screen 2 is collecting evidence.
+- `FRAUD_DETECTION`;
+- `ONCHAIN_TX_LOOKUP`;
+- `WALLET_BALANCE_CHECK`.
 
-These are bounded by Auctorail's evidence-spend policy and are **not** the vendor payment.
+The evidence plan decides which Intents are required based on consequence.
 
-### 2. Protected action execution
+## Historical architecture evolution
 
-The actual requested payment, for example:
+### Phase 1 — single real fraud evidence
 
-`1.00 USDC -> Auctorail Vendor`
+The earliest live path demonstrated that Auctorail/ProofGate could:
 
-This is attempted only after a valid `ALLOW` and signed one-use Permit.
+- call Telegraph;
+- receive a real `FRAUD_DETECTION` result;
+- pay through x402;
+- bind the result to a payment subject/chain;
+- use that evidence inside a protected execution chain.
 
-The UI must never describe x402 evidence spend as the vendor payment, or a policy `ALLOW` as an already-executed transaction.
+The canonical 2026-09-02 run used Refut On-Chain Risk and produced a protected 1-USDC Base Sepolia execution.
 
-## Key separation
+### Phase 2 — adaptive consequence tiers
 
-Production deployments should keep separate credentials for separate authorities:
+The payment architecture evolved from a single fixed evidence requirement to consequence-derived plans.
 
-- `TELEGRAPH_EVM_PRIVATE_KEY` — purchases Telegraph intelligence over x402;
-- `PROOFGATE_EXECUTOR_PRIVATE_KEY` — executes protected Base Sepolia actions;
-- `PROOFGATE_PERMIT_ED25519_PRIVATE_KEY` — signs Auctorail execution Permits.
+Current bands:
 
-A production permit signer must be asymmetric. Local HMAC signing remains development/test-only.
+```text
+LOW     <= 5 USDC
+MEDIUM  > 5 to 50 USDC
+HIGH    > 50 USDC
+```
 
-These credentials stay in the trusted server boundary and are never shipped in the public web client or future hosted SDK client.
+### Phase 3 — distinct-Miner quorum
 
-## Failure semantics
+Higher consequence introduced true provider diversity.
 
-Auctorail fails closed.
+Repeated calls to one Miner no longer count as multiple providers.
 
-| Failure | Result |
-| --- | --- |
-| proposal exceeds Mandate | `BLOCK`, no Miner spend |
-| frozen request changed | reject before paid live verification |
-| Telegraph/x402 unavailable | no Permit, no vendor execution |
-| bounded evidence attempts/deadline exhausted | `HOLD`, no execution |
-| quorum incomplete | `HOLD`, no execution |
-| explicit unsafe evidence | `BLOCK`, no execution |
-| Permit invalid/expired/replayed | executor `BLOCKED` |
-| transaction preparation fails before broadcast | `FAILED`, no automatic retry |
-| possible broadcast but confirmation uncertain | `AMBIGUOUS`, no automatic rebroadcast |
-| confirmed transaction | `EXECUTED` + receipt |
+### Phase 4 — generalized authorization architecture
 
-## Provenance without changing the product identity
+The project expanded beyond one payment-specific flow into generic Action/Mandate/Decision/Permit/Executor concepts, later reused by Content Trust.
 
-Auctorail receipts make the decision reconstructible from its authority, evidence and execution context.
+### Phase 5 — product redesign
 
-That provenance is important, but Auctorail is not merely an audit layer. Its defining property is that proof comes **after an enforced authorization boundary**:
+The UI evolved into a clearer Auctorail product with:
 
-`evidence -> decision -> Permit -> protected execution`
+- plain-language Home;
+- deterministic Watch Demo;
+- Live/Check flow;
+- Verify;
+- Content Trust;
+- Security Lab;
+- SDK/docs;
+- responsive browser QA.
 
-A receipt cannot create authority retroactively.
+## Current adaptive evidence plans
 
-## Real-adoption posture
+### LOW
 
-Track 3 usage should be real consumption, not request spam.
+```text
+Amount: <= 5 USDC
+Intent: FRAUD_DETECTION
+Distinct Miners: 1
+Qualified positives: 1
+Confidence floor: 0.70
+Max fraud attempts: 3
+Max evidence spend: 0.035 USDC
+Overall evidence deadline: 12 seconds
+```
 
-The production demonstration should therefore use legitimate end-to-end actions:
+### MEDIUM
 
-`real proposal -> real Telegraph request -> real decision -> real downstream action or real block -> real receipt`
+```text
+Amount: >5 to 50 USDC
+FRAUD_DETECTION:
+  distinct Miners: 2
+  qualified positives: 2
+  confidence floor: 0.75
+  max attempts: 4
+Additional Intent: ONCHAIN_TX_LOOKUP
+Max evidence spend: 0.060 USDC
+Overall deadline: 60 seconds
+```
 
-Autonomous/continuous workflows may generate genuine machine traffic when they correspond to real decisions. Artificial loops whose only purpose is to inflate request counts should not be part of Auctorail.
+### HIGH
 
-The public Web UI is the human-observable surface for the same real pipeline. It must not silently substitute synthetic evidence, fake Miner results or fake transaction confirmations.
+```text
+Amount: >50 USDC
+FRAUD_DETECTION:
+  distinct Miners: 3
+  qualified positives: at least 2
+  confidence floor: 0.80
+  max attempts: 5
+Additional Intents:
+  ONCHAIN_TX_LOOKUP
+  WALLET_BALANCE_CHECK
+Max evidence spend: 0.100 USDC
+Overall deadline: 90 seconds
+```
 
-## Developer adoption boundary
+The current autonomous payment execution ceiling is still `10 USDC`. Evidence tier does not override authority.
 
-The embedded trusted-host SDK already exposes the authorization orchestration inside a trusted Node/backend environment. A future hosted client SDK should make integration simple for external agents, while keeping Telegraph/x402, Permit and executor keys behind the Auctorail server.
+## Telegraph request construction
 
-Before that hosted client is described as production-ready, the public API needs a dedicated API-key/authentication boundary. SDK simplicity must not weaken the authorization trust model.
+The current verification planner makes the required semantics explicit.
 
-## Submission story
+For LOW payment fraud checks, the request identifies:
 
-Auctorail demonstrates the consumption side of the Telegraph flywheel:
+- required `FRAUD_DETECTION` Intent;
+- exact destination/subject;
+- exact Base Sepolia chain ID `84532`;
+- exact payment amount;
+- exact action hash;
+- exact applicability requirement.
 
-1. an autonomous application needs external intelligence before acting;
-2. it buys ranked intelligence through Telegraph;
-3. it converts that intelligence into a consequential machine decision;
-4. the decision changes what the agent is allowed to do;
-5. an `ALLOW` can trigger a real downstream transaction automatically;
-6. the full action remains inspectable afterward through a verifiable receipt.
+Structured routing context includes the payment identity so the Telegraph router is less likely to answer a different question.
 
-That is the architecture the UI, API, executor, SDK and submission narrative must all describe.
+## Routing hints are not proof
+
+Auctorail must not treat its own request as returned evidence.
+
+Example:
+
+```text
+Auctorail sends chainId=84532
+```
+
+This does not allow Auctorail to pretend the Miner explicitly asserted chain `84532` if the returned evidence does not.
+
+Provider response binding remains mandatory.
+
+## Auto-routing
+
+The first request can use Telegraph's ranked `/v1/ask` route.
+
+The authorization architecture is provider-neutral at the policy layer. It does not grant permanent authority to one hard-coded Miner because one historical request succeeded.
+
+## Direct corroboration
+
+When a requirement needs additional distinct providers, the transport layer can choose another ranked unused Miner and target it directly.
+
+This improves liveness/provider diversity while preserving the original quorum.
+
+## Route failures
+
+Some route failures are retryable within the frozen plan.
+
+Examples:
+
+- route unavailable;
+- wrong Intent;
+- missing explicit subject assertion;
+- missing explicit chain assertion;
+- direct corroboration endpoint unavailable.
+
+Rejected evidence can be recorded for diagnostics without counting toward authorization.
+
+## Bounded LOW liveness
+
+The interactive LOW path now uses:
+
+```text
+12-second overall evidence window
+```
+
+instead of the older 35-second value.
+
+The deployed API also bounds individual Telegraph HTTP calls.
+
+This means external provider slowness should become a timely fail-closed `HOLD`, not a long unexplained spinner.
+
+## x402 architecture
+
+Telegraph evidence may require payment.
+
+Auctorail constrains x402 with:
+
+- approved network;
+- approved asset;
+- per-plan total evidence budget;
+- actual payment requirement validation;
+- settlement evidence/reconciliation;
+- special handling for ambiguous paid transport.
+
+Auctorail intentionally does not enable arbitrary agent-controlled x402 spending.
+
+## Serving-Miner validation
+
+The system must establish which Miner actually served the response.
+
+This matters because authorization policy can require provider capability and provider diversity.
+
+A generic “request succeeded” response without trustworthy serving-Miner identity is not enough for a provider-counted quorum.
+
+## Intent validation
+
+A returned response for another Intent should not satisfy the required Intent simply because the data looks useful.
+
+For example:
+
+```text
+Required: FRAUD_DETECTION
+Returned: transaction lookup result
+```
+
+must not become a valid fraud vote.
+
+## Exact binding
+
+Evidence must apply to the exact subject and chain.
+
+The payment lane currently requires explicit binding to:
+
+```text
+subject = exact destination
+chain   = Base Sepolia / 84532
+```
+
+This prevents chain confusion and wallet substitution.
+
+## Signal commitments
+
+Required evidence includes a usable signal hash/commitment.
+
+The commitment helps bind the evidence artifact rather than relying only on displayed verdict text.
+
+## Real public Telegraph evidence
+
+The repository currently has two publicly committed genuine Telegraph acquisitions.
+
+Canonical one:
+
+```text
+Intent: FRAUD_DETECTION
+Miner: Refut On-Chain Risk
+Miner ID: 95822412
+Target: 0xB38d0405DF1b15961aEf29C7c45f2ED285822c14
+Chain: 84532
+Verdict: ALLOW
+Confidence: 0.70
+Cost: $0.01
+Signal hash: 0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c
+```
+
+See `REAL_USAGE_LOG.md`.
+
+## Real execution relationship
+
+The canonical evidence belongs to the historical protected Base Sepolia payment described in `LIVE_EXECUTION.md`.
+
+That transaction predates the later adaptive/multi-Miner architecture and should not be presented as if it retroactively exercised every current control.
+
+## Track-usage discipline
+
+Real Telegraph usage:
+
+```text
+counted only when genuine external evidence is preserved safely
+```
+
+Not counted:
+
+```text
+Guided Demo
+Security Lab
+unit tests
+fuzzing
+mocked Content Trust output
+browser QA
+```
+
+Current conservative public totals:
+
+```text
+2 real Telegraph acquisitions
+$0.02 committed x402 evidence cost
+1 protected Base Sepolia execution
+```
+
+## Differentiation from an intelligence UI
+
+A Telegraph app can make Miners easier for humans/agents to query.
+
+Auctorail operates one layer later:
+
+```text
+intelligence service → answers a question
+Auctorail → determines whether the answer is sufficient inside delegated authority to unlock a protected action
+```
+
+This makes Auctorail complementary to specialist Miners and MCP intelligence tools.
+
+## Current validation of Telegraph-related security
+
+Tests cover:
+
+- auto-route behavior;
+- route resilience;
+- direct diversity;
+- exact-chain diversity;
+- request-binding priority;
+- serving-Miner/Intent semantics;
+- evidence binding;
+- x402 policy;
+- x402 reconciliation;
+- adaptive orchestration;
+- low-risk liveness;
+- quorum invariants.
+
+The adaptive/quorum fuzz harness adds 3200 deterministic adversarial cases.
+
+## Planned evolution
+
+Potential future improvements include:
+
+- stronger provider-health/routing observability;
+- durable evidence acquisition operation state;
+- additional verified Intents;
+- richer policy composition;
+- step-up/human approval for actions above autonomous ceilings;
+- more protected adapters that consume Telegraph evidence.
+
+These should be presented as future direction unless implemented and validated.
+
+## Final Telegraph-track principle
+
+**Auctorail's use of Telegraph is not “ask a Miner, then trust it.” It is “derive the proof required for this exact action, acquire that proof through bounded paid routing, verify the real serving evidence, and use deterministic policy to decide whether execution authority may exist.”**
