@@ -55,6 +55,7 @@ describe("low-risk live evidence liveness", () => {
     );
 
     expect(plan.riskTier).toBe("LOW");
+    expect(plan.maxEvidenceLatencyMs).toBe(20_000);
     expect(plan.requirements).toHaveLength(1);
     expect(plan.requirements[0].intent).toBe("FRAUD_DETECTION");
     expect(plan.requirements[0].minimumConfidence).toBe(0.70);
@@ -94,5 +95,43 @@ describe("low-risk live evidence liveness", () => {
     expect(result.failedIntent).toBe("FRAUD_DETECTION");
     expect(result.bundle.items).toHaveLength(0);
     expect(result.rejectedAttempts).toHaveLength(3);
+  });
+
+  it("never accepts evidence that arrives after the precommitted LOW deadline", async () => {
+    const action = adaptiveAction("1000000");
+    const plan = createAdaptiveEvidencePlan(action);
+    const started = Date.parse("2026-09-06T16:00:00.000Z");
+    let nowMs = started;
+
+    const result = await collectAdaptiveEvidence(
+      action,
+      plan,
+      async ({ requirement }) => {
+        nowMs = started + plan.maxEvidenceLatencyMs + 1;
+        return {
+          evidence: adaptiveEvidence(
+            action,
+            requirement.intent,
+            {
+              miner: {
+                id: "late-miner",
+                name: "Late Miner",
+                slug: "late-miner"
+              },
+              confidence: 0.99,
+              label: "ALLOW"
+            }
+          ),
+          paymentAmountRaw: "10000"
+        };
+      },
+      { now: () => new Date(nowMs) }
+    );
+
+    expect(result.status).toBe("HOLD");
+    expect(result.code).toBe("adaptive_evidence_deadline_exceeded");
+    expect(result.completedIntents).toEqual([]);
+    expect(result.bundle.items).toHaveLength(0);
+    expect(result.error).toBe("evidence_arrived_after_deadline");
   });
 });
