@@ -16,12 +16,15 @@ process.env.AUCTORAIL_LIVE_REQUESTS_PER_HOUR = normalizedLiveQuota;
 process.env.PROOFGATE_LIVE_REQUESTS_PER_HOUR = normalizedLiveQuota;
 
 const configuredTelegraphTimeout = Number(
-  process.env.AUCTORAIL_TELEGRAPH_HTTP_TIMEOUT_MS ?? "3500"
+  process.env.AUCTORAIL_TELEGRAPH_HTTP_TIMEOUT_MS ?? "8000"
 );
+// Keep each upstream Telegraph request below the LOW-risk 12 second evidence
+// deadline while allowing normal Miner/x402 responses more time than the old
+// 3.5 second demo-oriented cap.
 const telegraphHttpTimeoutMs =
   Number.isFinite(configuredTelegraphTimeout)
-    ? Math.min(10_000, Math.max(1_500, Math.round(configuredTelegraphTimeout)))
-    : 3_500;
+    ? Math.min(11_000, Math.max(1_500, Math.round(configuredTelegraphTimeout)))
+    : 8_000;
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
