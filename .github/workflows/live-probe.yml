@@ -1,5 +1,8 @@
 name: live-probe
-on: workflow_dispatch
+on:
+  push:
+    branches: [ arena/01a07716-auctorail ]
+    paths: [ 'trigger-probe.txt', '.github/workflows/live-probe.yml' ]
 jobs:
   probe:
     runs-on: ubuntu-latest
