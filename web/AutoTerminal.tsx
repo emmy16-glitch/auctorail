@@ -19,18 +19,26 @@ interface AutoTerminalProps {
   loop?: boolean;
   /** Starting play state (default true). */
   autostart?: boolean;
-  /** Milliseconds per character (default 26). */
+  /** Milliseconds per character in typing mode (default 26). */
   speed?: number;
+  /** Milliseconds per line in calm (reduced-motion) mode (default 1000). */
+  lineMs?: number;
   /** Compact variant (smaller padding / font). */
   compact?: boolean;
   /** Accessible name for the terminal. */
   ariaLabel?: string;
 }
 
+const LOOP_REST_MS = 2600;
+
 /**
- * A small terminal that types its lines automatically, pauses between them,
- * and (by default) loops. Click the body to pause / resume. Honors
- * prefers-reduced-motion by rendering the full transcript statically.
+ * A small terminal that runs its lines automatically and (by default) loops.
+ * Two modes:
+ *  - Typing: characters appear one at a time with a blinking cursor.
+ *  - Calm:   when the OS asks for reduced motion, each line still appears on
+ *            its own (whole line, gentle fade) so it keeps moving, but without
+ *            the rapid char-by-char flicker or the blinking cursor.
+ * Click the body to pause / resume.
  */
 export function AutoTerminal({
   lines,
@@ -38,6 +46,7 @@ export function AutoTerminal({
   loop = true,
   autostart = true,
   speed = 26,
+  lineMs = 1000,
   compact = false,
   ariaLabel
 }: AutoTerminalProps) {
@@ -51,16 +60,17 @@ export function AutoTerminal({
     []
   );
 
-  // When reduced motion is requested, show the whole transcript at once.
-  const showAll = reduced;
-  const visibleLines = showAll
-    ? lines
-    : lines.slice(0, lineIdx + 1).map((l, i) =>
-        i < lineIdx ? l : { ...l, text: l.text.slice(0, charCount) }
-      );
-
-  const done = !showAll && lineIdx >= lines.length - 1 && charCount >= lines[lines.length - 1].text.length;
+  const lastIdx = lines.length - 1;
+  const atEnd = lineIdx >= lastIdx;
+  const done = atEnd && (reduced || charCount >= (lines[lastIdx]?.text.length ?? 0));
   const status = !playing ? "PAUSED" : done && !loop ? "DONE" : "RUNNING";
+
+  // Lines to render: everything up to the current line; the current line is
+  // partial in typing mode, whole in calm mode.
+  const visibleLines = lines.slice(0, lineIdx + 1).map((l, i) => {
+    if (i < lineIdx || reduced) return l;
+    return { ...l, text: l.text.slice(0, charCount) };
+  });
 
   // Reset when the line set changes.
   const keyRef = useRef("");
@@ -72,24 +82,39 @@ export function AutoTerminal({
   }
 
   useEffect(() => {
-    if (showAll || !playing) return;
+    if (!playing) return;
     if (done) {
       if (!loop) return;
-      // Rest between loops, then restart.
       const t = window.setTimeout(() => {
         setLineIdx(0);
         setCharCount(0);
-      }, 2600);
+      }, LOOP_REST_MS);
       return () => window.clearTimeout(t);
     }
+
+    if (reduced) {
+      // Calm mode: reveal each whole line on a timer, no char flicker.
+      const current = lines[lineIdx];
+      const delay = atEnd ? LOOP_REST_MS : (current?.pause ?? lineMs);
+      const t = window.setTimeout(() => {
+        if (atEnd) {
+          // Rest on the finished transcript before looping (handled by `done`).
+          return;
+        }
+        setLineIdx((i) => i + 1);
+      }, delay);
+      return () => window.clearTimeout(t);
+    }
+
+    // Typing mode: reveal characters one at a time.
     const current = lines[lineIdx];
     if (!current) return;
     const finishedLine = charCount >= current.text.length;
     const delay = finishedLine ? (current.pause ?? 340) : speed;
     const t = window.setTimeout(() => {
       if (finishedLine) {
-        if (lineIdx >= lines.length - 1) {
-          setCharCount(current.text.length); // settle last line
+        if (atEnd) {
+          setCharCount(current.text.length);
         } else {
           setLineIdx((i) => i + 1);
           setCharCount(0);
@@ -99,15 +124,17 @@ export function AutoTerminal({
       }
     }, delay);
     return () => window.clearTimeout(t);
-  }, [showAll, playing, done, loop, lineIdx, charCount, lines, speed]);
+  }, [playing, done, loop, reduced, atEnd, lineIdx, charCount, lines, speed, lineMs]);
+
+  const showCursor = !reduced && playing;
 
   return (
     <div
-      className={`auto-term ${compact ? "auto-term-compact" : ""} ${playing && !showAll ? "is-running" : ""}`}
+      className={`auto-term ${compact ? "auto-term-compact" : ""} ${reduced ? "auto-term-calm" : ""} ${playing ? "is-running" : ""}`}
       role="img"
       aria-label={ariaLabel ?? `Live terminal: ${label}`}
-      onClick={() => !showAll && setPlaying((p) => !p)}
-      style={{ cursor: showAll ? "default" : "pointer" }}
+      onClick={() => setPlaying((p) => !p)}
+      style={{ cursor: "pointer" }}
     >
       <div className="auto-term-title">
         <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
@@ -118,12 +145,11 @@ export function AutoTerminal({
         {visibleLines.map((line, i) => (
           <span key={i} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""}`}>
             <span className={line.cmd ? "wl-cmd" : ""}>{line.text}</span>
-            {i === visibleLines.length - 1 && !showAll && (
+            {i === visibleLines.length - 1 && showCursor && (
               <span className="auto-term-cursor" aria-hidden="true" />
             )}
           </span>
         ))}
-        {showAll && <span className="auto-term-cursor" aria-hidden="true" />}
       </div>
     </div>
   );
