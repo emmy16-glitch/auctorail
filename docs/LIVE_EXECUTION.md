@@ -1,102 +1,168 @@
-# Auctorail — Canonical Live Execution
+# Auctorail canonical live execution proof
 
-This document records the canonical end-to-end hackathon execution completed on Base Sepolia on **2026-09-02**.
+This document records the canonical end-to-end protected payment completed on **Base Sepolia on 2026-09-02**.
 
-It gives reviewers one place to verify the exact protected action, genuine Telegraph evidence, deterministic policy result, one-use permit, on-chain transaction, and Proof Receipt.
+It is the strongest public proof in the repository that Auctorail crossed the boundary from deterministic authorization logic into a genuine external evidence purchase and protected on-chain effect.
 
-The execution predates the Auctorail rename, so some immutable historical identifiers still contain the previous `ProofGate` name. They are preserved intentionally.
+The transaction predates the final Auctorail rebrand. Some immutable artifacts therefore still contain the historical `ProofGate` name. They are preserved exactly because changing historical proof artifacts for branding would reduce provenance.
 
-## Result
+## Executive summary
 
-Auctorail's authorization boundary successfully authorized and executed an autonomous payment of **1 Base Sepolia USDC** to the already-deployed historical `ProofGateVendor` contract.
+Auctorail's authorization boundary approved and executed a **1 USDC** Base Sepolia payment to the already-deployed historical `ProofGateVendor` contract after validating delegated authority, a frozen exact action, genuine Telegraph fraud evidence, runtime attestation and a deterministic authorization decision.
 
-- Network: Base Sepolia (`84532`)
-- Token: Base Sepolia USDC
-- Amount: `1 USDC` (`1000000` minor units)
-- Sender: `0xC07a448DF2E1F3AF0d6f0E8cCe45d5D753fc8eF4`
-- Destination: `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14`
-- Transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
-- Base Sepolia block: `46301208`
-- Transaction status: `Success`
+```text
+PRINCIPAL MANDATE
+        ↓
+EXACT FROZEN PAYMENT
+        ↓
+GENUINE TELEGRAPH/x402 EVIDENCE
+        ↓
+VENDOR RUNTIME ATTESTATION
+        ↓
+DETERMINISTIC ALLOW
+        ↓
+SHORT-LIVED ONE-USE PERMIT
+        ↓
+PROTECTED BASE SEPOLIA EXECUTION
+        ↓
+PROOF RECEIPT
+```
 
-Basescan:
+## Public execution result
+
+| Field | Value |
+| --- | --- |
+| Network | Base Sepolia |
+| Chain ID | `84532` |
+| Asset | Base Sepolia USDC |
+| Amount | `1 USDC` (`1000000` minor units) |
+| Sender | `0xC07a448DF2E1F3AF0d6f0E8cCe45d5D753fc8eF4` |
+| Destination | `0xB38d0405DF1b15961aEf29C7c45f2ED285822c14` |
+| Transaction | `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc` |
+| Base Sepolia block | `46301208` |
+| Transaction status | Success |
+
+BaseScan:
 
 https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 
-## Authorization chain
+## Authorization chain in detail
 
-### 1. Principal mandate
+### 1. Principal Mandate
 
-- Mandate ID: `treasury-demo-attested-v1`
-- Principal: `company-demo`
-- Agent: `procurement-agent`
-- Mandate hash: `0x052a7e9a3ab0398f9636c795550c89b41eff82aad95cb86fd4c477ad084f5687`
-- Policy: `payments.attested-vendor.v1`
+Historical run values:
 
-The mandate restricted the agent to the delegated payment envelope before Telegraph proof was requested.
+| Field | Value |
+| --- | --- |
+| Mandate ID | `treasury-demo-attested-v1` |
+| Principal | `company-demo` |
+| Agent | `procurement-agent` |
+| Policy | `payments.attested-vendor.v1` |
+| Mandate hash | `0x052a7e9a3ab0398f9636c795550c89b41eff82aad95cb86fd4c477ad084f5687` |
+
+The important architectural property is that standing authority existed **before** external evidence was treated as relevant.
+
+Telegraph did not decide what the agent was allowed to spend. The principal's Mandate established the authorization envelope.
 
 ### 2. Exact frozen action
 
-- Action hash: `0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4`
-- Chain: Base Sepolia (`84532`)
-- Token: Base Sepolia USDC
-- Amount: `1000000`
-- Destination: `0xb38d0405df1b15961aef29c7c45f2ed285822c14`
-- Reason: `Invoice INV-1042`
+| Field | Value |
+| --- | --- |
+| Action hash | `0x0989c7d9470c6d26d873fa23670fb66565534e274b5a56d35fa6abd5bab0fbf4` |
+| Chain | Base Sepolia (`84532`) |
+| Token | Base Sepolia USDC |
+| Amount | `1000000` |
+| Destination | `0xb38d0405df1b15961aef29c7c45f2ed285822c14` |
+| Reason | `Invoice INV-1042` |
 
-Changing a protected semantic field such as amount, recipient, chain, token or policy changes the action commitment and invalidates the old authorization.
+The action commitment prevents the authorization from becoming a vague permission such as “procurement-agent may pay this vendor.”
 
-### 3. Genuine Telegraph evidence
+Changing amount, destination, chain, token or another protected semantic changes the action binding and requires new authorization.
 
-Fresh Telegraph evidence was obtained for the exact canonical vendor and chain.
+### 3. Genuine Telegraph fraud evidence
 
-- Serving Miner: `Refut On-Chain Risk`
-- Miner ID: `95822412`
-- Required Intent: `FRAUD_DETECTION`
-- Miner verdict: `ALLOW`
-- Confidence: `0.7`
-- Applicability: `APPLICABLE`
-- Telegraph signal hash: `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c`
-- Raw response hash: `0x442bc3463cae1c9f8ba9a5fce124ffd96cec720f0f24a41dc322b3b905cc361d`
-- Evidence artifact: `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
+Artifact:
 
-The live Telegraph x402 challenge selected an approved Base Sepolia USDC lane with a proof charge of `10000` minor units (`0.01 USDC`). The implementation validated the network, asset, amount cap and dynamic `payTo` address before the paid request.
+`data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
 
-### 4. Vendor runtime attestation
+Verified fields:
 
-The deployed vendor runtime was independently verified before execution.
+| Field | Value |
+| --- | --- |
+| Source | Telegraph |
+| Required Intent | `FRAUD_DETECTION` |
+| Serving Miner | `Refut On-Chain Risk` |
+| Miner ID | `95822412` |
+| Subject | canonical vendor |
+| Chain | Base Sepolia (`84532`) |
+| Verdict | `ALLOW` |
+| Confidence | `0.70` |
+| Applicability | `APPLICABLE` |
+| Signal hash | `0x13499ae69d8e6c43f0798e9e1c9c9dcdabba5ac33fcc88855282def9e78cae4c` |
+| Raw response hash | `0x442bc3463cae1c9f8ba9a5fce124ffd96cec720f0f24a41dc322b3b905cc361d` |
 
-- Runtime Keccak-256: `0x12c20655de1ed03a8e646cb98f8ce51e033ec28dc38b7c9383b8f96d02d07a93`
-- Attestation hash: `0x4d63927d1dc90819efb71138cbabf9fd1439551257f11c92f2a1842e391c7922`
-- Attested at Base Sepolia block: `46301204`
-- Artifact: `data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
+### 4. Genuine x402 evidence payment
 
-### 5. Deterministic policy decision
+The Telegraph challenge selected an approved Base Sepolia USDC payment lane.
 
-The historical policy output was:
+| Field | Value |
+| --- | --- |
+| Evidence charge | `10000` minor units (`0.01 USDC`) |
+| Settlement success | `true` |
+| Settlement tx | `0xc135d16a7abf5fdfc9f9dcaec001e5369865c5004224cd6bb9a822fb900daef0` |
+
+The implementation validated payment-lane constraints before accepting the paid evidence flow.
+
+This matters because external evidence acquisition is itself a machine side effect.
+
+### 5. Vendor runtime attestation
+
+Artifact:
+
+`data/evidence/vendor-attestations/vendor-runtime-2026-09-02T17-38-18-411Z.json`
+
+| Field | Value |
+| --- | --- |
+| Runtime Keccak-256 | `0x12c20655de1ed03a8e646cb98f8ce51e033ec28dc38b7c9383b8f96d02d07a93` |
+| Attestation hash | `0x4d63927d1dc90819efb71138cbabf9fd1439551257f11c92f2a1842e391c7922` |
+| Attested block | `46301204` |
+
+This ensured the protected destination's deployed runtime matched the expected artifact for the historical attested-vendor policy.
+
+### 6. Deterministic policy decision
+
+The preserved historical output was:
 
 ```text
 PROOFGATE: ALLOW
 Reason: composite_attested_vendor_checks_passed
 ```
 
-`PROOFGATE` is shown here because that exact string belongs to the preserved historical artifact generated before the product was renamed Auctorail.
+`PROOFGATE` is retained here because it is the literal historical output generated before the rebrand.
 
-Every required mandate, chain, asset, destination, amount, evidence, Miner-profile, confidence, signal-hash, freshness and vendor-runtime check passed.
+The important point is that the Miner verdict was not sufficient by itself. The policy combined:
 
-A favorable Miner verdict alone did not create authorization. The authorization engine combined the Miner evidence with delegated authority and the exact runtime attestation.
+- delegated Mandate authority;
+- exact action semantics;
+- supported chain/asset/destination/amount;
+- genuine Telegraph evidence;
+- confidence/applicability/signal commitment;
+- vendor runtime attestation;
+- policy checks.
 
-### 6. One-use permit
+### 7. One-use permit
 
-- Permit ID: `a1b4e53c-0e0e-4504-b0b0-a05ec80093bb`
-- Decision hash: `0x5f159b8bac7fa9807347decad0f8875fd3b5b4a7e41dbd3475c82d54cb0f054e`
-- Permit expiry window: 30 seconds
+| Field | Value |
+| --- | --- |
+| Permit ID | `a1b4e53c-0e0e-4504-b0b0-a05ec80093bb` |
+| Decision hash | `0x5f159b8bac7fa9807347decad0f8875fd3b5b4a7e41dbd3475c82d54cb0f054e` |
+| Historical permit expiry window | 30 seconds |
 
-The permit was bound to the exact mandate, frozen action and decision.
+The permit bound execution authority to the exact authorization context rather than creating a reusable spending credential.
 
-### 7. Controlled execution
+### 8. Protected execution
 
-Execution result:
+Recorded execution result:
 
 ```text
 Final decision: ALLOW
@@ -105,52 +171,120 @@ Execution code: executed
 Transaction: 0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 ```
 
-The Base Sepolia executor constructed the ERC-20 transfer from the authorized action and allowed only one irreversible broadcast attempt. Confirmation reads may fail over across RPC providers, but transaction semantics cannot change during failover.
+The executor constructed the ERC-20 transfer from the authorized action.
 
-### 8. Proof Receipt
+The historical execution design allowed confirmation reads to fail over across RPC providers while preserving transaction semantics. Failover could not silently change amount, recipient or action meaning.
 
-- Receipt ID: `878d4350-85c8-44dd-94c2-257641cd7c0c`
-- Receipt hash: `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3`
-- Artifact: `data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
+### 9. Proof Receipt
 
-The receipt binds the mandate, action, Telegraph evidence, policy decision, permit, vendor runtime attestation and execution result into one tamper-evident artifact.
+Artifact:
 
-## What this proves
+`data/receipts/878d4350-85c8-44dd-94c2-257641cd7c0c.json`
 
-This execution demonstrates a real Auctorail authorization boundary with a real external effect:
+| Field | Value |
+| --- | --- |
+| Receipt ID | `878d4350-85c8-44dd-94c2-257641cd7c0c` |
+| Receipt hash | `0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3` |
+
+The receipt binds the important authorization and execution facts into a tamper-evident artifact.
+
+## What this execution proves
+
+This artifact chain demonstrates that Auctorail has exercised:
+
+- principal-controlled authorization context;
+- exact frozen payment semantics;
+- genuine Telegraph Miner acquisition;
+- genuine x402 evidence payment;
+- explicit Miner/Intent/subject/chain/confidence/signal data;
+- deterministic policy authorization;
+- short-lived execution authority;
+- protected Base Sepolia USDC transfer;
+- public on-chain transaction reference;
+- tamper-evident proof receipt.
+
+It is not a browser-only simulation.
+
+## What this execution does not prove
+
+This specific transaction predates later architecture and should not be used to claim that the transaction itself exercised every feature now present in `main`.
+
+Do **not** claim this exact run exercised:
+
+- the later `payments.adaptive.v1` multi-tier policy in its current form;
+- a successful HIGH three-distinct-Miner quorum;
+- the later generalized action-adapter path;
+- every current Content Trust feature;
+- every newer durable PostgreSQL/Ed25519-oriented deployment control;
+- the current 12-second LOW evidence window.
+
+Those are current code/test capabilities or later design elements, not properties retroactively added to the 2026-09-02 transaction.
+
+## Relationship to the current LOW adaptive policy
+
+Although the historical transaction used `payments.attested-vendor.v1`, its canonical Telegraph fraud result has confidence `0.70`, matching the current LOW adaptive positive floor.
+
+That makes it useful evidence that the same real Telegraph lane can return the class of bound fraud evidence required by current LOW authorization.
+
+But runtime adaptive authorization still requires a fresh current evidence acquisition; this historical artifact is not permanent permission.
+
+## Why the historical `ProofGateVendor` name remains
+
+The deployed contract and its artifacts predate the Auctorail rename.
+
+Changing:
 
 ```text
-DELEGATED AUTHORITY
-  ↓
-EXACT FROZEN ACTION
-  ↓
-GENUINE TELEGRAPH EVIDENCE
-  ↓
-DETERMINISTIC ALLOW
-  ↓
-ONE-USE PERMIT
-  ↓
-CONTROLLED BASE SEPOLIA EXECUTION
-  ↓
-VERIFIABLE PROOF RECEIPT
+ProofGateVendor
+proofgate.* schema names
+historical output strings
+artifact filenames/hashes
 ```
 
-It is not a visual simulation and it does not reuse historical evidence for a different destination.
+after the fact would damage provenance and could break compatibility/hash references.
 
-## What it does not prove
+The correct interpretation is:
 
-This historical transaction predates later Auctorail work.
+```text
+Auctorail = current product
+ProofGateVendor / proofgate.* = preserved historical protocol/deployment identifiers
+```
 
-Do not claim that this transaction exercised:
+## Reproducing the proof review
 
-- the later HIGH three-distinct-Miner quorum path;
-- the later general action-adapter architecture;
-- the later production-oriented Ed25519/PostgreSQL deployment path.
+A reviewer can independently inspect:
 
-Those controls exist separately in the current code/tests, but this exact transaction should only be used to prove the live Telegraph + protected execution boundary that it actually exercised.
+1. the Telegraph evidence JSON;
+2. the vendor runtime attestation artifact;
+3. the stored proof receipt;
+4. the Base Sepolia transaction on BaseScan;
+5. the current source/tests explaining how those categories of artifacts are validated.
 
-## Historical-name compatibility
+## Public claim wording
 
-The product is now **Auctorail**.
+Recommended:
 
-The deployed `ProofGateVendor` contract name, saved evidence files, receipts, hashes and historical output strings are intentionally unchanged. They are immutable proof/deployment artifacts from before the rename. Rewriting them for branding would reduce the trustworthiness of the recorded proof.
+> Auctorail has a real payment lane. The repository contains genuine Telegraph/x402 fraud evidence and a protected 1-USDC Base Sepolia execution with a public transaction and proof receipt.
+
+Avoid:
+
+> Every current Auctorail control was proven by this one historical transaction.
+
+That would overstate what the artifact demonstrates.
+
+## Current broader validation
+
+Separate from this historical live proof, current `main` also has:
+
+```text
+268 / 268 tests passed
+7400 / 7400 deterministic adversarial cases contained
+0 unauthorized executions / authorizations in the fuzz suites
+0 production dependency vulnerabilities reported by npm audit
+```
+
+Those validation results prove current deterministic implementation behavior; the canonical transaction proves a real external-effect path.
+
+## Final proof principle
+
+**The value of this artifact is not that a transaction succeeded. It is that a real external effect is traceable through delegated authority, an exact frozen action, genuine paid Telegraph evidence, deterministic authorization, one-use execution authority and a verifiable receipt.**
