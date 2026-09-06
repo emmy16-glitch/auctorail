@@ -24,8 +24,52 @@ function deploymentPrelude() {
   return bundleSource.slice(0, markerIndex).trimEnd();
 }
 
+function adaptWritableRuntimePaths(sourcePath, source) {
+  let adapted = source;
+  const isPaymentApi = sourcePath.endsWith(join("web", "api.ts"));
+  const isUtilityApi = sourcePath.endsWith(join("web", "security-lab-api.ts"));
+
+  if (isPaymentApi) {
+    const replacements = [
+      [
+        'evidenceDirectory: path.join(process.cwd(), "data", "evidence", "adaptive")',
+        'evidenceDirectory: path.join("/tmp", "auctorail", "evidence", "adaptive")'
+      ],
+      [
+        'const directory = path.join(process.cwd(), "data", "receipts");',
+        'const directory = path.join("/tmp", "auctorail", "receipts");'
+      ],
+      [
+        'new FilePermitConsumptionStore(path.join(process.cwd(), ".proofgate", "consumed"))',
+        'new FilePermitConsumptionStore(path.join("/tmp", "auctorail", "consumed"))'
+      ]
+    ];
+
+    for (const [from, to] of replacements) {
+      if (!adapted.includes(from)) {
+        throw new Error(`Vercel writable-path marker missing in ${sourcePath}: ${from}`);
+      }
+      adapted = adapted.replace(from, to);
+    }
+  }
+
+  if (isUtilityApi) {
+    const from = 'const directory = path.join(process.cwd(), "data", "content-receipts");';
+    const to = 'const directory = path.join("/tmp", "auctorail", "content-receipts");';
+    if (!adapted.includes(from)) {
+      throw new Error(`Vercel writable-path marker missing in ${sourcePath}: ${from}`);
+    }
+    adapted = adapted.replace(from, to);
+  }
+
+  return adapted;
+}
+
 function makeVercelHandler(sourcePath, temporaryPath, prelude) {
-  const source = readFileSync(sourcePath, "utf8");
+  const source = adaptWritableRuntimePaths(
+    sourcePath,
+    readFileSync(sourcePath, "utf8")
+  );
   const marker = 'server.listen(PORT, "0.0.0.0"';
   const markerIndex = source.indexOf(marker);
   if (markerIndex < 0) {
