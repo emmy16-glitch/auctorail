@@ -289,7 +289,7 @@ function SiteFooter() {
         <p>Prove authority before execution · Base Sepolia testnet build</p>
         <nav aria-label="Footer">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
-          <a href={BASESCAN_TX_URL} target="_blank" rel="noreferrer">Base Sepolia contract ↗</a>
+          <a href={BASESCAN_TX_URL} target="_blank" rel="noreferrer">Protected tx on BaseScan ↗</a>
           <a href={routePath("docs")}>Docs</a>
           <a href={routePath("trust")}>Trust</a>
           <span>Built on Telegraph / x402</span>
