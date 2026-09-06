@@ -1,0 +1,215 @@
+name: arena-cleanup
+on:
+  push:
+    branches: [ arena/01a07716-auctorail ]
+    paths: [ 'arena-cleanup-trigger.txt' ]
+permissions:
+  contents: write
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: arena/01a07716-auctorail
+          fetch-depth: 0
+      - name: Apply verified landing-page cleanup
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_exact(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"missing expected text: {label}")
+              return text.replace(old, new)
+
+          home_path = Path('web/HomeLandingScreen.tsx')
+          home = home_path.read_text()
+
+          # Make the public claim precise: Auctorail is the protected execution rail,
+          # not a universal guarantee over wallets or contracts outside that path.
+          home = replace_exact(
+              home,
+              '          An agent asked to pay one bill can be prompt-injected into draining a wallet.\n          Auctorail makes that <em>structurally impossible</em> — not just unlikely.',
+              '          An agent asked to pay one bill can be prompt-injected into widening, redirecting, or replaying a payment.\n          Inside Auctorail’s protected execution path, those unauthorized changes fail at the authorization rail — not merely by convention.',
+              'hero claim'
+          )
+
+          # Keep the historical protected transaction, but label it accurately.
+          home = home.replace(
+              '// The real, recorded Base Sepolia protected payment — wired to every "verify on BaseScan" link.',
+              '// Historical protected Base Sepolia payment used as a public, independently verifiable receipt.'
+          )
+
+          # Match the homepage attack matrix to the real deterministic attack harness.
+          attack_block = '''const attacks = [
+            { n: "01", id: "attack-permit-replay", name: "PERMIT REPLAY", tries: "Reuses a permit after the authorized action already consumed it", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Consumption guard rejects it. No second execution." },
+            { n: "02", id: "attack-amount-mutation", name: "AMOUNT MUTATION", tries: "Changes 1.00 → 2.00 USDC after authorization", layer: "01 · EXACT ACTION", layerId: "layer-01", result: "Action hash mismatch. Permit verification fails." },
+            { n: "03", id: "attack-evidence-subject", name: "EVIDENCE SUBJECT SWAP", tries: "Replaces vendor evidence with evidence for another address", layer: "03 · TELEGRAPH EVIDENCE", layerId: "layer-03", result: "Evidence binding mismatch. Authority is rejected." },
+            { n: "04", id: "attack-permit-forgery", name: "PERMIT FORGERY", tries: "Alters the signature on an otherwise valid permit", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Signature verification fails." },
+            { n: "05", id: "attack-expired-permit", name: "EXPIRED PERMIT", tries: "Attempts execution after the permit TTL", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Expired authority is rejected." },
+            { n: "06", id: "attack-decision-tamper", name: "DECISION TAMPER", tries: "Changes the authorization decision after the permit is minted", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Decision hash mismatch. Permit verification fails." },
+            { n: "07", id: "attack-mandate-substitution", name: "MANDATE SUBSTITUTION", tries: "Rebinds the permit to a different mandate version", layer: "02 · DELEGATION", layerId: "layer-02", result: "Mandate hash mismatch. Authority is rejected." },
+            { n: "08", id: "attack-negative-miner", name: "NEGATIVE MINER", tries: "Supplies a high-confidence negative Telegraph verdict", layer: "03 · TELEGRAPH EVIDENCE", layerId: "layer-03", result: "Negative evidence reduces authority: BLOCK." },
+            { n: "09", id: "attack-runtime-tamper", name: "RUNTIME ATTESTATION TAMPER", tries: "Alters pinned runtime evidence while the Miner still says ALLOW", layer: "03 · TELEGRAPH EVIDENCE", layerId: "layer-03", result: "Runtime attestation check blocks the request." },
+            { n: "10", id: "attack-receipt-tamper", name: "RECEIPT TAMPER", tries: "Changes the transaction hash inside a completed receipt", layer: "05 · VERIFIABLE PROOF", layerId: "layer-05", result: "Receipt integrity re-verification fails." }
+          ];'''
+          home, n = re.subn(r'const attacks = \[.*?\n\];\n\nconst telegraph =', attack_block + '\n\nconst telegraph =', home, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('could not replace attack matrix data')
+
+          telegraph_block = '''const telegraph = {
+            buy: "Auctorail buys bounded Telegraph intelligence through x402 and binds the returned evidence to the exact frozen action. Payment policy currently uses FRAUD_DETECTION for LOW risk, adds ONCHAIN_TX_LOOKUP for MEDIUM risk, and adds WALLET_BALANCE_CHECK for HIGH risk. Content Trust uses AI_DETECTION and CONTENT_VERIFICATION. Not a subscription. Not a feed. Evidence is acquired per action under a bounded budget.",
+            when: "Evidence is policy-driven and is acquired before execution authority is issued. Even the current LOW payment tier requires FRAUD_DETECTION; higher tiers require more evidence and distinct Miners. If required evidence does not arrive or cannot be verified, Auctorail holds instead of guessing.",
+            why: "Auctorail does not generate the intelligence it relies on. Telegraph provides external Miner results; Auctorail verifies their applicability, confidence, subject and action binding, then evaluates them together with the human delegation. Telegraph provides intelligence. Auctorail decides whether that evidence is sufficient to authorize the exact action."
+          };'''
+          home, n = re.subn(r'const telegraph = \{.*?\n\};\n\nconst demos =', telegraph_block + '\n\nconst demos =', home, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('could not replace telegraph copy')
+
+          plain_block = '''const plain = [
+            { n: "01", title: "You delegate the boundary", copy: "invoice-bot may pay the pinned vendor, up to 5 USDC per action, during the active permission window.", example: "delegate  invoice-bot → vendor · max 5 USDC" },
+            { n: "02", title: "The agent proposes one exact action", copy: "For the demo request, it asks to pay 1.00 USDC for supplier invoice #4471. Auctorail freezes the amount, recipient, reason and reference.", example: "request   1.00 USDC · INV-4471" },
+            { n: "03", title: "The rail checks delegated authority", copy: "The request must fit the real mandate before paid intelligence is used. It cannot widen the amount or swap the pinned recipient.", example: "policy    amount ≤ 5 · recipient match ✓" },
+            { n: "04", title: "Required Telegraph evidence is verified", copy: "For the current LOW tier, Auctorail obtains FRAUD_DETECTION evidence and verifies that it applies to this exact recipient and Base Sepolia action.", example: "evidence  FRAUD_DETECTION · bound ✓" },
+            { n: "05", title: "One-use authority can execute", copy: "Only after policy and evidence pass does Auctorail issue short-lived, one-use execution authority. The outcome can be saved as a receipt and re-verified.", example: "permit    one use · short lived · verifiable" }
+          ];'''
+          home, n = re.subn(r'const plain = \[.*?\n\];\n\n// Plain-language loop', plain_block + '\n\n// Plain-language loop', home, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('could not replace simple steps')
+
+          term_block = '''const plainTerm: AutoTermLine[] = [
+            { cmd: true, text: 'delegate "invoice-bot → pinned vendor · max 5 USDC"' },
+            { text: "→ mandate  active permission loaded", tone: "ok" },
+            { cmd: true, text: 'request "pay 1.00 USDC · invoice INV-4471"' },
+            { text: "→ frozen   exact action hash created", tone: "ok" },
+            { text: "→ rules    amount + recipient match  ✓", tone: "ok" },
+            { text: "→ evidence Telegraph FRAUD_DETECTION ✓", tone: "ok" },
+            { text: "→ permit   one-use authority issued", tone: "ok" },
+            { text: "→ ready    protected execution may proceed", tone: "ok", pause: 700 },
+            { cmd: true, text: 'request "pay 7.00 USDC · same vendor"' },
+            { text: "→ rules    exceeds 5 USDC delegation ✗", tone: "bad" },
+            { text: "→ blocked  no execution authority issued", tone: "bad", pause: 1100 }
+          ];'''
+          home, n = re.subn(r'const plainTerm: AutoTermLine\[\] = \[.*?\n\];\n\n// Compact loop', term_block + '\n\n// Compact loop', home, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('could not replace terminal copy')
+
+          # Correct section copy and give layers/attacks stable DOM targets.
+          home = home.replace(
+              'No jargon. Think of it this way: you ask someone to pay a single bill — but you only trust them with that one bill, and you want proof they did it right. Tap each step.',
+              'No jargon. You delegate a bounded payment, the agent proposes one exact action, and Auctorail checks that the request still fits the delegation before any protected execution can happen. Tap each step.'
+          )
+          home = home.replace(
+              '<section className="landing-section" aria-labelledby="how-title">',
+              '<section className="landing-section" id="how-it-works" aria-labelledby="how-title">'
+          )
+          home = home.replace(
+              '<div className={`ladder-row ${row.key ? "key" : ""} fade-rise`} key={row.n} style={{ "--d": `${index * 60}ms` } as React.CSSProperties}>',
+              '<div id={`layer-${row.n}`} className={`ladder-row ${row.key ? "key" : ""} fade-rise`} key={row.n} style={{ "--d": `${index * 60}ms` } as React.CSSProperties}>'
+          )
+          home = home.replace(
+              '<section className="landing-section" aria-labelledby="telegraph-title">',
+              '<section className="landing-section" id="telegraph" aria-labelledby="telegraph-title">'
+          )
+          home = home.replace(
+              "Auctorail doesn't trust intelligence it can't pay for, bound, and re-verify. Telegraph is where that intelligence comes from.",
+              "Auctorail does not treat an agent's own claim as authorization evidence. When policy requires intelligence, Telegraph is the external evidence market Auctorail queries and verifies."
+          )
+          home = home.replace(
+              '<section className="landing-section" aria-labelledby="attacks-title"',
+              '<section className="landing-section" id="attacks" aria-labelledby="attacks-title"'
+          )
+          home = home.replace(
+              'Ten ways to break the rail. Each one was tried. Each row is runnable — not described, executed. The rail holds, or your browser says why it didn\'t.',
+              'Ten deterministic attacks are implemented in the Security Lab. Open any case to run the real harness, or run the full suite and inspect the exact boundary that stopped it.'
+          )
+          home = home.replace(
+              '<div className="attack-row" role="row" key={a.n}>',
+              '<div className="attack-row" id={a.id} role="row" key={a.n}>'
+          )
+          home = home.replace(
+              '<span className="mono" role="cell">{a.layer}</span>',
+              '<button className="attack-layer-link mono" type="button" role="cell" onClick={() => document.getElementById(a.layerId)?.scrollIntoView({ behavior: "smooth", block: "center" })}>{a.layer}</button>'
+          )
+          home = home.replace(
+              '<button className="btn btn-sm" type="button" onClick={onSecurity} role="cell">RUN ▸</button>',
+              '<button className="btn btn-sm" type="button" onClick={onSecurity} role="cell">OPEN IN LAB ▸</button>'
+          )
+          home = home.replace(
+              '<span className="mono">10 attacks. 10 holds. 0 payments that shouldn\'t exist.</span>',
+              '<span className="mono">10 deterministic attacks. 10 boundaries held. 0 unauthorized protected executions.</span>'
+          )
+          home = home.replace('RUN ALL TEN ▸', 'OPEN LAB · RUN ALL TEN ▸')
+          home = home.replace(
+              'VERIFY THIS RECEIPT ON BASESCAN ↗',
+              'VERIFY PROTECTED TX ON BASESCAN ↗'
+          )
+          home = home.replace(
+              '<span className="sec-label"><span className="sec-num">04</span><span className="sec-dash">—</span>CONTENT TRUST · THE SAME RAIL, A DIFFERENT THREAT</span>\n              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 16 }}>An agent that acts on bad input is as dangerous as one that acts without authority.</h2>\n              <p className="section-lede">\n                The same fail-closed ALLOW / HOLD / BLOCK model, applied to suspicious text.\n                Demo mode is zero-cost; live mode routes real Telegraph/x402 evidence when enabled.\n              </p>',
+              '<span className="sec-label"><span className="sec-num">04</span><span className="sec-dash">—</span>CONTENT TRUST</span>\n              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 16 }}>The same rail. A different threat.</h2>\n              <p className="section-lede">\n                An agent that acts on bad input can be dangerous even when its tool permission is valid. Content Trust hashes the exact text, evaluates bounded evidence, and returns ALLOW / HOLD / BLOCK before downstream action. Demo mode is zero-cost; live mode uses real Telegraph/x402 evidence when enabled.\n              </p>'
+          )
+          home = home.replace('CHECK CONTENT ', 'TRY IT — CHECK SUSPICIOUS CONTENT ')
+          home = home.replace(
+              '          Run the deterministic demo to see every rail hold — or enter live mode and let Auctorail\n          authorize a real Base Sepolia transfer, evidence and all.',
+              '          Run the deterministic lab to inspect the security boundaries — or enter live mode to authorize a Base Sepolia testnet transfer with real Telegraph evidence.'
+          )
+          home = home.replace(
+              "          The demo above ran on testnet. The rail doesn't know the difference.",
+              '          The linked transaction below is a previously confirmed protected Base Sepolia testnet execution. Deterministic demos never move funds.'
+          )
+
+          home_path.write_text(home)
+
+          # Expose the tenth real attack in the selector as well as the backend suite.
+          lab_path = Path('web/SecurityLabScreen.tsx')
+          lab = lab_path.read_text()
+          needle = '  { id: "expired_permit", category: "permit", label: "Use expired permit", description: "Attempt execution after the permit\'s 30-second TTL.", original: "Within 30s TTL", mutated: "31s after mint", boundary: "Permit", stoppedAt: "Expiry validation" },\n'
+          insert = needle + '  { id: "decision_tamper", category: "permit", label: "Tamper authorization decision", description: "Alter the authorization decision after the permit has been minted.", original: "Original decision hash", mutated: "Modified decision reason", boundary: "Permit", stoppedAt: "Decision binding" },\n'
+          if 'id: "decision_tamper"' not in lab:
+              if needle not in lab:
+                  raise SystemExit('could not insert decision_tamper preset')
+              lab = lab.replace(needle, insert)
+          lab_path.write_text(lab)
+
+          # Correct the footer wording: the URL is a transaction receipt, not the vendor contract.
+          main_path = Path('web/main.tsx')
+          main = main_path.read_text()
+          main = main.replace('Base Sepolia contract ↗', 'Protected tx on BaseScan ↗')
+          main_path.write_text(main)
+
+          # Safer, durable share copy. Avoid absolute-security language and stale test counts in metadata.
+          index_path = Path('index.html')
+          index = index_path.read_text()
+          index = re.sub(
+              r'<meta property="og:description" content="[^"]*" />',
+              '<meta property="og:description" content="Auctorail checks delegated authority, verifies Telegraph/x402 evidence for the exact action, and issues one-use execution authority before protected execution." />',
+              index
+          )
+          index = re.sub(
+              r'<meta name="twitter:description" content="[^"]*" />',
+              '<meta name="twitter:description" content="Delegated authority + verified Telegraph evidence + one-use execution authority for autonomous agents." />',
+              index
+          )
+          index_path.write_text(index)
+
+          # Small styling for the new layer jump control.
+          css_path = Path('web/app.css')
+          css = css_path.read_text()
+          if '.attack-layer-link{' not in css:
+              css += '\n.attack-layer-link{appearance:none;background:none;border:0;padding:0;text-align:left;color:var(--text-2);cursor:pointer;font:inherit;}\n.attack-layer-link:hover{color:var(--text-1);text-decoration:underline;text-underline-offset:3px;}\n'
+          css_path.write_text(css)
+          PY
+
+          # Remove Arena-generated probe/video artifacts and the temporary cleanup workflow itself.
+          rm -rf live-out output video-assets
+          rm -f .github/workflows/live-probe.yml scripts/live-capture.mjs probe-result.txt trigger-probe.txt
+          rm -f .github/workflows/arena-cleanup.yml arena-cleanup-trigger.txt
+
+          git config user.name "emmy16-glitch"
+          git config user.email "74790322+emmy16-glitch@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: ship verified hackathon landing page"
+          git push origin HEAD:arena/01a07716-auctorail
