@@ -374,7 +374,7 @@ docs/                     architecture, risk, integration, demo and proof docs
 
 ### Recommended runtime
 
-Use a modern Node.js release. **Node 24 is recommended for the current dependency set.** Several browser/DOM development dependencies now require Node 22/24 even though some existing CI configuration still exercises Node 20 for compatibility.
+**Node 24 is required.** The project's `engines` field, `.nvmrc`, and CI workflows all pin Node 24 as the baseline. Node 20 is deprecated in GitHub Actions and no longer supported by several browser/DOM development dependencies.
 
 ```bash
 npm ci
@@ -494,8 +494,6 @@ Key documents:
 - [`docs/LIVE_EXECUTION.md`](docs/LIVE_EXECUTION.md) — canonical real execution proof.
 - [`docs/HACKATHON_DEMO.md`](docs/HACKATHON_DEMO.md) — judge-facing demo story.
 - [`docs/FINAL_SUBMISSION.md`](docs/FINAL_SUBMISSION.md) — submission claims and evidence boundaries.
-- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — common live/demo/deployment failures.
-- [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — project terminology.
 
 ## Final principle
 
