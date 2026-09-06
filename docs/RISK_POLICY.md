@@ -23,7 +23,7 @@ The authoritative implementation is in [`../src/telegraph/adaptive-evidence-plan
 
 | Proposed amount | Tier | `FRAUD_DETECTION` requirement | Additional Intents | Max fraud attempts | Max evidence spend | Deadline |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| `<= 5 USDC` | `LOW` | 1 distinct positive Miner at `>= 0.70` | none | 3 | `0.035 USDC` | `35s` |
+| `<= 5 USDC` | `LOW` | 1 distinct positive Miner at `>= 0.70` | none | 3 | `0.035 USDC` | **12s** |
 | `> 5 to 50 USDC` | `MEDIUM` | 2 distinct positive Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
 | `> 50 USDC` | `HIGH` | 3 distinct Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
 
@@ -146,7 +146,7 @@ A single Telegraph route may be unusable for authorization even when the network
 - missing required signal commitment;
 - transport/schema failure.
 
-LOW therefore allows up to **3 bounded acquisition attempts**, with a total evidence budget of **0.035 USDC** and a **35-second** evidence window.
+LOW therefore allows up to **3 bounded acquisition attempts**, with a total evidence budget of **0.035 USDC** and a **12-second** evidence window.
 
 This is a liveness allowance, not a weaker security rule.
 

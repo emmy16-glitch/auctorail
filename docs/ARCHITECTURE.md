@@ -176,7 +176,7 @@ The current implementation in `src/telegraph/adaptive-evidence-plan.ts` derives 
 
 | Proposed amount | Tier | Fraud requirement | Additional Intents | Max evidence spend | Deadline |
 | --- | --- | --- | --- | ---: | ---: |
-| `<= 5 USDC` | LOW | 1 distinct positive Miner at `>= 0.70` | none | `0.035 USDC` | `35s` |
+| `<= 5 USDC` | LOW | 1 distinct positive Miner at `>= 0.70` | none | `0.035 USDC` | `12s` |
 | `> 5 to 50 USDC` | MEDIUM | 2 distinct positive Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | `0.060 USDC` | `60s` |
 | `> 50 USDC` | HIGH | 3 distinct Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | `0.100 USDC` | `90s` |
 

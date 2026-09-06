@@ -112,7 +112,7 @@ The current implementation uses these evidence tiers:
 
 | Proposed amount | Tier | Fraud requirement | Additional Intents | Max evidence spend | Deadline |
 | --- | --- | --- | --- | ---: | ---: |
-| `<= 5 USDC` | `LOW` | 1 distinct positive Miner at `>= 0.70` | none | `0.035 USDC` | `35s` |
+| `<= 5 USDC` | `LOW` | 1 distinct positive Miner at `>= 0.70` | none | `0.035 USDC` | `12s` |
 | `> 5 to 50 USDC` | `MEDIUM` | 2 distinct positive Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | `0.060 USDC` | `60s` |
 | `> 50 USDC` | `HIGH` | 3 distinct Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | `0.100 USDC` | `90s` |
 
@@ -252,7 +252,7 @@ See [`../packages/sdk/README.md`](../packages/sdk/README.md).
 The latest green feature-branch validation snapshot before this documentation-only cleanup recorded:
 
 ```text
-267 / 267 tests passed across 53 files
+268 / 268 tests passed across 53 files
 7400 / 7400 deterministic adversarial fuzz cases contained
 0 unauthorized executions / authorizations in those fuzz suites
 0 production dependency vulnerabilities reported by npm audit

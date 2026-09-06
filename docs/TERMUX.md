@@ -82,8 +82,8 @@ Current validated v1.2 security summaries are:
 
 ```text
 Vitest:
-43/43 test files
-225/225 tests
+53/53 test files
+268/268 tests
 
 Original exact-action fuzz:
 1100/1100 adversarial cases contained
@@ -91,7 +91,7 @@ Original exact-action fuzz:
 0 unauthorized executions
 
 Adaptive + distinct-Miner quorum fuzz:
-3100/3100 adversarial cases contained
+3200/3200 adversarial cases contained
 100/100 valid controls
 0 unauthorized authorizations
 
@@ -101,7 +101,7 @@ General action authorization fuzz:
 0 unauthorized executions
 
 Total deterministic adversarial cases:
-7300/7300
+7400/7400
 
 Uncaught fuzz errors: 0
 Production dependency vulnerabilities: 0

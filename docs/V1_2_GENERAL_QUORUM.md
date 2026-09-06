@@ -75,7 +75,7 @@ Fraud quorum:
   negativeVetoConfidence:     0.90
 
 Evidence budget: 0.050 USDC
-Deadline:        35 seconds
+Deadline:        12 seconds
 ```
 
 ### HIGH — `>5 <=10 USDC`
@@ -443,14 +443,14 @@ v1.0 contains:
 The pre-documentation v1.2 code snapshot passed:
 
 ```text
-43/43 test files
-225/225 tests
+53/53 test files
+268/268 tests
 
 1100/1100 original adversarial cases
-3100/3100 adaptive + quorum adversarial cases
+3200/3200 adaptive + quorum adversarial cases
 3100/3100 general authorization adversarial cases
 
-7300/7300 total deterministic adversarial cases
+7400/7400 total deterministic adversarial cases
 0 unauthorized executions/authorizations
 0 uncaught fuzz errors
 0 production dependency vulnerabilities

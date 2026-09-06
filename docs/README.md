@@ -103,7 +103,7 @@ Current default requirements:
 
 | Tier | Fraud quorum | Extra Intents | Confidence | Max evidence spend | Deadline |
 | --- | --- | --- | ---: | ---: | ---: |
-| LOW | 1 distinct / 1 positive | none | `>= 0.70` | `0.035 USDC` | `35s` |
+| LOW | 1 distinct / 1 positive | none | `>= 0.70` | `0.035 USDC` | `12s` |
 | MEDIUM | 2 distinct / 2 positive | `ONCHAIN_TX_LOOKUP` | `>= 0.75` | `0.060 USDC` | `60s` |
 | HIGH | 3 distinct / 2 positive | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | `>= 0.80` | `0.100 USDC` | `90s` |
 
@@ -135,10 +135,10 @@ Older documentation may mention:
 7300 fuzz cases
 ```
 
-Those numbers were valid historical snapshots, but the latest green feature-branch CI at the time this index was added completed:
+Those numbers were valid historical snapshots, but the latest green CI completed:
 
 ```text
-267 / 267 tests across 53 files
+268 / 268 tests across 53 files
 7400 / 7400 deterministic adversarial fuzz cases
 0 unauthorized executions / authorizations in the fuzz suites
 0 production dependency vulnerabilities reported by npm audit

@@ -56,8 +56,8 @@ This code snapshot includes:
 ### TypeScript and deterministic tests
 
 ```text
-Test Files: 43 passed / 43
-Tests:      225 passed / 225
+Test Files: 53 passed / 53
+Tests:      268 passed / 268
 ```
 
 The added general-authorization regression suite covers:
@@ -91,9 +91,9 @@ Blockchain writes:        0
 ### Adaptive + distinct-Miner quorum fuzz gate
 
 ```text
-Mutation families:             31
+Mutation families:             32
 Cases per family:              100
-Adversarial contained:         3100 / 3100
+Adversarial contained:         3200 / 3200
 Valid controls:                100 / 100
 Unauthorized authorizations:  0
 Uncaught errors:               0
@@ -124,10 +124,10 @@ This separate gate attacks valid action target/parameter/policy substitution, Ma
 
 ```text
 Original adversarial cases:        1100 / 1100
-Adaptive/quorum adversarial cases: 3100 / 3100
+Adaptive/quorum adversarial cases: 3200 / 3200
 General adversarial cases:         3100 / 3100
 
-Total adversarial cases:           7300 / 7300
+Total adversarial cases:           7400 / 7400
 
 Original valid controls:           100 / 100
 Adaptive valid controls:           100 / 100
@@ -222,10 +222,10 @@ Result:           SUCCESS
 That exact candidate passed:
 
 ```text
-43/43 test files
-225/225 tests
+53/53 test files
+268/268 tests
 1100/1100 original fuzz
-3100/3100 adaptive + quorum fuzz
+3200/3200 adaptive + quorum fuzz
 3100/3100 general authorization fuzz
 0 unauthorized executions/authorizations
 0 uncaught fuzz errors

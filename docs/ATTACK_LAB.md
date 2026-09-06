@@ -224,10 +224,10 @@ On the validated v1.2 code snapshot:
 
 ```text
 Original fuzz:              1100/1100
-Adaptive + quorum fuzz:     3100/3100
+Adaptive + quorum fuzz:     3200/3200
 General authorization fuzz: 3100/3100
 
-Total adversarial cases:    7300/7300
+Total adversarial cases:    7400/7400
 
 Valid controls:
   original: 100/100
@@ -242,8 +242,8 @@ Uncaught fuzz errors:          0
 The normal deterministic suite additionally passed:
 
 ```text
-43/43 test files
-225/225 tests
+53/53 test files
+268/268 tests
 ```
 
 ## Additional direct regression coverage

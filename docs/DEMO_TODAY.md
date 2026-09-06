@@ -276,7 +276,7 @@ If a real live check returns `HOLD` or `BLOCK`, present it as correct enforcemen
 The latest green feature-branch snapshot before this documentation cleanup recorded:
 
 ```text
-267 / 267 unit tests across 53 files
+268 / 268 unit tests across 53 files
 7400 / 7400 deterministic adversarial fuzz cases contained
 0 unauthorized executions / authorizations in those fuzz suites
 0 production dependency vulnerabilities reported by npm audit
