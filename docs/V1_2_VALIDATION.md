@@ -1,80 +1,86 @@
-# Auctorail v1.2 Validation Record
+# Auctorail v1.2 validation record and current delta
 
-This document records the strict validation performed after the v1.2 same-Intent Miner-quorum architecture, generic authorization core and final security hardening were implemented.
+This document preserves the v1.2 validation milestone that introduced stronger adaptive evidence, same-Intent distinct-Miner quorum and the generalized authorization core, then explains how current `main` has moved beyond that snapshot.
 
-## Validated code snapshot
+> **Status:** historical milestone with current-delta notes. For present-tense submission claims, use the latest green CI plus `docs/README.md`.
 
-Pre-documentation code SHA:
+## Validated v1.2 milestone
 
-`2e06cbb82e32fc8d8b516af3742b0a31c853c40f`
-
-GitHub Actions run:
-
-`33723583899`
-
-Branch:
-
-`v1.2-general-quorum`
-
-This code snapshot includes:
+The documented v1.2 architecture added or locked important security ideas including:
 
 - consequence-derived LOW / MEDIUM / HIGH payment evidence plans;
 - multi-Intent Telegraph routing;
 - same-Intent distinct-Miner quorum;
 - confidence-aware positive voting;
-- high-confidence negative early veto + final explicit-negative BLOCK semantics;
+- high-confidence negative early veto plus stricter final explicit-negative handling;
 - duplicate-Miner independence protection;
-- canonical quorum summaries inside Evidence Bundles;
-- x402 per-request + aggregate evidence budgets;
-- x402 challenge-swap / TOCTOU protection;
-- `proofgate.action.v2` general action envelope;
-- `proofgate.mandate.v2` general standing authority;
-- `proofgate.decision.v2` semantic decision commitment;
-- `proofgate.permit.v2` signed one-use authority;
+- canonical quorum summaries inside evidence bundles;
+- x402 per-request and aggregate evidence budgets;
+- x402 challenge-swap / TOCTOU controls;
+- general action, Mandate, decision and permit envelopes;
 - trusted Action Adapter Registry;
 - exact adapter evidence-Intent coverage enforcement;
 - authority-before-evidence-spend preflight;
-- Permit-mint/current-execution Mandate revalidation;
+- Mandate revalidation at permit/execution boundaries;
 - fail-closed generic execution kill switch;
-- atomic generic Permit consumption/replay protection;
-- generic post-claim `AMBIGUOUS` handling.
+- atomic generic permit consumption/replay protection;
+- ambiguous-effect handling.
 
-## Code CI result
+## Historical validated code snapshot
 
-**PASS**
+Pre-documentation v1.2 code SHA:
 
-### Vendor reproducibility
+`2e06cbb82e32fc8d8b516af3742b0a31c853c40f`
 
-- tracked vendor source/artifact/manifest verification: PASS
-- pinned native `solc 0.8.36+commit.8a079791` recompilation on Linux x64: PASS
-- source SHA-256: `afcb3e214b74e6b4fdbed034a3a517498228fb7d59e15fa7ed613bf776cb1b22`
-- artifact SHA-256: `3c7bbca4b8d4970b89cd9507e913e004ddcfa9fb061a0468805f465b6220d291`
-- creation bytecode: `258 bytes`
-- runtime bytecode: `165 bytes`
-- generated-artifact diff check: PASS
+Historical GitHub Actions run:
 
-### TypeScript and deterministic tests
+`33723583899`
+
+Historical branch:
+
+`v1.2-general-quorum`
+
+Those values are retained as provenance only. Current `main` is newer.
+
+## Vendor reproducibility milestone
+
+The v1.2 validation recorded:
 
 ```text
-Test Files: 43 passed / 43
-Tests:      225 passed / 225
+tracked vendor source/artifact/manifest verification: PASS
+pinned native solc recompilation on Linux x64: PASS
+compiler: 0.8.36+commit.8a079791
+source SHA-256: afcb3e214b74e6b4fdbed034a3a517498228fb7d59e15fa7ed613bf776cb1b22
+artifact SHA-256: 3c7bbca4b8d4970b89cd9507e913e004ddcfa9fb061a0468805f465b6220d291
+creation bytecode: 258 bytes
+runtime bytecode: 165 bytes
 ```
 
-The added general-authorization regression suite covers:
+The historical `ProofGateVendor` name is preserved intentionally because it is part of deployment/artifact provenance.
 
-- arbitrary action canonicalization/tamper detection;
-- exact agent/action-type/target/policy Mandate checks;
-- authority failure before trusted evidence acquisition;
-- missing required Intent coverage;
-- missing evidence commitment;
-- unrequested evidence-Intent claims;
-- successful authorize/execute-once/replay-block flow;
-- Mandate expiry after Permit mint but before execution;
-- kill switch disabled/unavailable;
-- ambiguous external effect with consumed authority;
-- wrong-agent self-consistent decision forgery.
+## Historical deterministic test milestone
 
-### Original exact-action fuzz gate
+An earlier v1.2 code snapshot recorded:
+
+```text
+43 / 43 test files
+225 / 225 tests
+```
+
+That count is now historical.
+
+The later documentation-frozen v1.2 release candidate recorded:
+
+```text
+53 / 53 test files
+268 / 268 tests
+```
+
+This demonstrates why test counts in milestone documents should not be treated as timeless current facts.
+
+## Historical fuzz gates
+
+### Exact-action fuzz
 
 ```text
 Mutation families:        11
@@ -88,7 +94,7 @@ x402 payments:            0
 Blockchain writes:        0
 ```
 
-### Adaptive + distinct-Miner quorum fuzz gate
+### Adaptive + distinct-Miner quorum fuzz
 
 ```text
 Mutation families:             32
@@ -102,9 +108,7 @@ x402 payments:                 0
 Blockchain writes:             0
 ```
 
-This suite attacks risk/quorum threshold downgrade, fake provider diversity, low-confidence positive votes, negative-veto suppression, required-Intent deletion, stale/missing evidence, x402 provenance/cap bypasses, Evidence Bundle/quorum-summary/Miner-identity tampering, valid-bundle substitution, Permit forgery/expiry and action/Intent substitution.
-
-### General authorization fuzz gate
+### General authorization fuzz
 
 ```text
 Mutation families:        31
@@ -118,83 +122,210 @@ x402 payments:            0
 Blockchain writes:        0
 ```
 
-This separate gate attacks valid action target/parameter/policy substitution, Mandate identity/scope/lifecycle substitution, self-consistent forged decision semantics, evidence-commitment substitution, Permit binding/signature/expiry attacks, kill-switch failures, replay, ambiguous-effect replay, adapter evidence-coverage bypasses, undelegated evidence acquisition, adapter freeze mismatch and malformed action parameters.
-
-## Combined deterministic security result
+Combined deterministic result:
 
 ```text
-Original adversarial cases:        1100 / 1100
-Adaptive/quorum adversarial cases: 3200 / 3200
-General adversarial cases:         3100 / 3100
-
-Total adversarial cases:           7400 / 7400
-
-Original valid controls:           100 / 100
-Adaptive valid controls:           100 / 100
-General valid controls:            100 / 100
-
-Unauthorized executions:           0
-Unauthorized authorizations:       0
-Uncaught fuzz errors:               0
+7400 / 7400 adversarial cases contained
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
 ```
 
-These deterministic fuzz harnesses are intentionally offline. Their numbers are not presented as live Telegraph requests or an independent production security audit.
+These remain the current fuzz totals as of the latest green `main` snapshot.
 
-## Production dependency audit
+## What the adaptive/quorum suite attacks
+
+Representative mutation families include:
+
+- risk-tier downgrade;
+- required-Intent removal;
+- distinct-Miner downgrade;
+- positive-vote downgrade;
+- confidence-floor downgrade;
+- negative-veto disable;
+- attempt-limit expansion;
+- evidence-budget expansion;
+- evidence-latency expansion;
+- duplicate-Miner Sybil counting;
+- insufficient qualified positives;
+- below-confidence positives;
+- high-confidence negative veto;
+- explicit-negative averaging;
+- missing fraud/transaction evidence;
+- stale evidence;
+- missing signal commitment;
+- x402 network/asset/amount mutation;
+- evidence-bundle/quorum-summary tampering;
+- Miner identity substitution;
+- evidence subject/chain substitution;
+- raw-response commitment tamper;
+- undelegated Intent;
+- action semantic mutation;
+- valid bundle substitution from another action;
+- attempted high-consequence bypass of the autonomous ceiling.
+
+## What the general authorization suite attacks
+
+Representative families include:
+
+- action target/parameter/policy substitution;
+- stale-hash semantic tamper;
+- agent/Mandate identity substitution;
+- target/action-scope substitution;
+- Mandate revocation/expiry;
+- forged decision semantics;
+- evidence commitment substitution;
+- permit signature/binding/expiry attacks;
+- kill-switch disabled/unavailable;
+- permit replay;
+- ambiguous-effect replay;
+- missing adapter evidence coverage;
+- undelegated action/Intent;
+- adapter freeze mismatch;
+- unregistered adapter;
+- malformed/non-finite parameters.
+
+## Current adaptive policy delta
+
+Current bands:
 
 ```text
-npm audit --omit=dev
-found 0 vulnerabilities
+LOW     <= 5 USDC
+MEDIUM  > 5 to 50 USDC
+HIGH    > 50 USDC
 ```
 
-This is a dependency-audit result, not a claim of an independent production application audit.
+Current fraud quorum:
 
-## Important trust statements
+```text
+LOW
+  distinct Miners: 1
+  qualified positives: 1
+  confidence >= 0.70
+  max attempts: 3
 
-### Miner quorum
+MEDIUM
+  distinct Miners: 2
+  qualified positives: 2
+  confidence >= 0.75
+  max attempts: 4
 
-Request count is not provider diversity.
+HIGH
+  distinct Miners: 3
+  qualified positives: >=2
+  confidence >= 0.80
+  max attempts: 5
+```
 
-Auctorail counts distinct serving Miner IDs. Repeated routes to the same Miner do not create independent votes.
+Current evidence budgets/deadlines:
 
-A positive fraud vote counts only if its confidence meets the configured quorum floor.
+```text
+LOW     0.035 USDC / 12 seconds
+MEDIUM  0.060 USDC / 60 seconds
+HIGH    0.100 USDC / 90 seconds
+```
 
-The MEDIUM/HIGH `0.90` negative threshold is an **early collection veto**. Final policy remains stricter: any explicit known-negative result blocks authorization.
+The current LOW deadline is **12 seconds**. Older v1.2 text mentioning 35 seconds is stale relative to current implementation.
 
-### Evidence integrity vs authenticity
+## Current validation snapshot
 
-Evidence/quorum hashes prove integrity after construction. They do not prove arbitrary JSON is authentic Telegraph evidence.
+Latest green current `main`:
 
-Live provenance must be established inside the trusted acquisition boundary.
+```text
+53 test files
+268 / 268 tests passed
+7400 / 7400 deterministic adversarial cases contained
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
+0 production dependency vulnerabilities reported by npm audit
+```
 
-### General Action Adapters
+The redesigned browser product-flow QA is also green.
 
-Action Adapters are trusted deployment code. v1.2 does not sandbox arbitrary third-party adapters.
+## Current browser/UI delta
 
-An adapter is responsible for authenticating its source-specific evidence and deriving external effect fields from the frozen action.
+The project has changed substantially since early v1.2 screenshots.
 
-Auctorail's generic SDK then enforces action/Mandate/evidence-coverage/decision/Permit/replay/kill-switch boundaries around it.
+Current browser QA covers:
+
+- Home;
+- deterministic demo;
+- live flow;
+- SDK;
+- Security Lab;
+- local API integration;
+- multiple viewport sizes.
+
+Current UI work also includes mobile overflow fixes, technical-detail disclosures, reduced-motion terminal behavior and the broader Auctorail rebrand.
+
+## Current runtime delta
+
+The redesigned dependency set now contains development/browser packages that officially target Node 22/24.
+
+**Node 24 is recommended for current local development.**
+
+Some existing CI workflow configuration still exercises Node 20 with engine warnings. The green run demonstrates current compatibility in that runner, not a long-term Node 20 dependency guarantee.
 
 ## Real-world proof boundary
 
-The frozen v1.0 artifact remains the canonical public real transaction proof:
+The canonical historical public execution remains:
 
-- transaction: `0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc`
-- Base Sepolia block: `46301208`
-- genuine Telegraph `FRAUD_DETECTION` evidence
-- protected `1 USDC` execution
+```text
+transaction:
+0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
 
-v1.2's same-Intent quorum and general authorization architecture are implemented/tested, but this validation record does **not** claim:
+Base Sepolia block:
+46301208
 
-- the historical transaction used v1.2 quorum;
-- a successful real three-Miner Telegraph quorum artifact has already been captured;
-- example GitHub/cloud/database adapters are live production integrations;
-- the historical transaction used Ed25519/PostgreSQL production paths;
-- Auctorail has undergone an independent production audit.
+protected amount:
+1 USDC
+```
 
-## Release gate
+with genuine `FRAUD_DETECTION` evidence.
 
-Before creating the v1.2 tag, the exact final SHA must pass:
+Current public real totals:
+
+```text
+2 genuine Telegraph Miner acquisitions
+$0.02 committed x402 evidence cost
+1 protected Base Sepolia execution
+```
+
+Deterministic tests/fuzzing are not counted as live Telegraph usage.
+
+## Claims this validation supports
+
+Safe claims:
+
+- distinct-Miner quorum semantics are implemented/tested;
+- evidence-plan downgrade attacks are covered;
+- general Action/Mandate/Decision/Permit architecture is tested;
+- replay/kill-switch/ambiguity controls are exercised deterministically;
+- current fuzz suites report no unauthorized execution/authorization in their tested cases.
+
+## Claims it does not support
+
+Do not infer:
+
+- the historical 1-USDC transaction itself used the later v1.2 quorum path;
+- a successful public HIGH three-Miner artifact exists merely because the code/tests support the policy;
+- arbitrary third-party adapters are sandboxed automatically;
+- the project has an independent production security audit;
+- deterministic fuzz counts are live Telegraph requests.
+
+## Trusted Action Adapter note
+
+Adapters are trusted deployment code.
+
+The generic authorization SDK can enforce frozen-action, Mandate, evidence-coverage, decision, permit and replay boundaries around an adapter, but it does not make arbitrary malicious adapter code safe.
+
+A real adapter must still:
+
+- authenticate its source-specific evidence;
+- derive external-effect parameters from the frozen action;
+- keep protected credentials away from the agent;
+- execute only through the controlled boundary.
+
+## Re-running current validation
 
 ```bash
 npm ci
@@ -207,32 +338,8 @@ npm run security:fuzz:general
 npm run vendor:verify
 ```
 
-GitHub CI must also pass the pinned native vendor recompilation/reproducibility check.
+Use current source and exact command output if counts change after an intentional future update.
 
-## Documentation-frozen release candidate
+## Final validation principle
 
-All v1.2 architecture, developer, demo, resilience, security and validation documentation was present at:
-
-```text
-Candidate SHA:    db49089d5f510ef2aa39ebf9e953fb5ba560c356
-Candidate CI run: 33724529325
-Result:           SUCCESS
-```
-
-That exact candidate passed:
-
-```text
-53/53 test files
-268/268 tests
-1100/1100 original fuzz
-3200/3200 adaptive + quorum fuzz
-3100/3100 general authorization fuzz
-0 unauthorized executions/authorizations
-0 uncaught fuzz errors
-0 production dependency vulnerabilities
-vendor native reproducibility PASS
-```
-
-This validation-record update itself is documentation-only and intentionally creates one later commit than the candidate SHA above. The **release tag must point to the resulting validation-record commit only after GitHub CI also passes on that exact final commit**.
-
-If any code or committed live evidence artifact changes after the final tag point, every gate must run again and a new release SHA/tag must be used. Existing v1.0/v1.1 tags must never be moved.
+**v1.2 established that the evidence plan itself is part of the authorization contract. Current Auctorail preserves that principle: risk tier, required Intents, provider diversity, confidence rules, attempts, spend and latency cannot be downgraded just because the agent wants execution to succeed.**
