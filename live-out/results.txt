@@ -1,0 +1,8 @@
+--- attempt 1
+clicked CHECK
+--- attempt 2
+clicked CHECK
+--- attempt 3
+clicked CHECK
+FINAL tx= NONE
+done
