@@ -14,7 +14,8 @@ It may contain:
 - older test counts;
 - older evidence-policy thresholds;
 - older UI structure;
-- milestone-specific architecture wording.
+- milestone-specific architecture wording;
+- older runtime assumptions.
 
 Do not use the DOCX alone for current submission, deployment or security claims.
 
@@ -37,11 +38,13 @@ Use these instead:
 ```text
 Current product name:          Auctorail
 Current repository:            emmy16-glitch/auctorail
+Current Node baseline:         >=24.15.0
 Current LOW evidence deadline: 12 seconds
 Current tests:                 268 / 268 in latest green snapshot
 Current fuzz total:            7400 / 7400 deterministic cases contained
-Recommended local Node:        Node 24
 ```
+
+The root `package.json` declares Node `>=24.15.0`, `.nvmrc` selects Node 24, and current GitHub Actions workflows run Node 24.
 
 Historical `proofgate.*` protocol identifiers and `ProofGateVendor` artifacts can still remain intentionally for compatibility/provenance.
 
