@@ -1,141 +1,331 @@
-# Auctorail — Telegraph Track 3 Judging Map
+# Auctorail judging-criteria evidence map
 
-This document maps Auctorail to the official Application Track priorities so the submission stays focused on what judges are actually scoring.
+This document maps Auctorail's strongest implemented and publicly verifiable evidence to the kinds of criteria commonly used in the Telegraph hackathon: usefulness, real Telegraph integration, technical depth, security/robustness, product quality, originality and completeness.
 
-## 1. Users acquired & activity
+It is written to help reviewers find evidence quickly without relying on marketing language.
 
-Do not invent user counts.
+## One-sentence project description
 
-Current verifiable activity in the repository includes:
+> **Auctorail is a pre-execution authorization rail for autonomous agents: the agent proposes an exact action, Auctorail verifies delegated authority and required Telegraph evidence, and only an `ALLOW` decision can produce one-use execution authority for a protected executor.**
 
-- real Telegraph/x402 Miner acquisitions;
-- a real protected Base Sepolia execution;
-- deterministic product demo activity;
-- Security Lab adversarial validation;
-- SDK/integration examples.
+## Why the project matters
 
-Publicly committed real-Telegraph totals are tracked in `docs/REAL_USAGE_LOG.md`.
+Most agent tooling focuses on helping models know more or do more.
 
-If additional people test the app before submission, record only real usage that can be supported by logs/screenshots/artifacts. Do not manufacture adoption numbers.
+Auctorail focuses on a different question:
 
-## 2. Usage and adoption
+> **What should an agent actually be allowed to execute?**
 
-Strongest current proof:
+That makes Auctorail an enforcement layer rather than another intelligence-query UI.
+
+## Criterion: usefulness / real problem
+
+### Problem
+
+AI agents increasingly control tools that can create real external effects. Prompt instructions alone are not a strong security boundary for spending limits, recipient restrictions, replay prevention, evidence requirements or execution credentials.
+
+### Auctorail's answer
+
+- keep authority outside the agent;
+- define principal-controlled standing Mandates;
+- freeze the exact action before authorization;
+- require consequence-appropriate evidence;
+- fail closed with `HOLD` when proof is insufficient;
+- produce one-use execution authority only on `ALLOW`;
+- keep the protected credential behind a trusted executor.
+
+### Evidence to inspect
+
+- `README.md`
+- `docs/PRODUCT_STORY.md`
+- `docs/SECURITY_MODEL.md`
+- `docs/ARCHITECTURE.md`
+
+## Criterion: Telegraph integration
+
+Auctorail does not merely mention Telegraph in the UI.
+
+The payment lane contains genuine Telegraph/x402 evidence acquisition.
+
+Current public proof set includes:
 
 ```text
-2 publicly committed real Telegraph Miner acquisitions
+2 publicly committed genuine Telegraph Miner acquisitions
 $0.02 committed x402 evidence cost
 1 protected Base Sepolia execution
 ```
 
-A later HIGH-risk multi-Miner live run is documented but its raw adaptive artifacts were local/untracked at the time of the finalization pass, so it is not counted in those public totals until safe artifacts are committed.
-
-The deterministic demo, Security Lab and fuzz suites are excluded from real-usage totals.
-
-## 3. Creativity and usefulness
-
-Auctorail is not a Miner-response viewer.
-
-The product uses Telegraph to solve an authorization problem for autonomous agents:
+Canonical fraud evidence:
 
 ```text
-agent proposes an action
-→ exact action is frozen
-→ consequence determines required intelligence
-→ Telegraph routes to Miners
-→ Auctorail validates exact evidence bindings
-→ delegated authority + sufficient evidence required
-→ one-use permit
-→ controlled execution
+Intent: FRAUD_DETECTION
+Miner: Refut On-Chain Risk
+Miner ID: 95822412
+Subject: canonical vendor
+Chain: Base Sepolia / 84532
+Verdict: ALLOW
+Confidence: 0.70
+Signal hash: present
+Evidence cost: $0.01
 ```
 
-Key differentiation:
+### Evidence to inspect
 
-- higher consequence requires more intelligence;
-- multi-Intent evidence can be required;
-- higher-risk fraud checks require distinct-Miner corroboration;
-- duplicate Miner routing cannot fake consensus;
-- wrong-chain evidence is rejected;
-- insufficient confidence results in `HOLD`;
-- a Miner `ALLOW` is evidence, not permission;
-- x402 evidence spending is bounded;
-- exact action mutation and permit replay are blocked.
-
-## 4. Must use Telegraph Miners
-
-Auctorail has publicly committed genuine Telegraph evidence artifacts:
-
-- `data/evidence/telegraph-2026-09-01T17-00-18-634Z.json`
+- `docs/REAL_USAGE_LOG.md`
+- `docs/LIVE_EXECUTION.md`
 - `data/evidence/telegraph-2026-09-02T17-36-12-826Z.json`
+- `src/telegraph/`
 
-The canonical protected execution used `Refut On-Chain Risk` (`95822412`) for `FRAUD_DETECTION` and recorded successful x402 settlement.
+## Criterion: meaningful use of Miners
 
-The application also implements consequence-adaptive routing and distinct-Miner quorum logic for higher-risk checks.
+Auctorail uses Miner intelligence as an authorization input with strict semantics.
 
-Important presentation rule:
+It verifies or reasons about:
+
+- required Intent;
+- actual serving Miner;
+- Miner capability;
+- exact subject binding;
+- exact chain binding;
+- confidence threshold;
+- signal commitment;
+- provider diversity;
+- negative evidence;
+- evidence freshness/plan binding.
+
+The project does not convert “Miner said ALLOW” directly into execution permission.
+
+That is an important architectural use of Miner intelligence rather than a thin wrapper around a query endpoint.
+
+## Criterion: x402 usage
+
+Evidence acquisition can be paid through x402.
+
+Auctorail treats that payment as a bounded machine side effect.
+
+Controls include:
+
+- approved network/asset lane;
+- remaining evidence budget;
+- payment challenge handling;
+- settlement validation/reconciliation;
+- ambiguous paid-transport handling.
+
+This demonstrates not only querying but also safe economic integration around agent-initiated evidence acquisition.
+
+## Criterion: technical depth
+
+Auctorail includes several layers that interact:
 
 ```text
-GUIDED DEMO / SECURITY LAB / FUZZ
-= deterministic, zero-payment, not claimed as live Miner data
-
-LIVE MODE / SAVED TELEGRAPH ARTIFACTS
-= genuine Telegraph/x402 activity
+canonical action contract
+principal Mandate
+adaptive evidence plan
+Telegraph Intent routing
+x402 payment controls
+explicit evidence binding
+distinct-Miner quorum
+deterministic policy
+signed permit
+durable permit consumption
+protected executor
+ambiguity/reconciliation controls
+proof receipts
+public verification
+repository SDK
+web product
 ```
 
-## 5. Engagement on posts showcasing the project
+This is broader than a single endpoint demo.
 
-All hackathon update/submission posts should tag:
+### Key technical docs
 
-`@Telegraphprotoc`
+- `docs/ARCHITECTURE.md`
+- `docs/RISK_POLICY.md`
+- `docs/V1_2_GENERAL_QUORUM.md`
+- `docs/permit-consumption-store.md`
+- `docs/DEVELOPER_INTEGRATION.md`
 
-Use the ready-to-post copy in `docs/FINAL_SUBMISSION.md`.
+## Criterion: security / robustness
 
-Post material that shows real progress rather than generic marketing:
+Auctorail intentionally assumes the agent can be wrong or adversarial.
 
-- real Telegraph evidence artifact;
-- Basescan transaction;
-- HIGH-risk `HOLD` explanation once its safe artifacts are public;
-- Security Lab mutation/replay containment;
-- short SDK integration clip;
-- final 3-minute product demo.
+Security invariants include:
 
-## High-value Telegraph areas Auctorail already covers
+- agent cannot mint its own authority;
+- action mutation invalidates old authorization;
+- evidence must belong to the exact subject/chain;
+- duplicate Miners cannot fake quorum;
+- missing proof means `HOLD`;
+- explicit negative evidence is not ignored;
+- permits are short-lived and one-use;
+- execution revalidates authority;
+- permit replay is rejected;
+- ambiguous external effects are not blindly retried;
+- x402 evidence spending is bounded.
 
-The official rules emphasize deeper integrations such as on-chain intelligence pipelines, autonomous workflows, multi-Intent intelligence, confidence thresholds/routing behavior and signal quality/verification.
-
-Auctorail maps directly to those areas:
+### Current deterministic validation
 
 ```text
-ON-CHAIN PIPELINE
-Telegraph evidence → authorization → Base Sepolia execution
-
-AUTONOMOUS WORKFLOW
-agent proposal → automatic evidence/policy/permit/execution boundary
-
-MULTI-INTENT
-risk tier can require FRAUD_DETECTION + ONCHAIN_TX_LOOKUP + WALLET_BALANCE_CHECK
-
-CONFIDENCE THRESHOLDS
-LOW / MEDIUM / HIGH use different confidence floors
-
-ROUTING / PROVIDER DIVERSITY
-actual serving Miner recorded; duplicate identity does not count twice
-
-SIGNAL VERIFICATION
-subject, chain, Intent, confidence, applicability and provenance checked before acceptance
+53 test files
+268 / 268 tests passed
 ```
 
-## Final presentation priority
+Fuzz suites:
 
-Do not lead with UI polish.
+```text
+1100 payment authorization cases
+3200 adaptive + quorum cases
+3100 general authorization cases
+----
+7400 adversarial cases contained
 
-Lead with:
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
+```
 
-1. real Telegraph Miner evidence;
-2. real Base Sepolia protected execution;
-3. the rule that Miner output is evidence, not authority;
-4. consequence-adaptive multi-Intent/distinct-Miner policy;
-5. real refusal/HOLD behavior;
-6. attack containment;
-7. SDK/adaptability;
-8. public progress posts.
+Production dependency audit reports `0 vulnerabilities` in the latest green CI snapshot.
+
+### Evidence to inspect
+
+- `docs/SECURITY_MODEL.md`
+- `docs/ATTACK_LAB.md`
+- `docs/RESILIENCE_INVARIANTS.md`
+- tests under `tests/`
+- fuzz scripts under `scripts/`
+
+## Criterion: product quality
+
+The redesigned web product separates:
+
+- plain-language Home explanation;
+- deterministic Watch Demo;
+- live authorization;
+- Permissions;
+- Activity;
+- Verify;
+- Content Trust;
+- Security Lab;
+- SDK/docs.
+
+The latest browser QA workflow passes the landing/demo/live/SDK/Security Lab product-flow audit.
+
+Mobile overflow fixes are included for common narrow widths and long technical values.
+
+## Criterion: demo clarity
+
+Auctorail has a deterministic four-scenario demonstration:
+
+```text
+valid action        → allowed/executed demo
+amount mutation     → BLOCK
+permit replay       → BLOCK
+missing evidence    → HOLD
+```
+
+This makes the enforcement layer visible in less than a minute.
+
+Then the public real proof demonstrates that the architecture is connected to genuine Telegraph/x402 and Base Sepolia activity.
+
+See:
+
+- `docs/HACKATHON_DEMO.md`
+- `docs/DEMO_TODAY.md`
+
+## Criterion: originality / differentiation
+
+Auctorail is not primarily a Miner marketplace, chatbot, dashboard or query wrapper.
+
+Its differentiating proposition is:
+
+```text
+specialist intelligence
+        is not
+execution authority
+```
+
+Auctorail creates the authorization layer between intelligence and consequential action.
+
+That means it can complement other Telegraph products. A wallet-risk Miner, price Miner or transaction-intelligence service can become an evidence provider inside Auctorail policy without becoming the component that controls the principal's permission.
+
+## Criterion: extensibility
+
+The generic Action/Mandate/Decision architecture is designed to support more than payments.
+
+The repository already includes a Content Trust lane to demonstrate reuse of the authorization model.
+
+Future adapters could protect:
+
+- DeFi actions;
+- infrastructure changes;
+- SaaS/API mutations;
+- account administration;
+- content publication;
+- purchases;
+- smart-contract calls.
+
+A new adapter still needs exact action semantics, trusted authority, evidence semantics, deterministic policy and a protected executor.
+
+## Criterion: proof / reproducibility
+
+Auctorail separates three evidence categories.
+
+### Current implementation proof
+
+Passing tests, fuzz harnesses and browser QA.
+
+### Real external proof
+
+Committed Telegraph/x402 evidence and public Base Sepolia transaction.
+
+### Deterministic presentation proof
+
+Guided Demo and Security Lab.
+
+This separation makes it harder to accidentally present simulations as real usage.
+
+## Criterion: honesty / scope discipline
+
+The project deliberately does not claim:
+
+- independent audit;
+- production certification;
+- guaranteed safe AI;
+- a public npm SDK release;
+- real live Telegraph proof for every product lane;
+- a publicly committed successful HIGH three-distinct-Miner quorum;
+- objective truth from AI/Miner evidence.
+
+Precise claim boundaries are documented in `FINAL_SUBMISSION.md`.
+
+## Fast judge-review path
+
+If a reviewer has five minutes:
+
+1. Read the first half of `README.md`.
+2. Run/watch the deterministic demo.
+3. Inspect `docs/LIVE_EXECUTION.md`.
+4. Open the Base Sepolia transaction.
+5. Inspect the canonical Telegraph evidence JSON.
+6. Review the current CI/fuzz totals.
+
+## Evidence table
+
+| Claim | Best evidence |
+| --- | --- |
+| Auctorail is a pre-execution authorization layer | `README.md`, `PRODUCT_STORY.md` |
+| Real Telegraph use exists | `REAL_USAGE_LOG.md`, committed evidence JSON |
+| Real x402 spend exists | canonical evidence JSON / usage ledger |
+| Real protected execution exists | `LIVE_EXECUTION.md`, BaseScan transaction |
+| Exact-action mutation is blocked | tests + Guided Demo + Security Lab |
+| Permit replay is blocked | tests + Guided Demo |
+| Missing evidence fails closed | adaptive tests + Guided Demo |
+| Distinct-Miner quorum exists | `V1_2_GENERAL_QUORUM.md`, tests/fuzz |
+| Evidence is bound to subject/chain | evidence-binding tests + architecture |
+| Current suite is healthy | latest GitHub CI / browser QA |
+| SDK integration exists | `packages/sdk/README.md` |
+| Product is responsive | browser QA + responsive notes |
+
+## Strong closing statement
+
+> Auctorail's contribution is not merely that an agent can ask Telegraph for intelligence. It is that external intelligence can be converted into **bounded, exact, one-use execution authority without giving the agent or the intelligence provider control of the principal's permission boundary**.
