@@ -55,7 +55,7 @@ async def enter_live(page):
         await visible_target(button)
         await button.click()
     await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible(timeout=3000)
-    await expect(page.locator("#root .brand-lockup strong").filter(has_text="AUCTORAIL")).to_be_visible()
+    await expect(page.locator("#root .top-nav .brand-lockup strong").filter(has_text="AUCTORAIL")).to_be_visible()
 
 async def landing_and_demo(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
@@ -65,7 +65,7 @@ async def landing_and_demo(browser, width, height, suffix):
     landing = page.get_by_test_id("home-landing-screen")
     await expect(landing).to_be_visible()
     await expect(landing.get_by_role("heading", name="Prove authority before execution.")).to_be_visible()
-    await expect(page.locator("#auctorail-home-root .home-brand strong")).to_have_text("AUCTORAIL")
+    await expect(page.locator("#root .brand-lockup strong").first).to_have_text("AUCTORAIL")
     await expect(landing.get_by_role("heading", name="Paste it. Check the evidence before you act.")).to_be_visible()
 
     # Landing/demo deliberately preserve the locked 1536px desktop composition
@@ -74,7 +74,7 @@ async def landing_and_demo(browser, width, height, suffix):
     # visibility/clickability rather than applying the unscaled 40px target rule.
     landing_target_min = 26 if 900 < width < 1536 else 40
     await visible_target(landing.get_by_role("button", name="CHECK CONTENT", exact=False), landing_target_min)
-    await visible_target(page.locator("#auctorail-home-root").get_by_role("button", name="VERIFY", exact=True), landing_target_min)
+    await visible_target(page.locator(".nav-side").get_by_role("button", name="TRUST", exact=True), landing_target_min)
     demo = landing.get_by_role("button", name="WATCH DEMO", exact=False)
     live = landing.get_by_role("button", name="ENTER LIVE MODE", exact=False)
     await visible_target(demo, landing_target_min)
@@ -94,6 +94,13 @@ async def landing_and_demo(browser, width, height, suffix):
     assert not api_calls, f"deterministic guided demo unexpectedly called APIs: {api_calls}"
     await page.close()
 
+# Live content-check response served to the browser in the QA run: a real,
+# server-generated content receipt (deterministic BLOCK for the scam sample)
+# with live-mode fields, so the UI contract and the receipt verification both
+# execute against a structurally valid response without live credentials.
+CONTENT_LIVE_RESPONSE = json.loads(r"""{"mode":"LIVE_TELEGRAPH_X402","realTelegraph":true,"spendRaw":"1000","decision":"BLOCK","reason":"scam_signal_block","subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","signals":[{"source":"deterministic_demo","kind":"SCAM","minerId":"demo-scam","minerName":"Deterministic demo classifier","intent":"CONTENT_VERIFICATION","label":"scam","confidence":0.94,"subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","signalHash":"0x7b00b92895304044de7a108eb41599374340cf909fda75e43e3771fe7b6630b9","receivedAt":"2026-09-06T06:11:48.082Z"},{"source":"deterministic_demo","kind":"AI_GENERATED","minerId":"demo-ai","minerName":"Deterministic demo classifier","intent":"AI_DETECTION","label":"human","confidence":0.82,"subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","signalHash":"0x44ff2ad355c7e9779416a4f148b64aa8ba84d5b48ee55100dca0892ebea48a94","receivedAt":"2026-09-06T06:11:48.082Z"}],"summaryLine":"Auctorail content check: BLOCK — scam_signal_block.","receipt":{"schemaVersion":"auctorail.content-receipt.v1","receiptId":"ff027ccb-b71a-4bcf-9e87-0cc8d4fd3990","subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","contentKind":"text","proposedAction":"view","authorshipClaim":"unspecified","action":{"schemaVersion":"proofgate.action.v2","actionId":"2a44ce9f-4f1a-44d8-973a-ae0bcb54a45d","actionHash":"0xd3253fb3554c1f59b26a127d6a72c0f1024b12c73a6aef0e7aa8469891e4d324","type":"content.check","target":"content:0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","policyId":"content.strict.v1","policyVersion":1,"canonicalPayload":"{\"parameters\":{\"authorshipClaim\":\"unspecified\",\"contentKind\":\"text\",\"proposedAction\":\"view\"},\"policyId\":\"content.strict.v1\",\"policyVersion\":1,\"target\":\"content:0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717\",\"type\":\"content.check\"}"},"evidence":[{"source":"deterministic_demo","kind":"SCAM","minerId":"demo-scam","minerName":"Deterministic demo classifier","intent":"CONTENT_VERIFICATION","label":"scam","confidence":0.94,"subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","signalHash":"0x7b00b92895304044de7a108eb41599374340cf909fda75e43e3771fe7b6630b9","receivedAt":"2026-09-06T06:11:48.082Z"},{"source":"deterministic_demo","kind":"AI_GENERATED","minerId":"demo-ai","minerName":"Deterministic demo classifier","intent":"AI_DETECTION","label":"human","confidence":0.82,"subjectHash":"0x7b1aea2cde7fb5420ab6d8aeaa81e3f257ada3c0ae236aed9498c907235e2717","signalHash":"0x44ff2ad355c7e9779416a4f148b64aa8ba84d5b48ee55100dca0892ebea48a94","receivedAt":"2026-09-06T06:11:48.082Z"}],"evidenceCommitmentHash":"0xa1d011f141e6cd87fde6ad1d5cc583da91ce0bc741c6cca77449f33f6ad287eb","decision":{"schemaVersion":"proofgate.decision.v2","decision":"BLOCK","reason":"scam_signal_block","decisionHash":"0x9bdd8e2d5c37e93c8daa8119b7a505a7f2049aa22005f203352b70c047be0a40","mandateHash":"0x176d893a37d7d4eeedad83f173ff18c32e8feab37a30921fd51d7549a9c1dc6a","actionHash":"0xd3253fb3554c1f59b26a127d6a72c0f1024b12c73a6aef0e7aa8469891e4d324","policyId":"content.strict.v1","policyVersion":1,"evidenceCommitmentHash":"0xa1d011f141e6cd87fde6ad1d5cc583da91ce0bc741c6cca77449f33f6ad287eb","checks":[{"name":"mandate_integrity","status":"PASS","reason":"Mandate hash and canonical body are intact."},{"name":"action_integrity","status":"PASS","reason":"Action hash and canonical body are intact."},{"name":"mandate_status","status":"PASS","reason":"Mandate is ACTIVE."},{"name":"mandate_time","status":"PASS","reason":"Mandate is active in the current time window."},{"name":"mandate_agent","status":"PASS","reason":"Agent identity matches delegated authority."},{"name":"mandate_action_type","status":"PASS","reason":"Action type content.check is delegated."},{"name":"mandate_target","status":"PASS","reason":"Exact action target is delegated."},{"name":"mandate_policy","status":"PASS","reason":"Action policy matches the delegated policy/version."},{"name":"content_scam_subject","status":"PASS","reason":"SCAM evidence is bound to the exact content hash."},{"name":"content_scam_freshness","status":"PASS","reason":"SCAM evidence is fresh."},{"name":"content_ai_generated_subject","status":"PASS","reason":"AI_GENERATED evidence is bound to the exact content hash."},{"name":"content_ai_generated_freshness","status":"PASS","reason":"AI_GENERATED evidence is fresh."},{"name":"scam_signal","status":"BLOCK","reason":"Scam/phishing evidence is 94% confident.","code":"scam_signal_block"},{"name":"ai_generation_signal","status":"PASS","reason":"AI-generation assessment does not create a policy violation."}],"decidedAt":"2026-09-06T06:11:48.082Z"},"summaryLine":"Auctorail content check: BLOCK — scam_signal_block.","createdAt":"2026-09-06T06:11:48.082Z","receiptHash":"0xff0c5a6868f3e54ef5323dc47c4ca286734d95a2b2c91aa63971fadc3f3877fb"}}""")
+
+
 async def content_and_receipt_verify(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
     forbidden = []
@@ -102,19 +109,23 @@ async def content_and_receipt_verify(browser, width, height, suffix):
         forbidden.append(route.request.url)
         await route.abort()
 
+    async def mock_content_live(route):
+        await route.fulfill(status=200, content_type="application/json", body=json.dumps(CONTENT_LIVE_RESPONSE))
+
     await page.route("**/api/authorize", forbid_live)
     await page.route("**/api/execute", forbid_live)
+    await page.route("**/api/content-check", mock_content_live)
     await page.goto(BASE_URL, wait_until="networkidle")
     landing = page.get_by_test_id("home-landing-screen")
     await landing.get_by_role("button", name="CHECK CONTENT", exact=False).click()
     screen = page.get_by_test_id("content-trust-screen")
     await expect(screen).to_be_visible()
     await expect(screen.get_by_role("heading", name="Check the evidence before you act.")).to_be_visible()
-    await expect(screen.get_by_text("DETERMINISTIC DEMO", exact=True).first).to_be_visible()
+    await expect(screen.get_by_role("button", name="CHECK WITH TELEGRAPH", exact=True)).to_be_visible()
     await screen.get_by_role("button", name="LOAD SCAM SAMPLE").click()
-    await screen.get_by_role("button", name="RUN CONTENT CHECK").click()
+    await screen.get_by_role("button", name="CHECK WITH TELEGRAPH").click()
     await expect(screen.locator(".content-verdict > strong")).to_have_text("BLOCK", timeout=3500)
-    await expect(screen.get_by_text("DEMO EVIDENCE · NOT TELEGRAPH OUTPUT", exact=True)).to_be_visible()
+    await expect(screen.get_by_text("REAL TELEGRAPH · x402 SPEND RAW 1000", exact=True)).to_be_visible()
     await expect(screen.get_by_text("SCAM", exact=True).first).to_be_visible()
     await no_overflow(page, f"Content Trust {width}px")
     await page.screenshot(path=str(ARTIFACTS / f"auctorail-content-{suffix}.png"), full_page=True)
@@ -133,10 +144,12 @@ async def content_and_receipt_verify(browser, width, height, suffix):
 async def canonical_verify(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
     await page.goto(BASE_URL, wait_until="networkidle")
-    verify_button = page.locator("#auctorail-home-root").get_by_role("button", name="VERIFY", exact=True)
+    verify_button = page.locator(".nav-side").get_by_role("button", name="TRUST", exact=True)
     target_min = 26 if 900 < width < 1536 else 40
     await visible_target(verify_button, target_min)
     await verify_button.click()
+    # the merged trust page opens on the content tab; switch to receipt verification
+    await page.get_by_role("tab", name="VERIFY RECEIPT").click()
     verifier = page.get_by_test_id("verify-screen")
     await expect(verifier).to_be_visible()
     await expect(verifier.get_by_role("heading", name="Verify the proof, not the screenshot.")).to_be_visible()
@@ -152,7 +165,7 @@ async def canonical_verify(browser, width, height, suffix):
 async def sdk_surface(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
     await page.goto(BASE_URL, wait_until="networkidle")
-    docs = page.locator("#auctorail-home-root").get_by_role("button", name="DOCS", exact=False)
+    docs = page.locator(".nav-side").get_by_role("button", name="DOCS", exact=True)
     target_min = 26 if 900 < width < 1536 else 40
     await visible_target(docs, target_min)
     await docs.click()
@@ -162,7 +175,7 @@ async def sdk_surface(browser, width, height, suffix):
     await expect(sdk.get_by_text("npm install ./packages/sdk", exact=False)).to_be_visible()
     body = await sdk.inner_text()
     assert "api.auctorail.dev" not in body, "SDK page must not advertise an undeployed API domain"
-    assert "PUBLIC NPM RELEASE NOT CLAIMED" in body
+    assert "public npm release not claimed" in body.lower(), "SDK page must state that no public npm release is claimed"
     await sdk.get_by_role("button", name="RUN REQUEST", exact=False).click()
     await expect(sdk.locator(".sdk-demo-valid .sdk-demo-result b")).to_have_text("ALLOW", timeout=5000)
     await sdk.get_by_role("button", name="RUN ATTACK", exact=False).click()
@@ -217,7 +230,7 @@ async def security_lab(browser, width, height, suffix):
     await page.route("**/api/authorize", forbidden)
     await page.route("**/api/execute", forbidden)
     await page.goto(BASE_URL, wait_until="networkidle")
-    await page.locator("#auctorail-home-root").get_by_role("button", name="SECURITY LAB", exact=True).click()
+    await page.locator(".nav-links").get_by_role("button", name="SECURITY LAB", exact=True).click()
     lab = page.get_by_test_id("security-lab-screen")
     await expect(lab).to_be_visible()
     await expect(lab.get_by_role("heading", name="Try to break Auctorail.")).to_be_visible()

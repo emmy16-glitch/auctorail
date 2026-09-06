@@ -77,13 +77,13 @@ export function decisionCheck(result: AuthorizationPresentationResult): Authoriz
 function evidenceIssueSummary(result: AuthorizationPresentationResult): string | null {
   switch (result.evidence.code) {
     case "adaptive_evidence_deadline_exceeded":
-      return "The bounded live-evidence window expired before ProofGate could complete the required check.";
+      return "The bounded live-evidence window expired before Auctorail could complete the required check.";
     case "adaptive_evidence_budget_exceeded":
-      return "The next evidence call would have exceeded the request's pre-authorized x402 evidence budget, so ProofGate stopped instead of overspending.";
+      return "The next evidence call would have exceeded the request's pre-authorized x402 evidence budget, so Auctorail stopped instead of overspending.";
     case "adaptive_evidence_acquisition_failed":
       return "Telegraph routing or x402 acquisition did not return usable evidence for the required check.";
     case "adaptive_evidence_quorum_unsatisfied":
-      return "ProofGate received evidence attempts, but not enough independent confidence-qualified Miner evidence to satisfy the required quorum.";
+      return "Auctorail received evidence attempts, but not enough independent confidence-qualified Miner evidence to satisfy the required quorum.";
     case "adaptive_evidence_negative_veto":
       return "A high-confidence negative Miner result vetoed authorization.";
     default:
@@ -95,20 +95,20 @@ export function describeAuthorizationOutcome(result: AuthorizationPresentationRe
   const decisive = decisionCheck(result);
   if (result.decision === "HOLD") {
     const why = evidenceIssueSummary(result) ?? decisive?.reason ?? "The required authorization evidence did not satisfy the policy.";
-    return `${why} ProofGate held the request, issued no execution permit, and sent no vendor payment.`;
+    return `${why} Auctorail held the request, issued no execution permit, and sent no vendor payment.`;
   }
   if (result.decision === "BLOCK" && result.evidence.status === "NOT_REQUESTED") {
     const why = decisive?.reason ?? "The local permission rules rejected this action.";
-    return `${why} ProofGate blocked the request before any Miner call, x402 evidence fee, permit, or vendor payment.`;
+    return `${why} Auctorail blocked the request before any Miner call, x402 evidence fee, permit, or vendor payment.`;
   }
   if (result.decision === "BLOCK") {
     const why = evidenceIssueSummary(result) ?? decisive?.reason ?? "The evaluated evidence or policy blocked this action.";
-    return `${why} ProofGate issued no execution permit and sent no vendor payment.`;
+    return `${why} Auctorail issued no execution permit and sent no vendor payment.`;
   }
   if (result.decision === "ALLOW") {
-    return "Every required authorization check passed for this exact action. ProofGate may issue the short-lived, one-use execution permit.";
+    return "Every required authorization check passed for this exact action. Auctorail may issue the short-lived, one-use execution permit.";
   }
-  return "ProofGate has not granted execution authority for this request.";
+  return "Auctorail has not granted execution authority for this request.";
 }
 
 export function buildAuthorizationTechnical(
@@ -144,22 +144,22 @@ export function buildAuthorizationTechnical(
 
 export function evidenceExplanation(result: AuthorizationPresentationResult): string {
   if (result.evidence.status === "NOT_REQUESTED") {
-    return "The local permission decision finished first, so ProofGate did not call Telegraph or pay any Miner for this request.";
+    return "The local permission decision finished first, so Auctorail did not call Telegraph or pay any Miner for this request.";
   }
   if (result.evidence.status === "COMPLETE") {
     const sourceCount = result.evidence.sources?.length ?? 0;
     const intentCount = result.evidence.completedIntents?.length ?? 0;
-    return `ProofGate finished the required Telegraph evidence collection for this exact action. ${sourceCount} serving Miner source${sourceCount === 1 ? "" : "s"} and ${intentCount} completed intent${intentCount === 1 ? "" : "s"} are committed to the evidence bundle.`;
+    return `Auctorail finished the required Telegraph evidence collection for this exact action. ${sourceCount} serving Miner source${sourceCount === 1 ? "" : "s"} and ${intentCount} completed intent${intentCount === 1 ? "" : "s"} are committed to the evidence bundle.`;
   }
   if (result.decision === "HOLD") {
     const acquisition = evidenceIssueSummary(result);
     if (acquisition) {
-      return `${acquisition} ProofGate cannot turn incomplete or insufficient evidence into execution authority.`;
+      return `${acquisition} Auctorail cannot turn incomplete or insufficient evidence into execution authority.`;
     }
     const decisive = decisionCheck(result);
     return decisive?.reason
-      ? `${decisive.reason} ProofGate cannot turn incomplete or insufficient evidence into authority.`
-      : "The required evidence did not reach the policy threshold, so ProofGate held the request instead of guessing.";
+      ? `${decisive.reason} Auctorail cannot turn incomplete or insufficient evidence into authority.`
+      : "The required evidence did not reach the policy threshold, so Auctorail held the request instead of guessing.";
   }
   if (result.decision === "BLOCK") {
     const acquisition = evidenceIssueSummary(result);
@@ -169,7 +169,7 @@ export function evidenceExplanation(result: AuthorizationPresentationResult): st
       ? `${decisive.reason} The evidence stage completed with a blocking result.`
       : "The evidence stage produced a blocking result, so no execution permit can be issued.";
   }
-  return "ProofGate did not obtain a complete trusted evidence result for this request.";
+  return "Auctorail did not obtain a complete trusted evidence result for this request.";
 }
 
 export function evidenceTechnical(result: AuthorizationPresentationResult): PresentationDetail[] {

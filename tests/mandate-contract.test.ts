@@ -50,7 +50,7 @@ function action(amountRaw = "1000000") {
   });
 }
 
-describe("ProofGate Mandate Contract", () => {
+describe("Auctorail Mandate Contract", () => {
   it("normalizes equivalent authority into the same mandateHash", () => {
     const first = createMandateContract(mandateInput());
     const second = createMandateContract(

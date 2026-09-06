@@ -1,4 +1,4 @@
-# ProofGate v1.1 — Adaptive Evidence Authorization
+# Auctorail v1.1 — Adaptive Evidence Authorization
 
 ## Status
 
@@ -16,11 +16,11 @@ The frozen `v1.0.0-hackathon` tag remains the publicly verifiable real execution
 
 ## Competitive thesis
 
-ProofGate is not another app that asks one Miner whether something is safe and displays the answer.
+Auctorail is not another app that asks one Miner whether something is safe and displays the answer.
 
 It is a **risk-adaptive authorization firewall for autonomous agents**:
 
-> **The higher the consequence of an action, the more independent Telegraph intelligence ProofGate requires before executable authority can exist.**
+> **The higher the consequence of an action, the more independent Telegraph intelligence Auctorail requires before executable authority can exist.**
 
 That makes Telegraph Intents, routing and x402 economics part of the authorization boundary rather than decorative API output.
 
@@ -98,7 +98,7 @@ The policy recreates the plan before authorization, preventing caller-supplied d
 `src/telegraph/verification-planner.ts`  
 `src/telegraph/intent-route.ts`
 
-ProofGate asks for an **Intent**, not a preferred provider. The actual routed Miner is recorded and verified against the live registry.
+Auctorail asks for an **Intent**, not a preferred provider. The actual routed Miner is recorded and verified against the live registry.
 
 Required Intent coverage can be checked before paid acquisition. Zero coverage fails closed.
 
@@ -220,7 +220,7 @@ The autonomous agent supplies only its proposed payment. The trusted host suppli
 - trusted `IntentAcquirer`
 - permit signer
 
-Inside one boundary ProofGate plans, collects, evaluates and returns a permit only if collection is complete and policy is `ALLOW`.
+Inside one boundary Auctorail plans, collects, evaluates and returns a permit only if collection is complete and policy is `ALLOW`.
 
 Lower-level helpers remain available:
 
@@ -254,7 +254,7 @@ A real multi-Intent run must be saved before public claims are upgraded from “
 
 ## Verification economics
 
-ProofGate makes machine-verification cost visible:
+Auctorail makes machine-verification cost visible:
 
 ```text
 Protected value:         7 USDC

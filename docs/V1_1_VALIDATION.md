@@ -1,4 +1,4 @@
-# ProofGate v1.1 Validation Record
+# Auctorail v1.1 Validation Record
 
 This document records the strict validation performed after the v1.1 adaptive-evidence architecture and security hardening were implemented.
 
@@ -132,19 +132,19 @@ The deterministic test suite also covers security cases outside the 18 fuzz-fami
 - trusted high-level SDK does not mint a permit on incomplete evidence acquisition
 - HTTP evaluation gateway does not return executable authority
 - the validated x402 preflight challenge is reused by the payment wrapper rather than replaced by a second unpaid network challenge
-- the exact x402 requirements selected for signing are independently revalidated against ProofGate's scheme/network/asset/per-request/remaining-budget policy
-- the challenge-swap regression test proves the paid path cannot introduce a second unvalidated 402 between ProofGate's preflight check and payment-signature creation
+- the exact x402 requirements selected for signing are independently revalidated against Auctorail's scheme/network/asset/per-request/remaining-budget policy
+- the challenge-swap regression test proves the paid path cannot introduce a second unvalidated 402 between Auctorail's preflight check and payment-signature creation
 
 ## x402 TOCTOU hardening
 
-The deeper review identified a time-of-check/time-of-use risk in the original adaptive live client design: ProofGate validated one preflight `402 Payment Required` challenge, while `wrapFetchWithPayment()` normally performs its own initial request and could therefore receive a materially different challenge before signing.
+The deeper review identified a time-of-check/time-of-use risk in the original adaptive live client design: Auctorail validated one preflight `402 Payment Required` challenge, while `wrapFetchWithPayment()` normally performs its own initial request and could therefore receive a materially different challenge before signing.
 
 The validated implementation closes that gap in two layers:
 
 1. the x402 wrapper consumes a clone of the already validated preflight response as its initial 402, so no second unpaid network challenge exists between validation and signing;
-2. the x402 client applies ProofGate's hard payment policy again to the exact `PaymentRequirements` selected for payment-payload creation.
+2. the x402 client applies Auctorail's hard payment policy again to the exact `PaymentRequirements` selected for payment-payload creation.
 
-The network request that follows is the payment-bearing request. ProofGate does not register a recovery hook that could authorize a second paid attempt.
+The network request that follows is the payment-bearing request. Auctorail does not register a recovery hook that could authorize a second paid attempt.
 
 ## Production dependency audit
 

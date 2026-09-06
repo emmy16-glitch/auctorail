@@ -5,7 +5,7 @@ import type {
 
 export const PAYMENT_FRAUD_INTENT = "FRAUD_DETECTION" as const;
 
-export type ProofGateTelegraphIntent =
+export type AuctorailTelegraphIntent =
   | AdaptiveEvidenceIntent
   | typeof PAYMENT_FRAUD_INTENT;
 
@@ -14,7 +14,7 @@ export interface TelegraphVerificationPlan {
   routeMode: "AUTO_ROUTE";
   actionId: string;
   actionHash: string;
-  requiredIntent: ProofGateTelegraphIntent;
+  requiredIntent: AuctorailTelegraphIntent;
   subject: string;
   chainId: number;
   amountRaw: string;
@@ -28,7 +28,7 @@ export interface TelegraphVerificationPlan {
 }
 
 function intentInstructions(
-  intent: ProofGateTelegraphIntent
+  intent: AuctorailTelegraphIntent
 ): string[] {
   if (intent === "FRAUD_DETECTION") {
     return [
@@ -60,7 +60,7 @@ function intentInstructions(
 
 export function createIntentVerificationPlan(
   action: ActionContract,
-  intent: ProofGateTelegraphIntent
+  intent: AuctorailTelegraphIntent
 ): TelegraphVerificationPlan {
   if (action.type !== "payment") {
     throw new Error("unsupported_action_type");

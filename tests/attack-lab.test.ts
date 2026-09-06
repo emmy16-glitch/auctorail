@@ -9,7 +9,7 @@ import {
 } from "../src/security/attack-lab.js";
 
 describe(
-  "ProofGate deterministic Attack Lab",
+  "Auctorail deterministic Attack Lab",
   () => {
     it(
       "contains every locked mutation/replay/integrity attack without network or blockchain writes",

@@ -19,7 +19,7 @@ async def main():
         await page.get_by_role("button", name="DONE EDITING").click()
 
         warning = page.get_by_text(
-            "This request is above the current maximum. ProofGate will block it locally before any Miner is paid.",
+            "This request is above the current maximum. Auctorail will block it locally before any Miner is paid.",
             exact=True,
         )
         await expect(warning).to_be_visible()

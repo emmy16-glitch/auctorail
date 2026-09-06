@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import path from "node:path";
 
 const root = process.cwd();
@@ -11,6 +11,13 @@ for (const required of [tsxCli, viteCli]) {
     console.error("Auctorail dev dependencies are missing. Run `npm install` first.");
     process.exit(1);
   }
+}
+
+// Keep the in-browser OCR runtime in sync with node_modules (idempotent).
+try {
+  execFileSync(process.execPath, [path.join(root, "scripts", "copy-ocr-assets.mjs")], { stdio: "inherit" });
+} catch {
+  // OCR upload is a progressive enhancement; a missing asset only disables it.
 }
 
 const viteArgs = process.argv.slice(2);
@@ -50,6 +57,8 @@ const env = {
   AUCTORAIL_LIVE_AUTHORIZATION_ENABLED:
     process.env.AUCTORAIL_LIVE_AUTHORIZATION_ENABLED ?? process.env.PROOFGATE_LIVE_AUTHORIZATION_ENABLED ?? "true",
   AUCTORAIL_LIVE_REQUESTS_PER_HOUR: String(liveQuota),
+  AUCTORAIL_CONTENT_LIVE_ENABLED:
+    process.env.AUCTORAIL_CONTENT_LIVE_ENABLED ?? "true",
   AUCTORAIL_WEB_ORIGINS:
     process.env.AUCTORAIL_WEB_ORIGINS ?? process.env.PROOFGATE_WEB_ORIGINS ?? localOrigins,
   PROOFGATE_LIVE_AUTHORIZATION_ENABLED:

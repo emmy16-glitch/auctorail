@@ -91,7 +91,7 @@ async def reference_state_checks(page):
     await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible()
     await expect(page.get_by_text("invoice-bot", exact=True)).to_be_visible()
     await expect(page.get_by_text("5.00 USDC", exact=True)).to_be_visible()
-    await expect(page.get_by_text("1.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(page.get_by_text("1.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
     await expect(page.get_by_text("Nothing is sent yet.", exact=True)).to_be_visible()
 
     body_text = await page.locator("body").inner_text()
@@ -236,7 +236,7 @@ async def mobile_flow(browser):
     amount_input = page.locator("#request-amount")
     await amount_input.fill("2.00")
     await page.get_by_role("button", name="DONE").click()
-    await expect(page.get_by_text("2.00 USDC → ProofGate Vendor", exact=True)).to_be_visible()
+    await expect(page.get_by_text("2.00 USDC → Auctorail Vendor", exact=True)).to_be_visible()
 
     await menu.click()
     await expect(page.get_by_role("menu")).to_be_visible()

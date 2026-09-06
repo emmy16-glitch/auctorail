@@ -340,7 +340,7 @@ try {
       DEMO_AGENT_ID,
       action,
       laneDecision.code,
-      "The x402 challenge did not satisfy ProofGate's standing payment policy.",
+      "The x402 challenge did not satisfy Auctorail's standing payment policy.",
       operation.operationId
     );
     process.exit(2);
@@ -417,7 +417,7 @@ try {
     DEMO_AGENT_ID,
     action,
     "x402_transport_ambiguous",
-    "The paid attempt lost a definitive response. ProofGate will not retry it blindly.",
+    "The paid attempt lost a definitive response. Auctorail will not retry it blindly.",
     operation.operationId
   );
   process.exit(2);
@@ -432,7 +432,7 @@ const settlement = classifyPaymentResponseHeader(paymentResponse);
 if (response.ok && !settlement.success) {
   const detail =
     settlement.errorReason ??
-    `Telegraph returned HTTP ${response.status}, but ProofGate could not prove x402 settlement (${settlement.code}).`;
+    `Telegraph returned HTTP ${response.status}, but Auctorail could not prove x402 settlement (${settlement.code}).`;
 
   const rawBody = await readResponseBody(response.clone());
   const quarantinePath = saveQuarantinedEvidence(
@@ -759,7 +759,7 @@ async function completeSuccessfulProof(input: {
 
   if (returnedIntent !== input.requestPlan.verificationPlan.requiredIntent) {
     const detail =
-      `Telegraph returned intent ${returnedIntent}, but ProofGate required ${input.requestPlan.verificationPlan.requiredIntent}.`;
+      `Telegraph returned intent ${returnedIntent}, but Auctorail required ${input.requestPlan.verificationPlan.requiredIntent}.`;
 
     const quarantinePath = saveQuarantinedEvidence(
       input,

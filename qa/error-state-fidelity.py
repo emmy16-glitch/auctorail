@@ -164,14 +164,14 @@ async def live_quota_is_explained_as_proofgate_limit(browser):
     await page.get_by_role("button", name="CHECK THIS REQUEST").click()
 
     await expect(page.get_by_text("Live verification paused.", exact=True)).to_be_visible(timeout=2500)
-    await expect(page.get_by_text("ProofGate paused new live Miner calls", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Auctorail paused new live Miner calls", exact=False)).to_be_visible()
     await expect(page.get_by_text("LIVE CHECK NOT STARTED", exact=True)).to_be_visible()
-    await expect(page.get_by_text("ProofGate stopped this attempt before a Miner call", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Auctorail stopped this attempt before a Miner call", exact=True)).to_be_visible()
 
     details = await open_stage(page, "03")
     await expect(details.get_by_text("WHY IT DIDN'T START", exact=True)).to_be_visible()
     await details.locator("summary").click()
-    await expect(details.get_by_text("ProofGate deployment safety quota", exact=True)).to_be_visible()
+    await expect(details.get_by_text("Auctorail deployment safety quota", exact=True)).to_be_visible()
     await expect(details.get_by_text("Telegraph call", exact=True)).to_be_visible()
     await expect(details.get_by_text("NOT SENT", exact=True)).to_be_visible()
     await expect(details.get_by_text("Vendor execution", exact=True)).to_be_visible()

@@ -146,7 +146,7 @@ async def run_surface_flow(browser, width, height, suffix):
     # Security Lab remains isolated, real and clear about its offline attack harness.
     await page.get_by_role("button", name="SECURITY LAB", exact=True).click()
     await expect(page.get_by_test_id("security-lab-screen")).to_be_visible()
-    await expect(page.get_by_role("heading", name="Try to break ProofGate.")).to_be_visible()
+    await expect(page.get_by_role("heading", name="Try to break Auctorail.")).to_be_visible()
     await expect(page.get_by_text("SECURITY LAB · OFFLINE", exact=True)).to_be_visible()
     await expect(page.get_by_text("0 USDC", exact=True)).to_be_visible()
     await expect(page.get_by_text("NOT CALLED", exact=True)).to_be_visible()

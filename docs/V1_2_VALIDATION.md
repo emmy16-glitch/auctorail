@@ -1,4 +1,4 @@
-# ProofGate v1.2 Validation Record
+# Auctorail v1.2 Validation Record
 
 This document records the strict validation performed after the v1.2 same-Intent Miner-quorum architecture, generic authorization core and final security hardening were implemented.
 
@@ -155,7 +155,7 @@ This is a dependency-audit result, not a claim of an independent production appl
 
 Request count is not provider diversity.
 
-ProofGate counts distinct serving Miner IDs. Repeated routes to the same Miner do not create independent votes.
+Auctorail counts distinct serving Miner IDs. Repeated routes to the same Miner do not create independent votes.
 
 A positive fraud vote counts only if its confidence meets the configured quorum floor.
 
@@ -173,7 +173,7 @@ Action Adapters are trusted deployment code. v1.2 does not sandbox arbitrary thi
 
 An adapter is responsible for authenticating its source-specific evidence and deriving external effect fields from the frozen action.
 
-ProofGate's generic SDK then enforces action/Mandate/evidence-coverage/decision/Permit/replay/kill-switch boundaries around it.
+Auctorail's generic SDK then enforces action/Mandate/evidence-coverage/decision/Permit/replay/kill-switch boundaries around it.
 
 ## Real-world proof boundary
 
@@ -190,7 +190,7 @@ v1.2's same-Intent quorum and general authorization architecture are implemented
 - a successful real three-Miner Telegraph quorum artifact has already been captured;
 - example GitHub/cloud/database adapters are live production integrations;
 - the historical transaction used Ed25519/PostgreSQL production paths;
-- ProofGate has undergone an independent production audit.
+- Auctorail has undergone an independent production audit.
 
 ## Release gate
 

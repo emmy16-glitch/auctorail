@@ -30,7 +30,7 @@ import {
 import {
   ActionAdapterRegistry,
   authorizeRegisteredAction,
-  type ProofGateActionAdapter,
+  type AuctorailActionAdapter,
   type TrustedAdapterEvaluation
 } from "../src/sdk/action-adapter.js";
 
@@ -254,7 +254,7 @@ interface AdapterOptions {
 
 function makeAdapter(
   options?: AdapterOptions
-): ProofGateActionAdapter<{ target: string; variant: number }, string> {
+): AuctorailActionAdapter<{ target: string; variant: number }, string> {
   return {
     type: "github.merge",
     policyId: "github.merge.v1",

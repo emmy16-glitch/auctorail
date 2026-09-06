@@ -338,7 +338,7 @@ The same principle applies to generic adapters: reconcile uncertain external sta
 
 ## 12. General trusted adapters
 
-The historical TypeScript interface name `ProofGateActionAdapter` remains for compatibility.
+The historical TypeScript interface name `AuctorailActionAdapter` remains for compatibility.
 
 A trusted adapter defines:
 

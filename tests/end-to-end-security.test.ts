@@ -69,7 +69,7 @@ function applicableAllowEvidence() {
   });
 }
 
-describe("ProofGate end-to-end security plumbing", () => {
+describe("Auctorail end-to-end security plumbing", () => {
   it("binds Mandate -> Action -> evidence -> ALLOW -> permit -> execution -> receipt", async () => {
     const mandate = createMandateContract({
       mandateId: "treasury-demo-v1",

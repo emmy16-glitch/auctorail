@@ -1,6 +1,6 @@
 # Responsive UI update
 
-ProofGate no longer treats every viewport as a 460px phone canvas.
+Auctorail no longer treats every viewport as a 460px phone canvas.
 
 Breakpoints:
 - `< 768px`: full-width mobile composition.

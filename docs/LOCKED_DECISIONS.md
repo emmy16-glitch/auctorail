@@ -1,4 +1,4 @@
-# ProofGate Locked Decisions
+# Auctorail Locked Decisions
 
 This document prevents architecture drift during the Telegraph hackathon.
 
@@ -8,9 +8,9 @@ If a new feature conflicts with this document or `ARCHITECTURE.md`, do not weake
 
 **Agent confidence is not permission to act.**
 
-ProofGate is a pre-execution authorization runtime for autonomous agents.
+Auctorail is a pre-execution authorization runtime for autonomous agents.
 
-A principal defines bounded standing authority. The agent may propose an action. Telegraph/other trusted evidence sources provide intelligence. ProofGate deterministically decides whether the exact authority + exact evidence are sufficient. Only a short-lived, single-use Permit may authorize the protected effect.
+A principal defines bounded standing authority. The agent may propose an action. Telegraph/other trusted evidence sources provide intelligence. Auctorail deterministically decides whether the exact authority + exact evidence are sufficient. Only a short-lived, single-use Permit may authorize the protected effect.
 
 ## Public flow
 
@@ -38,7 +38,7 @@ Locked rules:
 - the agent cannot create or expand the principal's Mandate;
 - the agent cannot lower the authoritative risk tier/quorum/evidence requirements;
 - the protected executor cannot run without a valid Permit;
-- the protected tool must not have a second agent-accessible bypass around ProofGate.
+- the protected tool must not have a second agent-accessible bypass around Auctorail.
 
 Normal successful operation does **not** require a human approval click for every action. Human/principal authority is expressed in the standing Mandate ahead of time.
 
@@ -127,7 +127,7 @@ Telegraph provides intelligence.
 
 A Miner result is **evidence**, not permission.
 
-The adaptive/quorum path is **Intent-first and provider-neutral**. ProofGate asks for a capability; Telegraph determines the serving Miner. ProofGate records the actual provider and validates the returned evidence.
+The adaptive/quorum path is **Intent-first and provider-neutral**. Auctorail asks for a capability; Telegraph determines the serving Miner. Auctorail records the actual provider and validates the returned evidence.
 
 Historical v1 capability/direct-routing behavior remains part of the old canonical real execution path where the evidence contract required a specific compatible provider profile. It is not the design of the v1.2 quorum path.
 
@@ -248,7 +248,7 @@ Locked SDK rules:
 - required evidence with no trusted checks → HOLD;
 - only all-PASS ALLOW can mint a Permit.
 
-ProofGate does not claim arbitrary third-party adapters are safe/sandboxed. Adapter code must be reviewed and must not accept replacement execution semantics from the agent.
+Auctorail does not claim arbitrary third-party adapters are safe/sandboxed. Adapter code must be reviewed and must not accept replacement execution semantics from the agent.
 
 ## General decision/Permit rule
 
@@ -337,7 +337,7 @@ Locked claim boundaries:
 - GitHub/cloud/database example adapters are shipped live production integrations;
 - arbitrary untrusted adapters are sandboxed;
 - the historical transaction used Ed25519/PostgreSQL production paths;
-- ProofGate has undergone an independent production security audit.
+- Auctorail has undergone an independent production security audit.
 
 ## Security validation rule
 
@@ -360,4 +360,4 @@ Do not move an existing release tag. Create a new immutable tag for a new frozen
 
 ## Final principle
 
-**Telegraph tells autonomous software what the outside world says. The principal defines what the agent may do. ProofGate determines how much breadth and provider independence the consequence deserves, then turns sufficient evidence plus standing authority into one-use permission for one exact action.**
+**Telegraph tells autonomous software what the outside world says. The principal defines what the agent may do. Auctorail determines how much breadth and provider independence the consequence deserves, then turns sufficient evidence plus standing authority into one-use permission for one exact action.**

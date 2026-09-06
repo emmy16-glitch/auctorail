@@ -1,71 +1,256 @@
-import React from "react";
-import "./home-landing.css";
+import React, { useState } from "react";
+import { PlayIcon, BoltIcon } from "./icons";
+import { AutoTerminal, type AutoTermLine } from "./AutoTerminal";
 
 interface HomeLandingScreenProps {
   onDemo: () => void;
   onLive: () => void;
   onContent: () => void;
   onVerify: () => void;
-}
-type SvgProps = React.SVGProps<SVGSVGElement>;
-function FileIcon(props: SvgProps) { return <svg viewBox="0 0 44 52" aria-hidden="true" {...props}><path d="M8 3h19l9 9v37H8z" fill="none" stroke="currentColor" strokeWidth="2.5"/><path d="M27 3v10h9M14 24h16M14 31h16M14 38h12" fill="none" stroke="currentColor" strokeWidth="2.2"/></svg>; }
-function ShieldIcon(props: SvgProps) { return <svg viewBox="0 0 48 56" aria-hidden="true" {...props}><path d="M24 3 43 10v15c0 12-7.6 22.4-19 28C12.6 47.4 5 37 5 25V10z" fill="none" stroke="currentColor" strokeWidth="3"/></svg>; }
-function DatabaseIcon(props: SvgProps) { return <svg viewBox="0 0 48 52" aria-hidden="true" {...props}><ellipse cx="24" cy="9" rx="16" ry="6" fill="none" stroke="currentColor" strokeWidth="2.4"/><path d="M8 9v30c0 3.3 7.2 6 16 6s16-2.7 16-6V9M8 24c0 3.3 7.2 6 16 6s16-2.7 16-6" fill="none" stroke="currentColor" strokeWidth="2.4"/></svg>; }
-function ReceiptIcon(props: SvgProps) { return <svg viewBox="0 0 44 52" aria-hidden="true" {...props}><path d="M8 3h20l8 8v38l-5-3-4 3-5-3-5 3-4-3-5 3z" fill="none" stroke="currentColor" strokeWidth="2.4"/><path d="M28 3v9h8M14 23h16M14 30h16M14 37h11" fill="none" stroke="currentColor" strokeWidth="2.1"/></svg>; }
-function PlayIcon(props: SvgProps) { return <svg viewBox="0 0 32 32" aria-hidden="true" {...props}><path d="M9 6 25 16 9 26z" fill="none" stroke="currentColor" strokeWidth="2.3"/></svg>; }
-function BoltIcon(props: SvgProps) { return <svg viewBox="0 0 32 40" aria-hidden="true" {...props}><path d="M18 2 6 22h10l-2 16 12-22H16z" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="miter"/></svg>; }
-
-function GateFlowGraphic() {
-  return <svg className="gate-flow-svg" viewBox="0 0 430 390" role="img" aria-label="Agent request passes through Auctorail before authorized execution">
-    <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="miter"><path d="M35 70 215 15l179 63-180 59z" fill="#fff"/><path d="M35 70v19l179 59 180-60V78" fill="#f8f8f8"/><path d="M26 159 212 101l191 63-189 65z" fill="#e3d1ff"/><path d="M26 159v20l188 65 189-66v-14" fill="#efe6ff"/><path d="M27 257 214 198l192 64-191 67z" fill="#fff"/><path d="M27 257v20l188 68 191-68v-15" fill="#f8f8f8"/><path d="M45 91v55M385 97v52M212 151v45" strokeDasharray="4 4"/></g>
-    <g fill="none" stroke="currentColor" strokeWidth="2"><path d="M201 50h18l8 8v24h-26zM219 50v9h8M206 66h15M206 72h15"/><path d="M214 145 229 151v11c0 9-5.8 16.8-15 21-9.2-4.2-15-12-15-21v-11z"/><path d="m203 280 8 8 17-22" strokeWidth="3"/></g>
-    <g fill="currentColor" fontFamily="Courier New, monospace" fontWeight="700" fontSize="11"><text x="214" y="112" textAnchor="middle">AGENT REQUEST</text><text x="214" y="204" textAnchor="middle">AUCTORAIL</text><text x="215" y="316" textAnchor="middle">AUTHORIZED EXECUTION</text></g>
-  </svg>;
+  onSecurity: () => void;
 }
 
-const safeguards = [
-  { title: "ACTION BINDING", copy: "Prevents amount and mandate substitution.", icon: FileIcon },
-  { title: "PERMIT VALIDATION", copy: "Blocks replay, forgery and expiry.", icon: ShieldIcon },
-  { title: "EVIDENCE CHECKS", copy: "Verifies Miner and runtime evidence.", icon: DatabaseIcon },
-  { title: "RECEIPT INTEGRITY", copy: "Ensures post-execution results are untampered.", icon: ReceiptIcon }
-];
-const demoSteps = [
-  { n: "01", title: "VALID REQUEST", copy: "Exact authorization", state: "✓  EXECUTED (DEMO)", tone: "mint" },
-  { n: "02", title: "MODIFIED AMOUNT", copy: "Tampered after approval", state: "⊘  BLOCKED", tone: "rose" },
-  { n: "03", title: "REPLAYED PERMIT", copy: "Already consumed", state: "⊘  BLOCKED", tone: "purple" },
-  { n: "04", title: "MISSING EVIDENCE", copy: "Did not reach threshold", state: "!  HELD", tone: "yellow" }
+const ladder = [
+  { n: "01", title: "Capture the exact action", tag: "EXACT ACTION", key: false, copy: "The agent's proposed transfer — amount, recipient, reason, reference — is frozen and hashed the moment it arrives. Nothing can be substituted after this point." },
+  { n: "02", title: "Check what was actually delegated", tag: "DELEGATION", key: false, copy: "Permission, spending limit, pinned recipient, time window. The local policy engine checks the real delegation first — before a single Miner is paid." },
+  { n: "03", title: "Buy real evidence when it matters", tag: "TELEGRAPH · X402", key: true, copy: "When the consequence demands it, Miner intelligence is purchased through x402, bounded, verified — and cryptographically bound to this exact action." },
+  { n: "04", title: "Issue a one-use permit", tag: "ONE-USE", key: false, copy: "A short-lived signed permit is the only thing that can cause the effect. Replay it, mutate it, forge it — it dies. The rail holds." },
+  { n: "05", title: "Leave a verifiable proof", tag: "ON-CHAIN", key: false, copy: "The outcome becomes a tamper-evident receipt anyone can re-verify, with the transaction on Base Sepolia open for independent inspection." }
 ];
 
-export function HomeLandingScreen({ onDemo, onLive, onContent, onVerify }: HomeLandingScreenProps) {
-  return <main className="home-landing" data-testid="home-landing-screen">
-    <section className="home-hero"><div className="home-hero-copy"><h1>Prove authority<br/>before execution.</h1><p>Auctorail enforces real authorization for agent actions.<br className="desktop-break"/> It checks, verifies, and only allows what is proven.</p>
-      <div className="home-primary-actions"><button className="home-mode-card demo" type="button" onClick={onDemo}><span className="home-mode-icon"><PlayIcon/></span><span className="home-mode-copy"><strong>WATCH DEMO</strong><small>Run a guided demo with<br/>deterministic results.<br/>No real payments.</small></span><span className="home-mode-arrow">→</span></button><button className="home-mode-card live" type="button" onClick={onLive}><span className="home-mode-icon"><BoltIcon/></span><span className="home-mode-copy"><strong>ENTER LIVE MODE</strong><small>Use real Telegraph, x402<br/>and Base Sepolia.<br/>May incur miner costs.</small></span><span className="home-mode-arrow">→</span></button></div></div>
-      <div className="home-gate-visual"><GateFlowGraphic/><div className="gate-steps"><div><strong>CAPTURE</strong><span>Exact request snapshot</span></div><div><strong>VERIFY</strong><span>Rules, evidence, permits</span></div><div><strong>ENFORCE</strong><span>Only proven actions execute</span></div></div></div></section>
+const demos = [
+  {
+    kicker: "GUIDED DEMO",
+    title: "Run the rails yourself",
+    copy: "Four deterministic scenarios: a valid request, a tampered amount, a replayed permit and a held decision.",
+    checklist: ["Pick a scenario, watch it execute", "Exact failure point shown per attack", "Zero payments · zero API calls"],
+    cta: "RUN THE DEMO",
+    action: "onDemo" as const
+  },
+  {
+    kicker: "SECURITY LAB",
+    title: "Try to break the rails",
+    copy: "Mutate a valid authorization — replay, forge, tamper — and watch the exact boundary where Auctorail stops you.",
+    checklist: ["10 attack scenarios, 10 rails held", "Offline and fully deterministic", "Every block returns a machine code"],
+    cta: "OPEN THE LAB",
+    action: "onSecurity" as const
+  },
+  {
+    kicker: "PUBLIC VERIFIER",
+    title: "Verify a receipt",
+    copy: "Recompute receipt integrity and every binding from a hash, an ID, or the receipt JSON itself.",
+    checklist: ["Integrity + 5 binding checks", "Tamper the hash, watch it fail", "Proof, not screenshots"],
+    cta: "VERIFY A RECEIPT",
+    action: "onVerify" as const
+  }
+];
 
-    <section className="home-safeguards" aria-label="Auctorail safeguards">{safeguards.map((item) => { const Icon=item.icon; return <article key={item.title}><Icon/><div><strong>{item.title}</strong><p>{item.copy}</p></div></article>; })}</section>
+// The "simple version" — everyday language, no jargon.
+const plain = [
+  { n: "01", title: "You set the rules first", copy: "You say what's allowed — which account, how much, by when. You never hand over the keys to the money.", example: "set   limit 10 USDC → alice" },
+  { n: "02", title: "It locks the exact request", copy: "The moment the helper says “send $10 to Alice”, Auctorail freezes that exact sentence. Change one letter afterwards and it stops.", example: "freeze “send 10 USDC to alice” → 0x7b1a…c907" },
+  { n: "03", title: "It gets an outside safety check", copy: "For anything risky it pays a little to ask an independent check — it doesn't just take the helper's own word for it.", example: "check safety → 2 sources · safe" },
+  { n: "04", title: "It signs a one-time pass", copy: "Only a short, single-use pass can actually move the money. Use it twice and it's dead. A receipt is saved that anyone can re-check.", example: "sign pass → permit issued · receipt saved" }
+];
 
-    <section className="home-content-trust" aria-labelledby="content-trust-title">
-      <div className="home-content-copy">
-        <span>CONTENT TRUST / SAME AUTHORIZATION CORE</span>
-        <h2 id="content-trust-title">Paste it. Check the evidence before you act.</h2>
-        <p>Use the same fail-closed ALLOW / HOLD / BLOCK model on suspicious text. Demo mode is zero-cost; Live mode can route real Telegraph/x402 evidence when enabled.</p>
-        <div className="home-content-actions">
-          <button type="button" onClick={onContent}>CHECK CONTENT <b>→</b></button>
-          <button type="button" onClick={onVerify}>VERIFY A RECEIPT</button>
+// Plain-language loop for the auto-terminal: one normal request, one that's stopped.
+const plainTerm: AutoTermLine[] = [
+  { cmd: true, text: 'check "send 10 USDC to alice"' },
+  { text: "→ frozen   exact request locked", tone: "ok" },
+  { text: "→ rules    within your limit  ✓", tone: "ok" },
+  { text: "→ safety   independent check  ✓", tone: "ok" },
+  { text: "→ pass     one-time permit signed", tone: "ok" },
+  { text: "→ done     receipt saved · verifiable", tone: "ok", pause: 700 },
+  { cmd: true, text: 'check "send 100 USDC to bob"' },
+  { text: "→ frozen   exact request locked", tone: "ok" },
+  { text: "→ rules    over your limit    ✗", tone: "bad" },
+  { text: "→ stopped  nothing sent · no money moved", tone: "bad", pause: 1100 }
+];
+
+// Compact loop for the closing band — the verifiable-proof angle.
+const closeTerm: AutoTermLine[] = [
+  { cmd: true, text: "verify receipt 0x036a…c4d2" },
+  { text: "→ integrity   hash matches  ✓", tone: "ok" },
+  { text: "→ bindings    mandate · action · permit  ✓", tone: "ok" },
+  { text: "→ verdict     VALID · anyone can re-check", tone: "ok", pause: 1200 }
+];
+
+export function HomeLandingScreen(props: HomeLandingScreenProps) {
+  const { onDemo, onLive, onContent, onVerify, onSecurity } = props;
+  const demoHandlers = { onDemo, onSecurity, onVerify } as Record<"onDemo" | "onSecurity" | "onVerify", () => void>;
+  const [activeStep, setActiveStep] = useState(0);
+
+  return (
+    <main data-testid="home-landing-screen">
+      <section className="landing-hero">
+        <span className="hero-prompt fade-rise">
+          <span className="prompt-host">auctorail</span>@base-sepolia — authorization rails
+          <span className="hero-cursor" aria-hidden="true" />
+        </span>
+        <h1 className="hero-title fade-rise" style={{ "--d": "80ms" } as React.CSSProperties}>
+          Prove <span className="accent-word">authority</span> before execution.
+        </h1>
+        <p className="hero-sub fade-rise" style={{ "--d": "160ms" } as React.CSSProperties}>
+          Every autonomous action starts with one question: did the human actually authorize
+          <em> this exact action</em>? Auctorail freezes the request, checks the real delegation,
+          buys genuine evidence when the consequence demands it — and only then lets a signed
+          one-use permit cause the effect.
+        </p>
+        <div className="hero-actions fade-rise" style={{ "--d": "240ms" } as React.CSSProperties}>
+          <button className="btn btn-primary btn-lg" type="button" onClick={onDemo}>
+            <PlayIcon style={{ width: 15, height: 15 }} />
+            <span>WATCH DEMO</span>
+            <span className="arrow" aria-hidden="true">→</span>
+          </button>
+          <button className="btn btn-lg" type="button" onClick={onLive}>
+            <BoltIcon style={{ width: 15, height: 19 }} />
+            <span>ENTER LIVE MODE</span>
+          </button>
+        </div>
+      </section>
+
+      <div className="stats-band">
+        <div className="page-inner stats-inner">
+          <div className="stat"><b className="stat-hot">10/10</b><span>attack scenarios contained in lab</span></div>
+          <div className="stat"><b>268</b><span>tests green on every change</span></div>
+          <div className="stat"><b>7,400</b><span>fuzz cases run against the rails</span></div>
+          <div className="stat"><b className="stat-hot">0</b><span>payments without a signed permit</span></div>
         </div>
       </div>
-      <div className="home-content-flow" aria-label="Content Trust flow">
-        <div><b>01</b><strong>EXACT CONTENT</strong><span>hash the subject</span></div>
-        <i>→</i>
-        <div><b>02</b><strong>TELEGRAPH EVIDENCE</strong><span>live when enabled</span></div>
-        <i>→</i>
-        <div><b>03</b><strong>ALLOW / HOLD / BLOCK</strong><span>fail closed</span></div>
-        <i>→</i>
-        <div><b>04</b><strong>VERIFIABLE RECEIPT</strong><span>same share text</span></div>
-      </div>
-    </section>
 
-    <section className="home-demo-preview" aria-labelledby="demo-preview-title"><div className="demo-preview-intro"><span>DEMO PREVIEW</span><h2 id="demo-preview-title">See how it works.</h2><p>A short, automatic run showing success,<br/>blocked attacks and a hold case.</p><button type="button" onClick={onDemo}>PLAY DEMO <b>→</b></button></div><div className="demo-step-track">{demoSteps.map((step,index)=><React.Fragment key={step.n}><article className={`demo-step ${step.tone}`}><div className="demo-step-top"><b>{step.n}</b><div><strong>{step.title}</strong><span>{step.copy}</span></div></div><div className="demo-step-state">{step.state}</div></article>{index<demoSteps.length-1&&<span className="demo-arrow">→</span>}</React.Fragment>)}</div></section>
-    <footer className="home-footer"><div className="footer-brand"><ShieldIcon/><div><strong>AUCTORAIL</strong><span>Authorization rails</span></div></div><p>BUILT FOR AN OPEN AGENT ECONOMY.</p><nav aria-label="Landing links"><a href="https://github.com/emmy16-glitch/proof-gate" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://github.com/emmy16-glitch/proof-gate#readme" target="_blank" rel="noreferrer">Docs ↗</a><span>Privacy</span><span>Terms</span></nav></footer>
-  </main>;
+      <section className="landing-section plain-section" aria-labelledby="plain-title">
+        <div className="page-inner" style={{ padding: "0 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">00</span><span className="sec-dash">—</span>THE SIMPLE VERSION</span>
+            <h2 className="section-title" id="plain-title">Here's what it actually does.</h2>
+            <p className="section-lede">No jargon. Think of it this way: you ask someone to pay a single bill — but you only trust them with that one bill, and you want proof they did it right. Tap each step.</p>
+          </div>
+          <div className="plain-grid">
+            <div className="plain-steps" role="tablist" aria-label="How Auctorail works, in plain words">
+              {plain.map((step, index) => {
+                const active = index === activeStep;
+                return (
+                  <button
+                    key={step.n}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`plain-step ${active ? "active" : ""}`}
+                    onClick={() => setActiveStep(index)}
+                  >
+                    <span className="plain-step-num">{step.n}</span>
+                    <span className="plain-step-body">
+                      <strong>{step.title}</strong>
+                      <span className="plain-step-copy">{step.copy}</span>
+                      <code className="plain-step-example mono">{step.example}</code>
+                    </span>
+                    <span className="plain-step-arrow" aria-hidden="true">{active ? "–" : "+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="plain-terminal">
+              <p className="plain-terminal-hint">watching it run, right now — it loops on its own. tap to pause.</p>
+              <AutoTerminal
+                lines={plainTerm}
+                label="auctorail — plain run"
+                ariaLabel="Live terminal showing a normal request passing and a request that exceeds the limit being stopped"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="how-title">
+        <div className="page-inner" style={{ padding: "0 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">01</span><span className="sec-dash">—</span>HOW IT WORKS</span>
+            <h2 className="section-title" id="how-title">Five layers. No shortcuts.</h2>
+            <p className="section-lede">The agent may decide what it wants to do. It cannot create, expand, or bypass the authority required to do it.</p>
+          </div>
+          <div className="depth-ladder">
+            {ladder.map((row, index) => (
+              <div className={`ladder-row ${row.key ? "key" : ""} fade-rise`} key={row.n} style={{ "--d": `${index * 60}ms` } as React.CSSProperties}>
+                <span className="ladder-num">{row.n}</span>
+                <div className="ladder-main">
+                  <strong>{row.title}</strong>
+                  <p>{row.copy}</p>
+                </div>
+                <span className="ladder-tag">{row.tag}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="demos-title" style={{ background: "var(--bg-deep)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+        <div className="page-inner" style={{ padding: "84px 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">02</span><span className="sec-dash">—</span>SEE IT WORKING</span>
+            <h2 className="section-title" id="demos-title">These are not illustrations.</h2>
+            <p className="section-lede">They are working demonstrations of the enforcement built into every layer of the platform. Run them — they are deterministic, they are live in your browser, and they fail loudly when the rails hold.</p>
+          </div>
+          <div className="demo-cards">
+            {demos.map((demo) => (
+              <button className="demo-card" type="button" key={demo.title} onClick={demoHandlers[demo.action]}>
+                <span className="demo-card-kicker">{demo.kicker}</span>
+                <strong>{demo.title}</strong>
+                <p>{demo.copy}</p>
+                <ul className="demo-checklist">{demo.checklist.map((item) => <li key={item}>{item}</li>)}</ul>
+                <span className="demo-card-cta">{demo.cta} <span aria-hidden="true">→</span></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="content-trust-title">
+        <div className="page-inner" style={{ padding: "0 28px" }}>
+          <div className="split-section">
+            <div>
+              <span className="sec-label"><span className="sec-num">03</span><span className="sec-dash">—</span>CONTENT TRUST · SAME AUTHORIZATION CORE</span>
+              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 16 }}>Paste it. Check the evidence before you act.</h2>
+              <p className="section-lede">
+                The same fail-closed ALLOW / HOLD / BLOCK model, applied to suspicious text.
+                Demo mode is zero-cost; live mode routes real Telegraph/x402 evidence when enabled.
+              </p>
+              <div className="split-actions" style={{ marginTop: 26 }}>
+                <button className="btn btn-primary" type="button" onClick={onContent}>CHECK CONTENT <span className="arrow" aria-hidden="true">→</span></button>
+                <button className="btn" type="button" onClick={onVerify}>VERIFY A RECEIPT</button>
+              </div>
+            </div>
+            <div className="mini-flow" aria-label="Content Trust flow">
+              <div className="mini-flow-item"><b>01</b><div><strong>EXACT CONTENT</strong><span>hash the subject</span></div></div>
+              <div className="mini-flow-item"><b>02</b><div><strong>TELEGRAPH EVIDENCE</strong><span>live when enabled</span></div></div>
+              <div className="mini-flow-item"><b>03</b><div><strong>ALLOW / HOLD / BLOCK</strong><span>fail closed</span></div></div>
+              <div className="mini-flow-item"><b>04</b><div><strong>VERIFIABLE RECEIPT</strong><span>one shared source of truth</span></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="closing-band" aria-labelledby="closing-title">
+        <span className="sec-label fade-rise" style={{ justifyContent: "center", display: "inline-flex" }}><span className="sec-dash">—</span>END OF THE RAIL<span className="sec-dash">—</span></span>
+        <h2 id="closing-title" className="fade-rise" style={{ "--d": "80ms" } as React.CSSProperties}>
+          One exact action. One signed permit. <span className="accent-word">One verifiable proof.</span>
+        </h2>
+        <p className="closing-sub fade-rise" style={{ "--d": "160ms" } as React.CSSProperties}>
+          Run the deterministic demo to see every rail hold — or enter live mode and let Auctorail
+          authorize a real Base Sepolia transfer, evidence and all.
+        </p>
+        <div className="hero-actions fade-rise" style={{ "--d": "240ms" } as React.CSSProperties}>
+          <button className="btn btn-primary btn-lg" type="button" onClick={onDemo}><span>RUN THE DEMO</span> <span className="arrow" aria-hidden="true">→</span></button>
+          <button className="btn btn-lg" type="button" onClick={onLive}><span>START A REAL CHECK</span></button>
+        </div>
+        <div className="closing-term fade-rise" style={{ "--d": "320ms" } as React.CSSProperties}>
+          <AutoTerminal
+            lines={closeTerm}
+            label="auctorail — verify"
+            compact
+            ariaLabel="Live terminal re-verifying a saved receipt and confirming it is valid"
+          />
+        </div>
+      </section>
+    </main>
+  );
 }

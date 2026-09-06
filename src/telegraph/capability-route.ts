@@ -47,7 +47,7 @@ export function selectContractControlMiner(
       code:
         "capability_miner_unavailable",
       reason:
-        "No active Telegraph Miner satisfies ProofGate's locked v1 contract-control evidence profile."
+        "No active Telegraph Miner satisfies Auctorail's locked v1 contract-control evidence profile."
     };
   }
 
@@ -57,6 +57,6 @@ export function selectContractControlMiner(
       CONTRACT_CONTROL_SELECTION_POLICY,
     miner,
     reason:
-      "Selected by deterministic ProofGate evidence requirements: active FRAUD_DETECTION contract-control Miner with exact address + chainId request semantics."
+      "Selected by deterministic Auctorail evidence requirements: active FRAUD_DETECTION contract-control Miner with exact address + chainId request semantics."
   };
 }

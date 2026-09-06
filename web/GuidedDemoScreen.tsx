@@ -1,13 +1,279 @@
-import React, { useEffect, useMemo, useState } from "react";
-import "./guided-demo.css";
-interface GuidedDemoScreenProps{onBack:()=>void;onLive:()=>void;onActivity:()=>void;onPermissions:()=>void;onSecurityLab:()=>void}
-type Tone="mint"|"rose"|"purple"|"yellow";type Result="EXECUTED (DEMO)"|"BLOCKED"|"HELD";type DemoStep={title:string;detail:string};type Scenario={n:string;title:string;shortTitle:string;subtitle:string;tone:Tone;result:Result;amount:string;description:string;steps:DemoStep[]};
-const scenarios:Scenario[]=[
-{n:"01",title:"VALID REQUEST",shortTitle:"Valid Request",subtitle:"Exact authorization",tone:"mint",result:"EXECUTED (DEMO)",amount:"1.00",description:"Checking rules, verifying evidence, and executing the exact authorized action.",steps:[{title:"Request captured",detail:"Exact request snapshot."},{title:"Rules checked",detail:"Policy and permission rules match."},{title:"Evidence verified",detail:"Miner and runtime evidence valid."},{title:"Permit issued",detail:"Bound to request, cannot be replayed."},{title:"Executing action",detail:"Sending to execution layer (demo)."},{title:"Receipt created",detail:"Action completed exactly as authorized."}]},
-{n:"02",title:"MODIFIED AMOUNT",shortTitle:"Modified Amount",subtitle:"Tampered after approval",tone:"rose",result:"BLOCKED",amount:"2.00",description:"The authorized amount is changed after approval. Auctorail must catch the mismatch before execution.",steps:[{title:"Request captured",detail:"Authorized request snapshot loaded."},{title:"Rules checked",detail:"Original request is still permitted."},{title:"Authorized amount",detail:"Expected amount is 1.00 USDC."},{title:"Amount modified",detail:"Observed amount changed to 2.00 USDC."},{title:"Binding mismatch",detail:"Action no longer matches authorization."},{title:"Execution blocked",detail:"No execution authority is accepted."}]},
-{n:"03",title:"REPLAYED PERMIT",shortTitle:"Replayed Permit",subtitle:"Already consumed",tone:"purple",result:"BLOCKED",amount:"1.00",description:"A previously consumed permit is submitted again. Single-use enforcement must stop the replay.",steps:[{title:"Request captured",detail:"Exact authorized request loaded."},{title:"Permit found",detail:"Signed permit matches this request."},{title:"Permit checked",detail:"Consumption state is inspected."},{title:"Already consumed",detail:"Permit has already been used once."},{title:"Replay rejected",detail:"Single-use protection stops the replay."},{title:"Attempt recorded",detail:"Blocked replay is recorded for audit."}]},
-{n:"04",title:"MISSING EVIDENCE",shortTitle:"Missing Evidence",subtitle:"Did not reach threshold",tone:"yellow",result:"HELD",amount:"1.00",description:"Rules pass, but the required evidence threshold is not reached. Auctorail holds instead of guessing.",steps:[{title:"Request captured",detail:"Exact request snapshot."},{title:"Rules checked",detail:"Policy and permission rules match."},{title:"Evidence requested",detail:"Required Miner evidence requested."},{title:"Threshold not reached",detail:"Available evidence is insufficient."},{title:"Authorization held",detail:"No execution authority is issued."},{title:"No execution sent",detail:"Vendor action remains untouched."}]}
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+interface GuidedDemoScreenProps {
+  onBack: () => void;
+  onLive: () => void;
+  onActivity: () => void;
+  onPermissions: () => void;
+  onSecurityLab: () => void;
+}
+
+type Tone = "mint" | "rose" | "purple" | "yellow";
+type Result = "EXECUTED (DEMO)" | "BLOCKED" | "HELD";
+type StepTone = "info" | "ok" | "warn" | "bad";
+type DemoStep = { title: string; detail: string; tone: StepTone };
+type Scenario = {
+  n: string;
+  id: string;
+  title: string;
+  shortTitle: string;
+  subtitle: string;
+  tone: Tone;
+  result: Result;
+  amount: string;
+  description: string;
+  steps: DemoStep[];
+};
+
+const scenarios: Scenario[] = [
+  {
+    n: "01", id: "valid_request", title: "VALID REQUEST", shortTitle: "Valid Request",
+    subtitle: "Exact authorization", tone: "mint", result: "EXECUTED (DEMO)", amount: "1.00",
+    description: "Rules pass, evidence is complete, and the exact authorized action executes.",
+    steps: [
+      { title: "Request captured", detail: "Exact request snapshot hashed and frozen.", tone: "info" },
+      { title: "Rules checked", detail: "Permission, limit, recipient and window all match.", tone: "ok" },
+      { title: "Evidence verified", detail: "Miner and runtime evidence valid and bound.", tone: "ok" },
+      { title: "Permit issued", detail: "One-use permit bound to this exact action.", tone: "ok" },
+      { title: "Executing action", detail: "Sending the exact action to execution (demo).", tone: "info" },
+      { title: "Receipt created", detail: "Completed exactly as authorized. Proof written.", tone: "ok" }
+    ]
+  },
+  {
+    n: "02", id: "modified_amount", title: "MODIFIED AMOUNT", shortTitle: "Modified Amount",
+    subtitle: "Tampered after approval", tone: "rose", result: "BLOCKED", amount: "2.00",
+    description: "The amount is changed after approval. The rail must catch the mismatch before execution.",
+    steps: [
+      { title: "Request captured", detail: "Authorized request snapshot loaded.", tone: "info" },
+      { title: "Rules checked", detail: "Original request is still within permission.", tone: "ok" },
+      { title: "Authorized amount", detail: "Expected amount is 1.00 USDC.", tone: "info" },
+      { title: "Amount modified", detail: "Observed amount changed to 2.00 USDC.", tone: "bad" },
+      { title: "Binding mismatch", detail: "action_hash_mismatch — no longer the same action.", tone: "bad" },
+      { title: "Execution blocked", detail: "No execution authority is accepted.", tone: "bad" }
+    ]
+  },
+  {
+    n: "03", id: "replayed_permit", title: "REPLAYED PERMIT", shortTitle: "Replayed Permit",
+    subtitle: "Already consumed", tone: "purple", result: "BLOCKED", amount: "1.00",
+    description: "A consumed permit is submitted again. Single-use enforcement stops the replay.",
+    steps: [
+      { title: "Request captured", detail: "Exact authorized request loaded.", tone: "info" },
+      { title: "Permit found", detail: "Signed permit matches this request.", tone: "info" },
+      { title: "Permit checked", detail: "Consumption state inspected.", tone: "info" },
+      { title: "Already consumed", detail: "permit_already_consumed — used once, dies.", tone: "bad" },
+      { title: "Replay rejected", detail: "Single-use protection stops the replay.", tone: "bad" },
+      { title: "Attempt recorded", detail: "Blocked replay recorded for audit.", tone: "warn" }
+    ]
+  },
+  {
+    n: "04", id: "missing_evidence", title: "MISSING EVIDENCE", shortTitle: "Missing Evidence",
+    subtitle: "Did not reach threshold", tone: "yellow", result: "HELD", amount: "1.00",
+    description: "Rules pass, but the evidence threshold is not reached. Auctorail holds instead of guessing.",
+    steps: [
+      { title: "Request captured", detail: "Exact request snapshot hashed and frozen.", tone: "info" },
+      { title: "Rules checked", detail: "Permission, limit, recipient and window all match.", tone: "ok" },
+      { title: "Evidence requested", detail: "Required Miner evidence requested.", tone: "info" },
+      { title: "Threshold not reached", detail: "Available evidence is insufficient.", tone: "warn" },
+      { title: "Authorization held", detail: "No execution authority is issued.", tone: "warn" },
+      { title: "No execution sent", detail: "Vendor action remains untouched.", tone: "warn" }
+    ]
+  }
 ];
-const symbols:Record<Tone,string>={mint:"✓",rose:"⊘",purple:"⊘",yellow:"!"};
-function DemoGateGraphic({tone}:{tone:Tone}){const middle=tone==="rose"?"#f7d7d7":tone==="yellow"?"#fff0b5":"#e5d5ff";return <svg className="demo-flow-svg" viewBox="0 0 430 390" role="img" aria-label="Agent request passes through Auctorail before authorized execution"><g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="miter"><path d="M35 70 215 15l179 63-180 59z" fill="#fff"/><path d="M35 70v19l179 59 180-60V78" fill="#f8f8f8"/><path d="M26 159 212 101l191 63-189 65z" fill={middle}/><path d="M26 159v20l188 65 189-66v-14" fill={middle} opacity=".72"/><path d="M27 257 214 198l192 64-191 67z" fill="#fff"/><path d="M27 257v20l188 68 191-68v-15" fill="#f8f8f8"/><path d="M45 91v55M385 97v52M212 151v45" strokeDasharray="4 4"/></g><g fill="none" stroke="currentColor" strokeWidth="2"><path d="M201 50h18l8 8v24h-26zM219 50v9h8M206 66h15M206 72h15"/><path d="M214 145 229 151v11c0 9-5.8 16.8-15 21-9.2-4.2-15-12-15-21v-11z"/><path d="m203 280 8 8 17-22" strokeWidth="3"/></g><g fill="currentColor" fontFamily="Courier New, monospace" fontWeight="700" fontSize="11"><text x="214" y="112" textAnchor="middle">AGENT REQUEST</text><text x="214" y="204" textAnchor="middle">AUCTORAIL</text><text x="215" y="316" textAnchor="middle">AUTHORIZED EXECUTION</text></g></svg>}
-export function GuidedDemoScreen({onBack,onLive,onActivity,onPermissions,onSecurityLab}:GuidedDemoScreenProps){const[scenarioIndex,setScenarioIndex]=useState(0);const[stepIndex,setStepIndex]=useState(0);const[playing,setPlaying]=useState(true);const[finished,setFinished]=useState(false);const[detailsOpen,setDetailsOpen]=useState(false);const scenario=scenarios[scenarioIndex];const terminal=stepIndex===scenario.steps.length-1;const absoluteStep=scenarioIndex*6+stepIndex+1;const overallProgress=Math.min(100,(absoluteStep/(scenarios.length*6))*100);useEffect(()=>{if(!playing||finished)return;const timer=window.setTimeout(()=>{if(!terminal){setStepIndex(v=>v+1);return}if(scenarioIndex<scenarios.length-1){setScenarioIndex(v=>v+1);setStepIndex(0);setDetailsOpen(false);return}setPlaying(false);setFinished(true)},terminal?2200:1250);return()=>window.clearTimeout(timer)},[playing,finished,terminal,scenarioIndex]);const completedCounts=useMemo(()=>{const count=finished?scenarios.length:scenarioIndex+(terminal?1:0);const done=scenarios.slice(0,count);return{executed:done.filter(i=>i.result==="EXECUTED (DEMO)").length,blocked:done.filter(i=>i.result==="BLOCKED").length,held:done.filter(i=>i.result==="HELD").length}},[finished,scenarioIndex,terminal]);function selectScenario(index:number){setScenarioIndex(index);setStepIndex(0);setFinished(false);setPlaying(true);setDetailsOpen(false)}function restart(){selectScenario(0)}function skip(){if(scenarioIndex<scenarios.length-1){selectScenario(scenarioIndex+1);return}setStepIndex(5);setPlaying(false);setFinished(true)}function nextScenario(){if(scenarioIndex<scenarios.length-1){selectScenario(scenarioIndex+1);return}setFinished(true);setPlaying(false)}const resultTitle=finished?"DEMO COMPLETE":terminal?scenario.result:`${scenario.steps[stepIndex].title.toUpperCase()}...`;const resultCopy=finished?"All deterministic scenarios completed.":scenario.steps[stepIndex].detail;return <main className="guided-demo" data-testid="guided-demo-screen"><header className="demo-mobile-header"><button className="demo-mobile-brand" type="button" onClick={onBack}><span className="demo-mobile-shield">◇</span><span><strong>AUCTORAIL</strong><small>Authorization rails</small></span></button><span className="demo-mobile-mode"><i/> Demo Mode</span><button className="demo-mobile-menu" type="button" aria-label="Menu">☰</button></header><button className="guided-demo-back" type="button" onClick={onBack}>← <span>BACK</span></button><section className="guided-demo-intro"><div className="guided-demo-heading"><span className="guided-demo-kicker">DEMO MODE</span><h1>Watch Auctorail in action.</h1><p>A short, automatic demo showing a successful authorization, blocked attacks and a hold case. No real payments.</p></div><div className="demo-player"><div className="demo-player-main"><button className="demo-play-box" type="button" onClick={()=>setPlaying(v=>!v)} aria-label={playing?"Pause demo":"Play demo"}>{playing?"Ⅱ":"▶"}</button><div><strong>{finished?"DEMO COMPLETE":playing?"DEMO IS PLAYING":"DEMO PAUSED"}</strong><span>Step {stepIndex+1} of 6 · {scenario.steps[stepIndex].title.toLowerCase()}</span></div></div><div className="demo-player-controls"><button type="button" onClick={restart}>↻ <span>Restart</span></button><button type="button" onClick={skip}>≫ <span>Skip</span></button></div><div className="demo-progress"><span style={{width:`${overallProgress}%`}}/></div><small className="demo-auto-copy">Auto-advancing</small></div></section><section className="demo-mobile-scenario-tabs" aria-label="Demo scenarios">{scenarios.map((item,index)=><button key={item.n} type="button" className={`${item.tone} ${scenarioIndex===index?"active":""}`} onClick={()=>selectScenario(index)}><b>{item.n}</b><span>{item.shortTitle}</span><i>{symbols[item.tone]}</i></button>)}</section><section className="demo-stage"><aside className="demo-scenarios" aria-label="Demo scenarios">{scenarios.map((item,index)=><button key={item.n} type="button" className={`demo-scenario-card ${item.tone} ${scenarioIndex===index?"active":""}`} onClick={()=>selectScenario(index)}><b>{item.n}</b><span><strong>{item.shortTitle}</strong><small>{item.subtitle}</small></span><i>{symbols[item.tone]}</i></button>)}</aside><section className="demo-focus"><header className="demo-focus-header"><div><span>SCENARIO {scenarioIndex+1} OF 4</span><h2>{scenario.shortTitle}</h2><p>{scenario.description}</p></div></header><div className="demo-focus-body"><div className="demo-graphic-wrap"><DemoGateGraphic tone={scenario.tone}/></div><div className="demo-timeline-column"><ol className="demo-timeline">{scenario.steps.map((s,index)=>{const complete=index<stepIndex;const current=index===stepIndex;return <li key={s.title} className={`${complete?"complete":""} ${current?"current":""} ${scenario.tone}`}><span className="demo-node">{complete?"✓":current?"●":""}</span><div><b>{s.title}</b><small>{s.detail}</small></div></li>})}</ol></div></div></section><aside className="demo-result-column"><div className="demo-request-panel"><div className="demo-request-title"><strong>CURRENT REQUEST</strong><span>▣</span></div><pre className={detailsOpen?"expanded":""}>{`{\n  "action": "transfer",\n  "to": "0x742d...9f3a",\n  "amount": "${scenario.amount}",\n  "asset": "USDC",\n  "chain": "base-sepolia"\n}`}</pre><button type="button" onClick={()=>setDetailsOpen(v=>!v)}>⌄ &nbsp; {detailsOpen?"Hide details":"View full details"}<span>›</span></button></div><div className={`demo-status-panel ${scenario.tone} ${terminal||finished?"terminal":""}`}><span>RESULT</span><div className="demo-status-body"><strong>{terminal||finished?symbols[scenario.tone]:"◌"}</strong><div><b>{resultTitle}</b><small>{resultCopy}</small></div></div></div></aside></section><section className="demo-progress-summary"><div className="demo-progress-track"><span className="demo-summary-label">DEMO PROGRESS</span><div className="demo-progress-items">{scenarios.map((item,index)=>{const done=index<scenarioIndex||(index===scenarioIndex&&terminal)||finished;const active=index===scenarioIndex&&!finished;return <button key={item.n} type="button" className={`${done?"done":""} ${active?"active":""}`} onClick={()=>selectScenario(index)}><b>{item.n}</b><span>{item.shortTitle}<small>{done?item.result:active?"IN PROGRESS":"WAITING"}</small></span></button>})}</div></div><aside className="demo-complete"><strong>{finished?"DEMO COMPLETE":"DEMO SUMMARY"}</strong><div className="demo-counts"><span>✓ {completedCounts.executed} Executed</span><span>⊘ {completedCounts.blocked} Blocked</span><span>! {completedCounts.held} Held</span></div><p>Auctorail only executes actions that still match their authorization.</p>{finished&&<div className="demo-final-actions"><button type="button" onClick={restart}>↻ REPLAY DEMO</button><button className="primary" type="button" onClick={onLive}>→ TRY LIVE MODE</button></div>}</aside></section><button className="demo-next-scenario" type="button" onClick={nextScenario}>{scenarioIndex<scenarios.length-1?"Next Scenario":"Finish Demo"} <span>→</span></button><nav className="demo-mobile-nav" aria-label="Mobile demo navigation"><button className="active" type="button" onClick={onBack}><span>⌂</span>Home</button><button type="button" onClick={onLive}><span>⌕</span>Check</button><button type="button" onClick={onActivity}><span>◷</span>Activity</button><button type="button" onClick={onPermissions}><span>◇</span>Permissions</button><button type="button" onClick={onSecurityLab}><span>△</span>Security Lab</button></nav></main>}
+
+const toneClass: Record<StepTone, string> = { info: "", ok: "ok", warn: "warn", bad: "bad" };
+
+export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, onSecurityLab }: GuidedDemoScreenProps) {
+  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [finished, setFinished] = useState(false);
+  const [ranScenarios, setRanScenarios] = useState<Set<number>>(new Set());
+  const scenario = scenarios[scenarioIndex];
+  const terminal = stepIndex === scenario.steps.length - 1;
+  const absoluteStep = scenarioIndex * 6 + stepIndex + 1;
+  const overallProgress = Math.min(100, (absoluteStep / (scenarios.length * 6)) * 100);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!playing || finished) return;
+    const timer = window.setTimeout(() => {
+      if (!terminal) { setStepIndex((v) => v + 1); return; }
+      setRanScenarios((prev) => new Set(prev).add(scenarioIndex));
+      if (scenarioIndex < scenarios.length - 1) { setScenarioIndex((v) => v + 1); setStepIndex(0); return; }
+      setPlaying(false);
+      setFinished(true);
+    }, terminal ? 2400 : 1100);
+    return () => window.clearTimeout(timer);
+  }, [playing, finished, terminal, scenarioIndex, stepIndex]);
+
+  const logLines = useMemo(() => {
+    const lines: { t: string; text: string; tone: StepTone; cmd?: boolean }[] = [];
+    lines.push({ t: "+0.0s", text: `run --scenario ${scenario.id} --network base-sepolia --demo`, tone: "info", cmd: true });
+    for (let i = 0; i <= Math.min(stepIndex, scenario.steps.length - 1); i++) {
+      const step = scenario.steps[i];
+      lines.push({ t: `+${(i * 0.7 + 0.7).toFixed(1)}s`, text: `${step.title.toLowerCase()} — ${step.detail}`, tone: step.tone });
+    }
+    return lines;
+  }, [scenario, stepIndex]);
+
+  const completedCounts = useMemo(() => {
+    const done = scenarios.filter((_, i) => ranScenarios.has(i) || (finished && i === scenarioIndex));
+    return {
+      executed: done.filter((i) => i.result === "EXECUTED (DEMO)").length,
+      blocked: done.filter((i) => i.result === "BLOCKED").length,
+      held: done.filter((i) => i.result === "HELD").length
+    };
+  }, [finished, ranScenarios, scenarioIndex]);
+
+  function selectScenario(index: number) {
+    setScenarioIndex(index);
+    setStepIndex(0);
+    setFinished(false);
+    setPlaying(true);
+  }
+
+  function restart() { selectScenario(0); setRanScenarios(new Set()); }
+
+  function skip() {
+    if (scenarioIndex < scenarios.length - 1) { selectScenario(scenarioIndex + 1); return; }
+    setStepIndex(5);
+    setPlaying(false);
+    setFinished(true);
+  }
+
+  function nextScenario() {
+    if (scenarioIndex < scenarios.length - 1) { selectScenario(scenarioIndex + 1); return; }
+    setFinished(true);
+    setPlaying(false);
+  }
+
+  const scenarioDone = terminal;
+  const verdictTone = finished ? "mint" : scenarioDone ? scenario.tone : null;
+  const verdictText = finished ? "DEMO COMPLETE" : scenarioDone ? scenario.result : "RUNNING";
+  const verdictCopy = finished
+    ? "All four deterministic scenarios completed. The rails held where they were supposed to."
+    : scenarioDone
+      ? scenario.description
+      : scenario.steps[stepIndex].detail;
+
+  return (
+    <main data-testid="guided-demo-screen">
+      <div className="screen-head">
+        <button className="btn btn-ghost btn-sm" type="button" onClick={onBack} style={{ marginBottom: 14 }}>← <span>BACK</span></button>
+        <div>
+          <span className="eyebrow">DEMO MODE · DETERMINISTIC · ZERO PAYMENTS</span>
+          <h1>Watch Auctorail in action.</h1>
+          <p>Pick a scenario and run it. Auctorail executes the exact check sequence against frozen, deterministic data — success, tamper, replay and hold. No real payments.</p>
+        </div>
+      </div>
+
+      <div className="scenario-cards" role="group" aria-label="Demo scenarios">
+        {scenarios.map((item, index) => (
+          <button
+            key={item.n}
+            type="button"
+            className={`scenario-card ${scenarioIndex === index ? "active" : ""}`}
+            onClick={() => selectScenario(index)}
+            aria-pressed={scenarioIndex === index}
+          >
+            <span className="sc-top">
+              <span className="sc-num">SCN {item.n}</span>
+              <span className={`sc-result ${item.tone}`}>{item.result}</span>
+            </span>
+            <strong>{item.shortTitle}</strong>
+            <small>{item.subtitle}</small>
+            {(ranScenarios.has(index) || (finished && index === scenarioIndex)) && <span className="sc-ran" aria-label="scenario run">✓</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="demo-layout v2-grid" style={{ marginTop: 6 }}>
+        <section aria-label="Demo console">
+          <div className="demo-console fade-rise">
+            <div className="console-bar">
+              <span className="console-title">
+                <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+                auctorail demo — scenario {scenario.n} · {scenario.id}
+              </span>
+              <span className={`console-state ${playing ? "running" : finished ? "done" : "paused"}`}>
+                {playing ? "RUNNING" : finished ? "COMPLETE" : "PAUSED"}
+              </span>
+            </div>
+            <div className="console-body" ref={bodyRef}>
+              {logLines.map((line, i) => (
+                <span key={`${scenario.n}:${i}`} className={`console-line ${toneClass[line.tone]} ${line.cmd ? "cmd" : ""}`}>
+                  <span className="cl-t">{line.t}</span>
+                  {line.cmd ? <span className="cl-cmd">{line.text}</span> : line.text}
+                </span>
+              ))}
+              {!finished && <span className="console-cursor" aria-hidden="true" />}
+            </div>
+            <div className="console-controls">
+              <button className="btn btn-sm" type="button" aria-label={playing ? "Pause demo" : "Play demo"} onClick={() => setPlaying((v) => !v)}>
+                {playing ? "Ⅱ PAUSE" : "▶ RUN"}
+              </button>
+              <button className="btn btn-sm" type="button" onClick={skip}>≫ <span>SKIP</span></button>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={nextScenario}>
+                {scenarioIndex < scenarios.length - 1 ? "NEXT SCENARIO →" : "FINISH"}
+              </button>
+              <div className="console-progress" aria-hidden="true"><span style={{ width: `${overallProgress}%` }} /></div>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", whiteSpace: "nowrap" }}>
+                {scenarioIndex + 1}/4 · STEP {stepIndex + 1}/6
+              </span>
+            </div>
+          </div>
+
+          <div className="verdict-zone" style={{ marginTop: 18 }} aria-live="polite">
+            {verdictTone ? (
+              <>
+                <div className={`verdict-display ${verdictTone}`}>{verdictText}</div>
+                <p className="verdict-copy" style={{ margin: 0 }}>{verdictCopy}</p>
+              </>
+            ) : (
+              <p className="verdict-copy" style={{ margin: 0 }}>
+                <span style={{ fontFamily: "var(--mono)", color: "var(--text-3)" }}>awaiting completion · </span>
+                {scenario.steps[stepIndex].title.toLowerCase()} — {scenario.steps[stepIndex].detail}
+              </p>
+            )}
+          </div>
+
+          {finished && (
+            <div className="demo-complete" style={{ marginTop: 18 }}>
+              <strong>DEMO SUMMARY</strong>
+              <div className="dc-counts">
+                <span>✓ {completedCounts.executed} Executed</span>
+                <span>⊘ {completedCounts.blocked} Blocked</span>
+                <span>! {completedCounts.held} Held</span>
+              </div>
+              <p>Auctorail only executes actions that still match their authorization.</p>
+              <div className="dc-actions">
+                <button className="btn btn-sm" type="button" onClick={restart}>↻ REPLAY DEMO</button>
+                <button className="btn btn-primary btn-sm" type="button" onClick={onLive}>→ TRY LIVE MODE</button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside aria-label="Demo details">
+          <div className="demo-request-panel">
+            <div className="drp-title"><strong>CURRENT REQUEST</strong></div>
+            <pre>{`{\n  "action": "transfer",\n  "to": "0x742d...9f3a",\n  "amount": "${scenario.amount}",\n  "asset": "USDC",\n  "chain": "base-sepolia"\n}`}</pre>
+          </div>
+          <div className="demo-result-panel">
+            <span className="eyebrow" style={{ display: "block", marginBottom: 6 }}>RESULT</span>
+            <div className={`drp-result ${scenarioDone || finished ? scenario.tone : ""}`}>
+              {finished ? "✓ DEMO COMPLETE" : scenarioDone ? scenario.result : "IN PROGRESS"}
+            </div>
+            <small>{verdictCopy}</small>
+          </div>
+        </aside>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+        <button className="btn btn-sm" type="button" onClick={onActivity}>VIEW ACTIVITY</button>
+        <button className="btn btn-sm" type="button" onClick={onPermissions}>VIEW PERMISSIONS</button>
+        <button className="btn btn-sm" type="button" onClick={onSecurityLab}>OPEN SECURITY LAB</button>
+      </div>
+    </main>
+  );
+}

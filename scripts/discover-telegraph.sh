@@ -94,12 +94,12 @@ echo
 echo "Saved:"
 echo "  data/miners-registry.json       (rank/activity metadata)"
 echo "  data/integrations.json          (dispatcher-loaded endpoint source of truth)"
-echo "  data/miners.json                (merged ProofGate registry)"
+echo "  data/miners.json                (merged Auctorail registry)"
 echo "  data/intents.json"
 echo "  data/subnet-health.json         ($HEALTH_STATUS)"
 
 echo
-echo "=== ProofGate candidate miner coverage ==="
+echo "=== Auctorail candidate miner coverage ==="
 
 for INTENT in \
   FRAUD_DETECTION \

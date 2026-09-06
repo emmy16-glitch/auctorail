@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       host: "0.0.0.0",
+      // Allow the sandbox preview host (Vite rejects unknown hosts;
+      // leading-dot entries match any subdomain of e2b.app).
+      allowedHosts: [".e2b.app"],
       proxy: {
         "/api/security-lab": {
           target: "http://127.0.0.1:8788",
@@ -35,6 +38,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: false
         }
       }
+    },
+    optimizeDeps: {
+      // tesseract.js spawns a Web Worker from a plain script; keep Vite's dep
+      // optimizer out of it so the worker/core/lang file paths stay intact.
+      exclude: ["tesseract.js"]
     },
     build: {
       target: "es2022"

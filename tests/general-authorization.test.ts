@@ -26,7 +26,7 @@ import {
   ActionAdapterRegistry,
   authorizeRegisteredAction,
   executeRegisteredAction,
-  type ProofGateActionAdapter,
+  type AuctorailActionAdapter,
   type TrustedAdapterEvaluation
 } from "../src/sdk/action-adapter.js";
 
@@ -125,7 +125,7 @@ function adapter(options?: Partial<{
   evaluation: TrustedAdapterEvaluation;
   onEvaluate: () => void;
   onExecute: () => Promise<string>;
-}>): ProofGateActionAdapter<MergeProposal, string> {
+}>): AuctorailActionAdapter<MergeProposal, string> {
   return {
     type: "github.merge",
     policyId: "github.merge.v1",
@@ -181,7 +181,7 @@ const enabledKillSwitch = {
   }
 };
 
-describe("generic ProofGate authorization", () => {
+describe("generic Auctorail authorization", () => {
   it("canonicalizes arbitrary action parameters and detects semantic tampering", () => {
     const action = createGeneralAction({
       type: "github.merge",

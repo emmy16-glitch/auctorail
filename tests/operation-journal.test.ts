@@ -19,7 +19,7 @@ afterEach(() => {
   }
 });
 
-describe("ProofGate operation journal", () => {
+describe("Auctorail operation journal", () => {
   it("persists state before an irreversible operation and advances it", () => {
     const journal = new FileOperationJournal(temporaryDirectory());
     const prepared = journal.create({

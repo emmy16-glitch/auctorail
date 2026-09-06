@@ -21,7 +21,7 @@ import {
 } from "../src/core/action-contract.js";
 
 describe(
-  "ProofGate vendor runtime attestation",
+  "Auctorail vendor runtime attestation",
   () => {
     it(
       "reconstructs the exact pinned deployed runtime from the tracked compiled artifact",

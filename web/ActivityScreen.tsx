@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./control-screen.css";
+import { ReceiptIcon } from "./icons";
 
 export type ActivityStatus =
   | "EXECUTED"
@@ -29,15 +29,6 @@ export interface ActivityItem {
 
 interface ActivityScreenProps {
   activities: ActivityItem[];
-}
-
-function ReceiptIcon() {
-  return (
-    <svg viewBox="0 0 48 56" aria-hidden="true">
-      <path d="M10 4h28v48l-7-4-7 4-7-4-7 4V4Z" fill="none" stroke="currentColor" strokeWidth="3" />
-      <path d="M16 17h16M16 26h16M16 35h10" fill="none" stroke="currentColor" strokeWidth="3" />
-    </svg>
-  );
 }
 
 function activityMark(status: ActivityStatus) {
@@ -108,120 +99,102 @@ export function ActivityScreen({ activities }: ActivityScreenProps) {
   const [technicalActivity, setTechnicalActivity] = useState<string | null>(null);
 
   return (
-    <main className="control-shell" data-testid="activity-screen">
-      <section className="control-hero">
-        <div>
-          <span className="control-kicker">REQUEST HISTORY</span>
-          <h1>What<br />happened.</h1>
-          <p>Authorization and execution outcomes from this browser session, in order.</p>
-        </div>
-        <div className="control-hero-mark" aria-hidden="true">
-          <i className="cc c1" /><i className="cc c2" /><i className="cc c3" /><i className="cc c4" />
-          <ReceiptIcon />
-        </div>
-      </section>
+    <main data-testid="activity-screen">
+      <div className="screen-head">
+        <span className="eyebrow">REQUEST HISTORY</span>
+        <h1>What happened.</h1>
+        <p>Authorization and execution outcomes from this browser session, in order.</p>
+      </div>
 
-      <section className="activity-card hard-shadow" aria-label="Recent activity">
-        <div className="activity-head">
-          <div>
-            <span>RECENT ACTIVITY</span>
-            <small>Real outcomes created by this UI session</small>
-          </div>
-          <small>THIS SESSION</small>
-        </div>
-
-        {activities.length === 0 ? (
+      {activities.length === 0 ? (
+        <div className="card">
           <div className="activity-empty">
+            <ReceiptIcon style={{ width: 30, height: 35, opacity: 0.5 }} />
             <strong>No activity yet.</strong>
             <span>Check a request and its real result will appear here automatically.</span>
           </div>
-        ) : (
-          <div className="activity-list">
-            {activities.slice(0, 12).map((item) => {
-              const expanded = expandedActivity === item.id;
-              const technicalOpen = technicalActivity === item.id;
-              const technicalDetails = normalizedTechnical(item);
+        </div>
+      ) : (
+        <div className="activity-list">
+          {activities.slice(0, 12).map((item) => {
+            const expanded = expandedActivity === item.id;
+            const technicalOpen = technicalActivity === item.id;
+            const technicalDetails = normalizedTechnical(item);
 
-              return (
-                <div className={`activity-item status-${item.status.toLowerCase()}`} key={item.id}>
-                  <button
-                    type="button"
-                    className="activity-summary"
-                    aria-expanded={expanded}
-                    onClick={() => {
-                      setExpandedActivity(expanded ? null : item.id);
-                      if (expanded) setTechnicalActivity(null);
-                    }}
-                  >
-                    <span className="activity-icon" aria-hidden="true">{activityMark(item.status)}</span>
-                    <span className="activity-main">
-                      <strong>
-                        {item.amount && item.recipient
-                          ? `${item.amount} USDC → ${item.recipient}`
-                          : item.detail}
-                      </strong>
-                      <small>
-                        {item.amount && item.recipient
-                          ? item.detail
-                          : "Permission change"}
-                      </small>
-                    </span>
-                    <span className="activity-meta">
-                      <b>{item.status}</b>
-                      <time>{item.time}</time>
-                    </span>
-                  </button>
+            return (
+              <div className={`activity-item status-${item.status.toLowerCase()}`} key={item.id}>
+                <button
+                  type="button"
+                  className="activity-summary"
+                  aria-expanded={expanded}
+                  onClick={() => {
+                    setExpandedActivity(expanded ? null : item.id);
+                    if (expanded) setTechnicalActivity(null);
+                  }}
+                >
+                  <span className="activity-icon" aria-hidden="true">{activityMark(item.status)}</span>
+                  <span className="activity-main">
+                    <strong>
+                      {item.amount && item.recipient
+                        ? `${item.amount} USDC → ${item.recipient}`
+                        : item.detail}
+                    </strong>
+                    <small>
+                      {item.amount && item.recipient
+                        ? item.detail
+                        : "Permission change"}
+                    </small>
+                  </span>
+                  <span className="activity-meta">
+                    <b className={`badge ${item.status === "EXECUTED" ? "ok" : item.status === "BLOCKED" || item.status === "FAILED" ? "block" : item.status === "HELD" || item.status === "UNCERTAIN" ? "hold" : "muted"}`}>{item.status}</b>
+                    <time>{item.time}</time>
+                  </span>
+                </button>
 
-                  {expanded && (
-                    <div className="activity-detail">
-                      <div className="plain-explanation">
-                        <strong>WHAT HAPPENED</strong>
-                        <span>{item.detail}</span>
-                      </div>
+                {expanded && (
+                  <div className="activity-detail">
+                    <div className="plain-explanation">{item.detail}</div>
 
-                      <button
-                        type="button"
-                        className="technical-toggle"
-                        aria-expanded={technicalOpen}
-                        onClick={() => setTechnicalActivity(technicalOpen ? null : item.id)}
-                      >
-                        {technicalOpen
-                          ? "HIDE TECHNICAL DETAILS ↑"
-                          : "VIEW TECHNICAL DETAILS ↓"}
-                      </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      aria-expanded={technicalOpen}
+                      onClick={() => setTechnicalActivity(technicalOpen ? null : item.id)}
+                    >
+                      {technicalOpen ? "HIDE TECHNICAL DETAILS ↑" : "VIEW TECHNICAL DETAILS ↓"}
+                    </button>
 
-                      {technicalOpen && (
-                        <dl className="activity-technical" data-testid={`activity-technical-${item.id}`}>
-                          {technicalDetails.map((detail) => (
-                            <div key={`${item.id}:${detail.label}`}>
-                              <dt>{detail.label}</dt>
-                              <dd className={detail.mono ? "mono" : ""} title={detail.value}>
-                                {detail.value}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
-                      )}
+                    {technicalOpen && (
+                      <dl className="kv" data-testid={`activity-technical-${item.id}`}>
+                        {technicalDetails.map((detail) => (
+                          <div key={`${item.id}:${detail.label}`}>
+                            <dt>{detail.label}</dt>
+                            <dd className={detail.mono ? "mono" : ""} title={detail.value}>
+                              {detail.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
 
-                      {item.proofAvailable && (
-                        <span className="proof-note">VERIFIABLE RECEIPT RECORDED</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                    {item.proofAvailable && (
+                      <span className="badge ok" style={{ justifyContent: "self-start" }}>VERIFIABLE RECEIPT RECORDED</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      <section className="control-note">
-        <div><ReceiptIcon /></div>
-        <p>
-          <strong>Session history is not the receipt store.</strong><br />
-          This list resets with the browser session. Confirmed ProofGate receipts are recorded separately by the trusted backend.
-        </p>
-      </section>
+      <div className="note" style={{ marginTop: 18, maxWidth: 640 }}>
+        <ReceiptIcon />
+        <div>
+          <strong>Session history is not the receipt store.</strong>
+          <p>This list resets with the browser session. Confirmed Auctorail receipts are recorded separately by the trusted backend.</p>
+        </div>
+      </div>
     </main>
   );
 }

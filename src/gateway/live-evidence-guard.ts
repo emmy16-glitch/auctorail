@@ -104,7 +104,7 @@ export function validateLiveExecutionEvidenceEnvelope(
   ) {
     return fail(
       "live_evidence_route_unapproved",
-      "Only AUTO_ROUTE or a ProofGate capability-selected Telegraph route may authorize live execution."
+      "Only AUTO_ROUTE or a Auctorail capability-selected Telegraph route may authorize live execution."
     );
   }
 
@@ -121,7 +121,7 @@ export function validateLiveExecutionEvidenceEnvelope(
     ) {
       return fail(
         "live_evidence_capability_route_invalid",
-        "Capability-routed evidence does not match ProofGate's locked contract-control selection policy."
+        "Capability-routed evidence does not match Auctorail's locked contract-control selection policy."
       );
     }
   }
@@ -193,7 +193,7 @@ export function validateLiveExecutionEvidenceEnvelope(
   if (BigInt(payment.amountRaw) > TELEGRAPH_X402_POLICY.maxAmountRaw) {
     return fail(
       "live_evidence_payment_amount_exceeds_policy",
-      "Telegraph x402 settlement exceeded ProofGate's standing proof-cost policy."
+      "Telegraph x402 settlement exceeded Auctorail's standing proof-cost policy."
     );
   }
 

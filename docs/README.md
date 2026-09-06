@@ -58,7 +58,7 @@ CURRENT ARCHITECTURE / RISK DOCS
 OLDER MILESTONE / VALIDATION DOCS
 ```
 
-Do not infer current behavior from an old README paragraph, an old test count, or a historical ProofGate filename when the implementation says something else.
+Do not infer current behavior from an old README paragraph, an old test count, or a historical Auctorail filename when the implementation says something else.
 
 ---
 
@@ -195,7 +195,7 @@ A bounded live Telegraph/x402 Content Trust client exists, but the project shoul
 
 | File | What it is for | Notes |
 | --- | --- | --- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Trust boundaries, Action/Mandate models, evidence planning, quorum, permits and execution. | Some headings still use the historical ProofGate name. The technical identifiers remain relevant. |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Trust boundaries, Action/Mandate models, evidence planning, quorum, permits and execution. | Some headings still use the historical Auctorail name. The technical identifiers remain relevant. |
 | [`RISK_POLICY.md`](RISK_POLICY.md) | Current payment consequence bands and why evidence tiers are separate from authority. | Use this with the source code for current thresholds. |
 | [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md) | Conservative ledger of only publicly committed real Telegraph/x402 usage. | Best source for judge-facing real-usage counts. |
 | [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) | Canonical protected Base Sepolia transaction and its evidence chain. | Public proof artifact. |

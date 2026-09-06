@@ -12,7 +12,7 @@ function validateSecret(secret: string): string {
   return normalized;
 }
 
-export function loadOrCreateProofGateSecret(options?: {
+export function loadOrCreateAuctorailSecret(options?: {
   filePath?: string;
   envSecret?: string | null;
 }): string {

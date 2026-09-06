@@ -9,7 +9,9 @@
     "./sdk": "./src/sdk/auctorail.ts",
     "./legacy-proofgate": "./src/sdk/proofgate.ts"
   },
-  "directories": { "doc": "docs" },
+  "directories": {
+    "doc": "docs"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -37,30 +39,44 @@
     "test:postgres": "tsx scripts/test-postgres.ts",
     "dev": "node scripts/dev.mjs",
     "web:dev": "vite --host 0.0.0.0",
-    "web:build": "vite build",
+    "web:build": "node scripts/copy-ocr-assets.mjs && vite build",
     "web:preview": "vite preview --host 0.0.0.0",
     "web:api": "tsx web/api-bundle.ts"
   },
-  "keywords": ["auctorail", "telegraph", "ai-agents", "authorization", "x402", "security"],
+  "keywords": [
+    "auctorail",
+    "telegraph",
+    "ai-agents",
+    "authorization",
+    "x402",
+    "security"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@x402/core": "^2.24.0",
     "@x402/evm": "^2.24.0",
     "@x402/fetch": "^2.24.0",
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0",
     "viem": "^2.56.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@types/node": "^26.4.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.11",
+    "jsdom": "^30.0.1",
     "pg": "^8.23.0",
+    "puppeteer": "^25.10.0",
+    "puppeteer-core": "^25.10.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsx": "^4.23.13",

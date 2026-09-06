@@ -1,6 +1,6 @@
-# ProofGate Defensive Security Harnesses
+# Auctorail Defensive Security Harnesses
 
-ProofGate v1.2 uses **four deterministic offline security layers**:
+Auctorail v1.2 uses **four deterministic offline security layers**:
 
 1. the focused **Attack Lab**;
 2. the original **1,100-case exact-action authorization fuzz gate**;
