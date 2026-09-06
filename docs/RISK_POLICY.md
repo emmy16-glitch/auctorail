@@ -1,59 +1,112 @@
-# Auctorail payment risk policy
+# Auctorail adaptive payment risk policy
 
-This document explains how the current adaptive payment policy decides **how much external evidence a proposed payment deserves**.
+This document explains how `payments.adaptive.v1` decides **how much external evidence a proposed payment requires before it can be authorized**.
 
-It does **not** define how much money an agent is allowed to spend. That authority comes from the principal-created Mandate and the policy's separate execution ceiling.
+It does not define the principal's spending authority by itself.
 
-That separation matters:
+The core separation is:
 
 ```text
-risk tier  → how much evidence Auctorail requires
-authority  → what the principal actually allows the agent to do
+Risk tier / evidence plan
+  = how much proof Auctorail requires
+
+Mandate + policy ceiling
+  = what the agent is actually allowed to execute
 ```
 
-A stronger evidence tier can never expand authority that the principal did not delegate.
+A stronger evidence result can satisfy requirements inside delegated authority. It can never expand authority that does not exist.
 
-> Historical note: some source/schema names still use `proofgate.*` because they predate the Auctorail rename. Those identifiers are preserved for compatibility.
+## Source of truth
 
----
+The authoritative implementation is:
+
+- `src/telegraph/adaptive-evidence-plan.ts`
+- `src/policy/payments-adaptive-v1.ts`
+
+Tests that lock the policy include the adaptive-evidence-plan and adaptive-payment suites plus the adaptive/quorum fuzz harness.
+
+Historical `proofgate.*` schema identifiers may remain in source for compatibility/provenance even though the product is now Auctorail.
 
 ## Current consequence bands
 
-The authoritative implementation is in [`../src/telegraph/adaptive-evidence-plan.ts`](../src/telegraph/adaptive-evidence-plan.ts).
-
-| Proposed amount | Tier | `FRAUD_DETECTION` requirement | Additional Intents | Max fraud attempts | Max evidence spend | Deadline |
+| Proposed amount | Tier | Fraud requirement | Additional Intents | Max fraud attempts | Max evidence spend | Overall evidence deadline |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| `<= 5 USDC` | `LOW` | 1 distinct positive Miner at `>= 0.70` | none | 3 | `0.035 USDC` | `35s` |
-| `> 5 to 50 USDC` | `MEDIUM` | 2 distinct positive Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
-| `> 50 USDC` | `HIGH` | 3 distinct Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
+| `<= 5 USDC` | `LOW` | 1 distinct positive `FRAUD_DETECTION` Miner at `>= 0.70` | none | 3 | `0.035 USDC` | **12s** |
+| `> 5 to 50 USDC` | `MEDIUM` | 2 distinct positive `FRAUD_DETECTION` Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
+| `> 50 USDC` | `HIGH` | 3 distinct fraud Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
 
-These are Auctorail's current product/demo defaults. They are **not universal financial-risk thresholds**.
+These are Auctorail's current product defaults, not universal financial-risk thresholds.
 
-Older documentation that describes `<=1`, `1–5`, and `5–10` as LOW/MEDIUM/HIGH is stale relative to the current implementation.
+Older documentation that says LOW is `<=1 USDC`, or that the LOW deadline is `35s`, is stale relative to the current implementation.
 
----
+## LOW risk in detail
 
-## What “distinct Miner” means
+The public demo/live payment typically exercises LOW risk.
 
-Provider diversity is measured by Telegraph **Miner ID**, not by request count.
-
-If Telegraph routes three requests to the same Miner, Auctorail still has only one independent provider.
+A LOW request still requires all of the following before the fraud requirement is satisfied:
 
 ```text
-3 requests to Miner A  ≠  3 independent opinions
-
-Miner A + Miner B      =  2 distinct providers
+required Intent:      FRAUD_DETECTION
+subject:              exact frozen recipient
+chain:                exact Base Sepolia chain (84532)
+applicability:        exact subject/action
+positive confidence: >= 0.70
+signal commitment:    required
+explicit negative:    must not be present
+attempts:             <= 3
+combined spend:       <= 0.035 USDC
+combined deadline:    <= 12 seconds
 ```
 
-If the policy requires more independent providers and the required diversity cannot be obtained within the bounded attempt/spend/deadline window, the result is `HOLD`.
+The shorter 12-second deadline is a liveness change, not a security downgrade. If usable evidence cannot be obtained within the bound, the request fails closed as `HOLD`.
 
-Auctorail does not invent consensus by counting duplicate routing as new votes.
+## Why LOW allows up to three attempts
 
----
+A network response can succeed technically while still being unusable as authorization evidence.
 
-## Positive confidence and negative evidence
+Examples:
 
-A positive fraud result only counts toward quorum when it meets the tier's confidence floor:
+- Telegraph routes a different Intent;
+- serving Miner identity cannot be established;
+- serving Miner is not capable of the required Intent;
+- returned subject does not explicitly match the frozen recipient;
+- returned chain does not explicitly match Base Sepolia;
+- confidence is below `0.70`;
+- signal hash is absent;
+- route is temporarily unavailable;
+- schema/transport behavior makes the result unusable.
+
+Auctorail therefore permits bounded retry rather than converting one bad route into permanent unavailability.
+
+But retries cannot relax the evidence rules.
+
+## Per-request upstream timeout
+
+The deployed API additionally applies a bounded timeout to Telegraph HTTP calls. This protects the interactive authorization path from a single upstream call consuming the entire user-visible lifecycle.
+
+The overall policy deadline remains authoritative. Per-request timeout handling is an availability mechanism, not proof that evidence is safe.
+
+## Distinct-provider quorum
+
+Provider diversity is counted by **Telegraph Miner ID**.
+
+```text
+request 1 → Miner 95822412
+request 2 → Miner 95822412
+request 3 → Miner 95822412
+
+Distinct Miners = 1
+```
+
+Three responses from the same source are not three independent opinions.
+
+When the plan requires multiple providers, Auctorail tracks prior Miner IDs and attempts to acquire independent corroboration within the bounded plan.
+
+If required diversity is not reached, the requirement is not satisfied.
+
+## Confidence-qualified positives
+
+A positive fraud result counts only if it satisfies the tier's confidence floor:
 
 ```text
 LOW     >= 0.70
@@ -61,168 +114,237 @@ MEDIUM  >= 0.75
 HIGH    >= 0.80
 ```
 
-Each FRAUD_DETECTION tier also has a high-confidence negative-veto threshold of `0.90` for early termination.
+A response labeled positive but below the confidence floor is not silently promoted into a qualified positive vote.
 
-The final adaptive payment policy is stricter than a simple majority rule: **any explicit negative evidence blocks**. Known negative evidence is not averaged away by positive votes.
+## Negative evidence
 
-This is intentional. The system is authorizing an external effect, not trying to produce the most optimistic score.
+The fraud quorum rules include a high-confidence negative-veto threshold of `0.90` for early termination behavior.
 
----
+The final adaptive payment policy is intentionally conservative: **explicit negative evidence blocks**. Known negative evidence is not averaged away because other providers are positive.
 
-## Exact evidence binding
+This is appropriate because the output gates an external side effect rather than merely ranking information.
 
-Evidence is useful only when it belongs to the exact action being authorized.
+## Evidence binding
 
-The adaptive plan and evidence bundle bind security-relevant fields such as:
+Evidence is useful only if it applies to the exact action under review.
+
+The policy/evidence stack binds important fields including:
 
 - action ID;
 - action hash;
-- exact payment destination/subject;
-- chain ID;
+- exact destination/subject;
+- exact chain;
 - amount;
 - required Intent;
 - Miner identity;
-- confidence and applicability;
-- signal commitment/hash;
-- quorum rule;
-- consequence-derived plan hash.
+- confidence;
+- applicability;
+- signal commitment;
+- quorum summary/rule;
+- consequence-derived plan.
 
-Changing the payment after authorization changes the action binding. Evidence for another wallet, chain, amount, or plan must not silently satisfy the current request.
+A response about another wallet or chain cannot be accepted just because its verdict is favorable.
 
----
+## Structured Telegraph request context
 
-## The 10 USDC autonomous execution ceiling
-
-The current [`payments.adaptive.v1`](../src/policy/payments-adaptive-v1.ts) policy has a hard autonomous execution ceiling of:
-
-```text
-10 USDC per action
-```
-
-The public hackathon web flow is also capped at 10 USDC.
-
-This means:
-
-- `0.50 USDC` → LOW evidence tier and within the current autonomous ceiling;
-- `7 USDC` → MEDIUM evidence tier and can still be inside the autonomous ceiling if the Mandate allows it;
-- `20 USDC` → MEDIUM evidence tier, but **blocked by the 10-USDC autonomous execution ceiling**;
-- `75 USDC` → HIGH evidence tier, but **still blocked by the autonomous execution ceiling**.
-
-So the HIGH evidence plan demonstrates/classifies what stronger evidence would be required for higher-consequence payments. It does not itself grant permission to execute those payments.
-
-A future human-approved or step-up policy would need to explicitly create that additional authority.
-
----
-
-## Why evidence is purchased only after authority preflight
-
-Telegraph evidence can cost money through x402.
-
-Buying that evidence is therefore itself a machine side effect.
-
-Auctorail first checks whether the proposal is inside delegated authority. If a request is already outside the Mandate or policy ceiling, the system should `BLOCK` without spending money to gather intelligence that cannot make the request authorized anyway.
-
-The desired order is:
+The current live request includes structured routing hints for the exact payment identity, including:
 
 ```text
-freeze exact action
-→ check authority
-→ derive evidence plan
-→ acquire paid evidence only if the action is still eligible
+intent
+address / wallet / target
+chainId
+network
+amountRaw
+actionHash
+applicability
 ```
 
-This protects both security and evidence budget.
+Those values improve routing precision.
 
----
+They are **not treated as returned evidence**. Auctorail must still validate what the serving provider actually asserts.
 
-## Why LOW allows bounded retries
+This distinction prevents Auctorail from “proving” its own request by repeating the metadata it sent.
 
-A single Telegraph route may be unusable for authorization even when the network request succeeds. Examples include:
+## Authority preflight before paid evidence
 
-- wrong Intent;
-- wrong chain;
-- wrong subject;
-- insufficient confidence;
-- missing required signal commitment;
-- transport/schema failure.
+Telegraph evidence can cost money through x402. Evidence acquisition is therefore itself a side effect.
 
-LOW therefore allows up to **3 bounded acquisition attempts**, with a total evidence budget of **0.035 USDC** and a **35-second** evidence window.
+Auctorail follows this order:
 
-This is a liveness allowance, not a weaker security rule.
+```text
+1. freeze exact action
+2. check principal/Mandate authority
+3. enforce hard policy eligibility
+4. derive evidence plan
+5. purchase/acquire required evidence
+6. verify evidence
+7. decide
+```
 
-A LOW request still requires:
+If an action is already outside authority, Auctorail should not spend evidence budget on it.
 
-- a real applicable `FRAUD_DETECTION` result;
-- confidence `>= 0.70`;
-- exact subject binding;
-- exact Base Sepolia chain binding in the current payment path;
-- a usable signal commitment;
-- no explicit negative evidence;
-- final policy `ALLOW` before executable authority is minted.
+## Autonomous execution ceiling
 
-If required evidence remains missing or insufficient, the result is `HOLD`.
+The current adaptive payment policy has a separate hard ceiling:
 
----
+```text
+10 USDC per autonomous action
+```
 
-## What `HOLD` means in this policy
+Examples:
 
-`HOLD` is a fail-closed result.
+| Proposal | Evidence tier | Autonomous execution eligibility |
+| --- | --- | --- |
+| `1 USDC` | LOW | May be eligible if Mandate/evidence pass. |
+| `5 USDC` | LOW | May be eligible if Mandate/evidence pass. |
+| `7 USDC` | MEDIUM | May be eligible if Mandate/evidence pass. |
+| `20 USDC` | MEDIUM | **Blocked by 10-USDC autonomous ceiling.** |
+| `75 USDC` | HIGH | **Blocked by 10-USDC autonomous ceiling.** |
 
-It means Auctorail does not currently have enough trustworthy evidence to authorize the action safely.
+The HIGH evidence plan describes how stronger evidence would be required for higher consequence. It does not grant the right to execute above the current autonomous ceiling.
 
-Typical causes include:
+A future human-approved/step-up policy would have to raise authority explicitly.
 
-- insufficient distinct Miner diversity;
-- too few confidence-qualified positive results;
-- required Intent missing;
-- stale evidence;
-- acquisition deadline reached;
+## Relationship between Mandate limit and policy ceiling
+
+There can be multiple simultaneous caps.
+
+Example:
+
+```text
+Principal Mandate limit: 5 USDC
+Policy autonomous ceiling: 10 USDC
+Proposal: 7 USDC
+
+Result: outside Mandate → BLOCK
+```
+
+Or:
+
+```text
+Principal Mandate limit: 50 USDC
+Policy autonomous ceiling: 10 USDC
+Proposal: 20 USDC
+
+Result: policy ceiling → BLOCK
+```
+
+The effective authority is constrained by all applicable trusted limits.
+
+## `HOLD` semantics
+
+`HOLD` means the request is not authorized to execute with the evidence currently available.
+
+Typical reasons:
+
+- insufficient distinct Miners;
+- insufficient confidence-qualified positives;
+- missing required Intent;
+- route unavailable;
+- evidence deadline reached;
 - evidence budget exhausted;
-- evidence that cannot be bound to the exact action.
+- stale evidence;
+- missing signal commitment;
+- subject/chain applicability cannot be established.
 
-A hold does **not** mean “go ahead because nothing bad was found.” It means **no execution authority is issued**.
+A `HOLD` produces **no execution permission**.
 
----
+It is not an optimistic fallback.
+
+## `BLOCK` semantics
+
+`BLOCK` is appropriate when a hard rule fails.
+
+Examples:
+
+- outside Mandate;
+- over autonomous ceiling;
+- action/plan binding mismatch;
+- explicit negative evidence;
+- wrong policy/version;
+- evidence violates a non-recoverable requirement;
+- revoked/expired authority.
+
+## Risk policy is not truth scoring
+
+Auctorail does not attempt to compute an abstract universal “safety score.”
+
+The policy asks a narrower question:
+
+> Given this principal's authority, this exact proposed action, and these evidence requirements, may protected execution proceed?
+
+That makes the decision explainable and enforceable.
+
+## Current canonical LOW example
+
+For a `1.00 USDC` request to the pinned Auctorail vendor on Base Sepolia:
+
+```text
+Action amount:       1.00 USDC
+Risk tier:           LOW
+Intent:              FRAUD_DETECTION
+Positive floor:      0.70
+Distinct providers:  1 required
+Attempts:            up to 3
+Evidence budget:     0.035 USDC
+Evidence deadline:   12 seconds
+```
+
+The repository contains historical real evidence from `Refut On-Chain Risk` (`95822412`) for the canonical vendor with verdict `ALLOW`, confidence `0.70` and a signal hash. That artifact proves the lane has worked, but runtime authorization still validates current evidence rather than hard-coding historical success as permission.
 
 ## Security rationale
 
-The policy follows a consequence and least-privilege model:
+The policy follows these principles:
 
-1. The principal defines authority.
-2. The exact action is frozen before paid evidence acquisition.
-3. Higher consequence requires broader and/or more independent evidence.
-4. Provider independence is measured by distinct Miner identity.
-5. External intelligence cannot expand delegated authority.
-6. Attempts, evidence spend and latency are bounded.
-7. Missing/insufficient evidence fails closed as `HOLD`.
-8. Explicit negative evidence fails closed as `BLOCK`.
-9. A permit is minted only after the final decision is `ALLOW`.
+1. **Least privilege** — principal authority remains the upper bound.
+2. **Consequence-adaptive evidence** — more consequence can require broader evidence.
+3. **Exact binding** — evidence must belong to the action being authorized.
+4. **Real provider diversity** — independent Miners, not duplicate requests.
+5. **Bounded machine spending** — x402 evidence budget is explicit.
+6. **Bounded waiting** — acquisition deadlines prevent indefinite authorization stalls.
+7. **Fail closed** — missing proof means `HOLD`, not permission.
+8. **Negative evidence matters** — known negative evidence is not averaged away.
+9. **No self-authorization** — evidence never expands delegated authority.
+10. **Permit only after final policy ALLOW** — evidence acquisition itself is not execution authority.
 
-Useful external references:
+## Validation coverage
 
-- Telegraph Hackathon rules: https://hackathon.telegraphprotocol.com/rules
-- Telegraph x402 authentication: https://github.com/telegraphprotocol/telegraph-api-docs/blob/main/docs/overview/authentication.md
-- OWASP AI Agent Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html
-- OWASP LLM06 Excessive Agency: https://genai.owasp.org/llmrisk/llm062025-excessive-agency/
+Current tests/fuzzing cover attempts to tamper with:
 
----
+- risk tier;
+- required Intents;
+- distinct-provider requirements;
+- positive-vote thresholds;
+- confidence floors;
+- negative-veto rules;
+- attempt limits;
+- evidence budgets;
+- evidence deadlines;
+- duplicate Miner counting;
+- subject/chain binding;
+- signal commitments;
+- x402 network/asset/payment constraints;
+- bundle commitments;
+- action substitution.
 
-## Source-of-truth checklist
+The latest green suite reports 268/268 tests and 7400/7400 deterministic adversarial fuzz cases contained across the three fuzz harnesses.
 
-When the policy changes, update these together:
+## Change-control checklist
 
-1. `src/telegraph/adaptive-evidence-plan.ts`
-2. `src/policy/payments-adaptive-v1.ts`
-3. relevant unit/fuzz tests
-4. this file
-5. the root [`README.md`](../README.md)
-6. [`README.md`](README.md) documentation index if the mental model changes
-7. judge-facing copy if public claims or examples change
+When this policy changes, update together:
 
-The implementation and the newest green tests always take precedence over an older prose snapshot.
+1. `src/telegraph/adaptive-evidence-plan.ts`;
+2. `src/policy/payments-adaptive-v1.ts`;
+3. exact unit tests;
+4. relevant fuzz expectations;
+5. root `README.md`;
+6. `docs/README.md` current-facts section;
+7. this document;
+8. demo/submission docs if public behavior changed;
+9. operational monitoring/timeout configuration if the change affects latency.
 
----
+Do not change prose alone and assume the system changed.
 
-## Design rule
+## Final rule
 
-**A risk tier determines how much evidence Auctorail requires. A Mandate and policy determine what the agent is actually authorized to do. Evidence can satisfy authority; it cannot manufacture authority.**
+**Risk determines how much evidence Auctorail requires. The principal and policy determine what the agent is authorized to do. Evidence can satisfy authorization conditions; it cannot manufacture authority.**
