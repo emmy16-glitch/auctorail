@@ -482,7 +482,7 @@ port 8788  utility / Security Lab / Content Trust / Verify API
 port 5173  Vite web UI
 ```
 
-A modern Node 24 environment is recommended for the redesigned dependency set.
+Current `main` requires **Node `>=24.15.0`**. The repository `.nvmrc` selects Node 24 and current GitHub Actions workflows run Node 24. Node 20 is not a supported current baseline.
 
 ## Failure model
 
