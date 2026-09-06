@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   buildAuthorizationTechnical,
   describeAuthorizationOutcome,
@@ -150,6 +150,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
     onSecondaryAction, agentId, recipientLabel, recipientAddress
   } = props;
   const [expanded, setExpanded] = useState<TimelineId | null>(null);
+  const [userExpanded, setUserExpanded] = useState(false);
 
   const rulesDone = Boolean(times?.rules);
   const rulesRunning = phase === "checking" && stage === "rules";
@@ -158,6 +159,26 @@ export function CheckingScreen(props: CheckingScreenProps) {
   const minerSkipped = stage === "decision" && phase !== "error" && result?.evidence.status === "NOT_REQUESTED";
   const minersStopped = phase === "error" && Boolean(times?.miners);
   const decision = result?.decision;
+
+  // Keep the active stage open while the check is in flight, and the deciding
+  // stage open once the outcome lands. Manual toggles take precedence.
+  const activeStage: TimelineId =
+    rulesRunning ? "02"
+      : minersRunning ? "03"
+        : phase === "error" ? (rulesStopped ? "02" : "03")
+          : phase === "ready" ? "04"
+            : "01";
+
+  const runId = `${phase}:${stage}:${Boolean(times?.rules)}:${Boolean(times?.miners)}:${Boolean(times?.decision)}`;
+  useEffect(() => {
+    if (phase === "checking" && stage === "rules" && !times?.rules) setUserExpanded(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId]);
+
+  useEffect(() => {
+    if (!userExpanded) setExpanded(activeStage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStage, userExpanded]);
 
   const evidencePassed = stage === "decision" && result?.evidence.status === "COMPLETE" && decision === "ALLOW";
   const evidenceHeld = stage === "decision" && Boolean(result) && !minerSkipped && decision === "HOLD";
@@ -324,6 +345,7 @@ export function CheckingScreen(props: CheckingScreenProps) {
   return (
     <div className="check-layout" data-testid="checking-screen">
       <section aria-label="Request being checked">
+        <span className="badge accent" style={{ marginBottom: 14, display: "inline-block" }}>STEP 2 OF 3 · AUTHORIZATION</span>
         <span className="eyebrow">LIVE AUTHORIZATION</span>
         <h1 style={{ margin: "10px 0 20px" }}>CHECKING REQUEST</h1>
 

@@ -209,6 +209,24 @@ for (const [width, height, tag] of VIEWPORTS) {
   await page.close();
 }
 
+// ================= 1b. landing v2 structure =================
+console.log("\n=== 1b. landing v2 structure ===");
+{
+  const page = await newPage(1440, 1000);
+  await page.goto(BASE + "/#/home", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(TESTIDS.landing, { timeout: 15000 });
+  await sleep(400);
+  check("hero prompt line", await page.evaluate(() => Boolean(document.querySelector(".hero-prompt"))));
+  check("hero accent word", await page.evaluate(() => Boolean(document.querySelector(".hero-title .accent-word"))));
+  check("stats band (4 stats)", (await page.$$(".stats-inner .stat")).length === 4);
+  check("depth ladder (5 rows)", (await page.$$(".ladder-row")).length === 5);
+  check("ladder key row tagged X402", await page.evaluate(() => (document.querySelector(".ladder-row.key .ladder-tag")?.textContent ?? "").includes("X402")));
+  check("see-it-working heading", await page.evaluate(() => (document.body.textContent ?? "").includes("These are not illustrations.")));
+  check("working-demo cards with checklists", (await page.$$(".demo-card .demo-checklist li")).length >= 9);
+  check("closing band CTA", await page.evaluate(() => (document.body.textContent ?? "").includes("One verifiable proof.")));
+  await page.close();
+}
+
 // ================= 2. mocked live happy path (QA contract) =================
 console.log("\n=== 2. mocked live happy path ===");
 {
@@ -219,8 +237,10 @@ console.log("\n=== 2. mocked live happy path ===");
   await clickClean(page, "ENTER LIVE MODE");
   await page.waitForSelector(TESTIDS.check, { timeout: 10000 });
   await clickClean(page, "CHECK THIS REQUEST");
+  check("check flow: STEP 2 OF 3 badge", await page.evaluate(() => (document.body.textContent ?? "").includes("STEP 2 OF 3")));
   await sleep(450); // inside the live window: REAL CHECKS RUNNING
   check("checking state: REAL CHECKS RUNNING", await page.evaluate(() => (document.body.textContent ?? "").includes("REAL CHECKS RUNNING")));
+  check("checking state: active stage auto-expanded", await page.evaluate(() => Boolean(document.querySelector(".timeline-stage.running.is-open"))));
   await shot(page, "audit-flow-checking.png");
   await sleep(900); // live answered, execute in flight: EXECUTING REQUEST
   const executing = await page.evaluate(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("executing request")));
@@ -397,12 +417,21 @@ console.log("\n=== 8. guided demo: paused + complete ===");
   await sleep(700);
   await page.click('button[aria-label="Pause demo"]');
   await sleep(200);
-  check("demo paused state", await page.evaluate(() => (document.body.textContent ?? "").includes("DEMO PAUSED")));
+  check("demo paused state", (await page.evaluate(() => document.querySelector(".console-state")?.textContent ?? "")) === "PAUSED");
   check("demo pause toggles to Play", Boolean(await page.$('button[aria-label="Play demo"]')));
   await shot(page, "audit-demo-paused.png");
+  check("demo: 4 scenario cards", (await page.$$(".scenario-card")).length === 4);
+  check("demo: terminal console present", Boolean(await page.$(".demo-console")));
+  // resume, run the tamper scenario to its verdict
+  await page.click('button[aria-label="Play demo"]');
+  await page.evaluate(() => [...document.querySelectorAll(".scenario-card")][1]?.click());
+  await page.waitForFunction(() => document.querySelector(".verdict-display")?.textContent === "BLOCKED", { timeout: 15000 });
+  check("demo: tamper scenario verdict BLOCKED", true);
+  check("demo: machine code surfaced", await page.evaluate(() => (document.body.textContent ?? "").includes("action_hash_mismatch")));
+  await shot(page, "audit-demo-verdict.png");
   for (let i = 0; i < 4; i++) {
     await page.evaluate(() => {
-      const b = [...document.querySelectorAll("button")].find((el) => el.textContent.replace(/\s+/g, " ").includes("Skip"));
+      const b = [...document.querySelectorAll("button")].find((el) => el.textContent.replace(/\s+/g, " ").includes("SKIP"));
       if (b) b.click();
     });
     await sleep(300);

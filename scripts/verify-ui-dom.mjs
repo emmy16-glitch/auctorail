@@ -109,8 +109,8 @@ await scenario("guided demo", "demo", ({ q, qa, heading }) => [
   ["heading: Watch Auctorail in action.", () => heading("Watch Auctorail in action.")],
   ["text: No real payments.", () => (q("main")?.textContent || "").includes("No real payments.")],
   ["button: Pause demo", () => q('button[aria-label="Pause demo"]')],
-  ["scenario rail", () => qa(".demo-rail-card").length === 4],
-  ["timeline steps", () => qa(".demo-timeline li").length === 6]
+  ["scenario cards", () => qa(".scenario-card").length === 4],
+  ["console log lines", () => qa(".console-line").length >= 2]
 ]);
 
 await scenario("content trust", "content", ({ q, qa, btn, heading }) => [

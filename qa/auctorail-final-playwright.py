@@ -65,7 +65,7 @@ async def landing_and_demo(browser, width, height, suffix):
     landing = page.get_by_test_id("home-landing-screen")
     await expect(landing).to_be_visible()
     await expect(landing.get_by_role("heading", name="Prove authority before execution.")).to_be_visible()
-    await expect(page.locator("#auctorail-home-root .home-brand strong")).to_have_text("AUCTORAIL")
+    await expect(page.locator("#root .brand-lockup strong").first).to_have_text("AUCTORAIL")
     await expect(landing.get_by_role("heading", name="Paste it. Check the evidence before you act.")).to_be_visible()
 
     # Landing/demo deliberately preserve the locked 1536px desktop composition
@@ -74,7 +74,7 @@ async def landing_and_demo(browser, width, height, suffix):
     # visibility/clickability rather than applying the unscaled 40px target rule.
     landing_target_min = 26 if 900 < width < 1536 else 40
     await visible_target(landing.get_by_role("button", name="CHECK CONTENT", exact=False), landing_target_min)
-    await visible_target(page.locator("#auctorail-home-root").get_by_role("button", name="VERIFY", exact=True), landing_target_min)
+    await visible_target(page.locator(".nav-side").get_by_role("button", name="VERIFY", exact=True), landing_target_min)
     demo = landing.get_by_role("button", name="WATCH DEMO", exact=False)
     live = landing.get_by_role("button", name="ENTER LIVE MODE", exact=False)
     await visible_target(demo, landing_target_min)
@@ -133,7 +133,7 @@ async def content_and_receipt_verify(browser, width, height, suffix):
 async def canonical_verify(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
     await page.goto(BASE_URL, wait_until="networkidle")
-    verify_button = page.locator("#auctorail-home-root").get_by_role("button", name="VERIFY", exact=True)
+    verify_button = page.locator(".nav-side").get_by_role("button", name="VERIFY", exact=True)
     target_min = 26 if 900 < width < 1536 else 40
     await visible_target(verify_button, target_min)
     await verify_button.click()
@@ -152,7 +152,7 @@ async def canonical_verify(browser, width, height, suffix):
 async def sdk_surface(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
     await page.goto(BASE_URL, wait_until="networkidle")
-    docs = page.locator("#auctorail-home-root").get_by_role("button", name="DOCS", exact=False)
+    docs = page.locator(".nav-side").get_by_role("button", name="DOCS", exact=True)
     target_min = 26 if 900 < width < 1536 else 40
     await visible_target(docs, target_min)
     await docs.click()
@@ -217,7 +217,7 @@ async def security_lab(browser, width, height, suffix):
     await page.route("**/api/authorize", forbidden)
     await page.route("**/api/execute", forbidden)
     await page.goto(BASE_URL, wait_until="networkidle")
-    await page.locator("#auctorail-home-root").get_by_role("button", name="SECURITY LAB", exact=True).click()
+    await page.locator(".nav-links").get_by_role("button", name="SECURITY LAB", exact=True).click()
     lab = page.get_by_test_id("security-lab-screen")
     await expect(lab).to_be_visible()
     await expect(lab.get_by_role("heading", name="Try to break Auctorail.")).to_be_visible()
