@@ -19,8 +19,8 @@ jobs:
       contents: read
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: team_B3UZA8Zjc2LnB8A2nJhjfe5n
-      VERCEL_PROJECT_ID: prj_rZ6wYUM1lXd1xn37JuRO2vDjL6uM
+      VERCEL_SCOPE: emmy16-glitchs-projects
+      VERCEL_PROJECT_NAME: auctorail
 
     steps:
       - name: Checkout exact commit
@@ -44,16 +44,13 @@ jobs:
         run: npm ci
 
       - name: Link exact Vercel project
-        shell: bash
-        run: |
-          mkdir -p .vercel
-          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
+        run: npx --yes vercel@latest link --yes --project="$VERCEL_PROJECT_NAME" --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Pull production environment
-        run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@latest pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Build production artifact
-        run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@latest build --prod --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Deploy exact prebuilt artifact
-        run: npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@latest deploy --prebuilt --prod --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
