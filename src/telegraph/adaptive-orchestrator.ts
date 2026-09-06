@@ -151,6 +151,20 @@ export async function collectAdaptiveEvidence(
     rejectedAttempts: [...rejectedAttempts]
   });
 
+  const deadlineExceeded = () =>
+    clock().getTime() > deadline.getTime();
+
+  const deadlineHold = (
+    intent: string,
+    error?: string
+  ): AdaptiveCollectionResult => ({
+    status: "HOLD",
+    code: "adaptive_evidence_deadline_exceeded",
+    ...snapshot(),
+    failedIntent: intent,
+    ...(error ? { error } : {})
+  });
+
   for (const requirement of plan.requirements) {
     let satisfied = false;
     let lastRetryableError: string | undefined;
@@ -160,15 +174,8 @@ export async function collectAdaptiveEvidence(
       attemptNumber <= requirement.quorum.maxAttempts;
       attemptNumber++
     ) {
-      if (clock().getTime() > deadline.getTime()) {
-        return {
-          status: "HOLD",
-          code:
-            "adaptive_evidence_deadline_exceeded",
-          ...snapshot(),
-          failedIntent:
-            requirement.intent
-        };
+      if (deadlineExceeded()) {
+        return deadlineHold(requirement.intent);
       }
 
       const remaining = budget - spent;
@@ -284,7 +291,27 @@ export async function collectAdaptiveEvidence(
           });
 
           lastRetryableError = error.message;
+
+          // A paid-but-unusable attempt must still count toward spend, but it
+          // must not open a fresh network attempt after the precommitted
+          // evidence window has already expired.
+          if (deadlineExceeded()) {
+            return deadlineHold(
+              requirement.intent,
+              `deadline_exceeded_after_retryable_attempt:${error.message}`
+            );
+          }
+
           continue;
+        }
+
+        if (deadlineExceeded()) {
+          return deadlineHold(
+            requirement.intent,
+            error instanceof Error
+              ? `deadline_exceeded_during_acquisition:${error.message}`
+              : "deadline_exceeded_during_acquisition"
+          );
         }
 
         return {
@@ -299,6 +326,16 @@ export async function collectAdaptiveEvidence(
               ? error.message
               : String(error)
         };
+      }
+
+      // Do not authorize with evidence that arrived after the deterministic
+      // deadline. Previously the deadline was checked only before acquire(),
+      // so a slow upstream call could return late and still be accepted.
+      if (deadlineExceeded()) {
+        return deadlineHold(
+          requirement.intent,
+          "evidence_arrived_after_deadline"
+        );
       }
 
       if (
