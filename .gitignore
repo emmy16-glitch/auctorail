@@ -16,3 +16,6 @@ data/evidence/adaptive/
 
 # QA runtime artifacts
 playwright-artifacts/
+
+# OCR runtime assets (generated from node_modules by scripts/copy-ocr-assets.mjs)
+public/tesseract/

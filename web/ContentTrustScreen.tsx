@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type ProposedAction = "view" | "share" | "publish";
 type AuthorshipClaim = "unspecified" | "human" | "ai-assisted";
@@ -55,18 +55,74 @@ function shortContent(hash: string | null | undefined): string {
   return hash.length > 16 ? `${hash.slice(0, 14)}…` : hash;
 }
 
+type OcrPhase = "idle" | "engine" | "recognizing" | "done" | "error";
+type OcrState = {
+  phase: OcrPhase;
+  fileName?: string;
+  fileSize?: number;
+  progress: number;
+  status?: string;
+  words?: number;
+  chars?: number;
+  error?: string;
+};
+
+const ocrIdle: OcrState = { phase: "idle", progress: 0 };
+
+type TesseractWorker = {
+  recognize: (image: File) => Promise<{ data: { text?: string } }>;
+  terminate: () => Promise<void>;
+};
+
+// In-browser OCR: the tesseract worker, wasm cores and English traineddata are
+// served from public/tesseract/ (copied from node_modules at dev/build time), so
+// a screenshot -> text extraction works fully offline, with no CDN and no
+// server round-trip. Only the extracted text is ever sent to the content check.
+async function loadOcrWorker(onProgress: (status: string, progress: number) => void): Promise<TesseractWorker> {
+  // The package's main field is CJS; the ESM dist build is what browsers need
+  // (it re-exports the CJS namespace as its default export).
+  const [mod] = await Promise.all([import("tesseract.js/dist/tesseract.esm.min.js")]);
+  const { createWorker } = (mod.default ?? mod) as {
+    createWorker: (langs?: string | string[], oem?: number, options?: Record<string, unknown>) => Promise<unknown>;
+  };
+  // Resolve absolute URLs from the page origin: the worker script resolves
+  // core/lang paths relative to its own URL, so relative bases would double
+  // the "tesseract/" segment once the worker runs.
+  const appBase = new URL(import.meta.env.BASE_URL ?? "./", window.location.href).href.replace(/\/$/, "");
+  const tess = `${appBase}/tesseract`;
+  return createWorker("eng", 1, {
+    workerPath: `${tess}/worker.min.js`,
+    corePath: `${tess}/`,
+    langPath: `${tess}/`,
+    logger: (m: { status?: string; progress?: number }) => {
+      if (typeof m.status === "string") onProgress(m.status, m.progress ?? 0);
+    }
+  } as Parameters<typeof createWorker>[2]) as unknown as TesseractWorker;
+}
+
 function contentWire(args: {
   status: "idle" | "running" | "done" | "error";
   proposedAction: ProposedAction;
   authorshipClaim: AuthorshipClaim;
   result: ContentCheckResponse | null;
   error: string | null;
+  ocr: OcrState;
 }): { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] {
-  const { status, proposedAction, authorshipClaim, result, error } = args;
-  if (status === "idle" && !result) return [{ text: "live content check only — evidence is acquired via a real x402 payment · no demo mode" }];
+  const { status, proposedAction, authorshipClaim, result, error, ocr } = args;
+  if (status === "idle" && !result) {
+    const idle: { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] = [
+      { text: "live content check only — evidence is acquired via a real x402 payment · no demo mode" }
+    ];
+    if (ocr.fileName && ocr.phase === "engine") idle.push({ text: `image loaded · ${ocr.fileName} · ocr engine loading…`, pending: true });
+    if (ocr.fileName && ocr.phase === "recognizing") idle.push({ text: `image loaded · ${ocr.fileName} · extracting text in-browser · ${Math.round(ocr.progress * 100)}%`, pending: true });
+    if (ocr.fileName && ocr.phase === "done") idle.push({ text: `image loaded · ${ocr.fileName} · ${ocr.words ?? 0} words extracted in-browser (tesseract)`, tone: "ok" });
+    if (ocr.fileName && ocr.phase === "error") idle.push({ text: `ocr stopped · ${ocr.error ?? "failed"} — paste the text manually`, tone: "bad" });
+    return idle;
+  }
   const lines: { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] = [
     { cmd: true, text: `content --action ${proposedAction} --authorship ${authorshipClaim} --mode live-telegraph-x402` }
   ];
+  if (ocr.fileName && ocr.phase === "done") lines.push({ text: `image loaded · ${ocr.fileName} · ${ocr.words ?? 0} words extracted in-browser (tesseract)`, tone: "ok" });
   if (status === "running") {
     lines.push({ text: "hashing exact subject…", pending: true });
     lines.push({ text: "telegraph content route · acquiring real x402 evidence…", pending: true });
@@ -108,8 +164,71 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
   const [result, setResult] = useState<ContentCheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [ocr, setOcr] = useState<OcrState>(ocrIdle);
+  const [preview, setPreview] = useState<string | null>(null);
+  const ocrWorkerRef = useRef<TesseractWorker | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const canRun = text.trim().length > 0 && status !== "running";
+
+  useEffect(() => () => {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    if (ocrWorkerRef.current) void ocrWorkerRef.current.terminate().catch(() => {});
+  }, []);
+
+  async function handleOcrFile(file: File | null | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setOcr({ phase: "error", fileName: file.name, fileSize: file.size, progress: 0, error: "unsupported_file_type" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setOcr({ phase: "error", fileName: file.name, fileSize: file.size, progress: 0, error: "image_too_large_(max_10_mb)" });
+      return;
+    }
+    setOcr({ phase: "engine", fileName: file.name, fileSize: file.size, progress: 0, status: "loading ocr engine" });
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+    try {
+      if (!ocrWorkerRef.current) {
+        ocrWorkerRef.current = await loadOcrWorker((st, p) =>
+          setOcr((s) => (s.phase === "engine" ? { ...s, status: st, progress: p } : s))
+        );
+      }
+      setOcr((s) => ({ ...s, phase: "recognizing", status: "extracting text", progress: 0 }));
+      const { data } = await ocrWorkerRef.current.recognize(file);
+      const cleaned = (data.text ?? "").replace(/\s+/g, " ").trim();
+      const words = cleaned ? cleaned.split(" ").length : 0;
+      if (words < 3) {
+        setOcr({ phase: "error", fileName: file.name, fileSize: file.size, progress: 1, error: "no_readable_text_found" });
+        return;
+      }
+      setText(cleaned.slice(0, 8000));
+      setOcr({ phase: "done", fileName: file.name, fileSize: file.size, progress: 1, words, chars: cleaned.length, status: "done" });
+    } catch (reason) {
+      setOcr({
+        phase: "error",
+        fileName: file.name,
+        fileSize: file.size,
+        progress: 0,
+        error: reason instanceof Error && reason.message ? reason.message : "ocr_failed"
+      });
+    }
+  }
+
+  function clearOcr() {
+    setOcr(ocrIdle);
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
   const verdictClass = useMemo(() => result ? result.decision.toLowerCase() : "idle", [result]);
 
   async function runCheck() {
@@ -190,8 +309,53 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
           />
           <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-3)", fontFamily: "var(--mono)" }}>{text.length.toLocaleString()} / 8,000</div>
 
+          <div
+            className={`ocr-drop ${ocr.phase === "error" ? "is-error" : ""}`}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              void handleOcrFile(event.dataTransfer.files?.[0]);
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              className="ocr-drop-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+              onChange={(event) => void handleOcrFile(event.target.files?.[0])}
+              aria-label="Upload a screenshot or image"
+            />
+            {preview ? (
+              <div className="ocr-preview-row">
+                <img className="ocr-thumb" src={preview} alt="Uploaded image preview" />
+                <div className="ocr-preview-meta">
+                  <strong>{ocr.fileName}</strong>
+                  <span>{Math.max(1, Math.round((ocr.fileSize ?? 0) / 1024))} KB · stays on your device</span>
+                  {ocr.phase === "done" && <em>extracted {ocr.words} words → filled the box above (you can edit it)</em>}
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearOcr}>CLEAR</button>
+              </div>
+            ) : (
+              <span className="ocr-drop-hint">
+                <strong>Drop a screenshot or image</strong> — or tap to browse. Text is extracted in your browser with on-device OCR; nothing is uploaded except the text you check.
+              </span>
+            )}
+            {ocr.phase === "engine" && (
+              <span className="ocr-progress" role="status">loading OCR engine · {Math.round(ocr.progress * 100)}%</span>
+            )}
+            {ocr.phase === "recognizing" && (
+              <span className="ocr-progress" role="status">extracting text · {Math.round(ocr.progress * 100)}%</span>
+            )}
+            {ocr.phase === "error" && (
+              <span className="ocr-error" role="alert">OCR stopped · {String(ocr.error ?? "failed").replaceAll("_", " ")} — paste the text manually instead.</span>
+            )}
+          </div>
+
           <div style={{ margin: "16px 0" }}>
-            <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>02 · WHAT ARE YOU ABOUT TO DO?</span>
+            <span className="eyebrow" style={{ display: "block", marginBottom: 4 }}>02 · WHAT ARE YOU ABOUT TO DO?</span>
+            <small style={{ display: "block", fontSize: 11.5, color: "var(--text-3)", marginBottom: 8 }}>
+              The action you're about to take with this content. The bigger the action, the stricter the check — PUBLISH is held to the highest bar.
+            </small>
             <div className="mode-switch" role="group" aria-label="Proposed action">
               {(["view", "share", "publish"] as ProposedAction[]).map((action) => (
                 <button
@@ -234,7 +398,7 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
                 </span>
               </div>
               <div className="console-body">
-                {contentWire({ status, proposedAction, authorshipClaim, result, error }).map((line, index) => (
+                {contentWire({ status, proposedAction, authorshipClaim, result, error, ocr }).map((line, index) => (
                   <span key={index} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""} ${line.pending ? "pending" : ""}`}>
                     {line.cmd ? <span className="wl-cmd">{line.text}</span> : line.text}
                     {line.pending && <span className="console-cursor" aria-hidden="true" />}

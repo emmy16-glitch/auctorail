@@ -39,6 +39,11 @@ export default defineConfig(({ mode }) => {
         }
       }
     },
+    optimizeDeps: {
+      // tesseract.js spawns a Web Worker from a plain script; keep Vite's dep
+      // optimizer out of it so the worker/core/lang file paths stay intact.
+      exclude: ["tesseract.js"]
+    },
     build: {
       target: "es2022"
     }
