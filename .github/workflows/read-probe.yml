@@ -1,0 +1,26 @@
+name: read-probe
+on:
+  push:
+    branches: [ arena/01a07716-auctorail ]
+    paths:
+      - 'scripts/get-tx-hash.mjs'
+      - '.github/workflows/read-probe.yml'
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: arena/01a07716-auctorail }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-audit --no-fund playwright
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/get-tx-hash.mjs
+      - name: push results
+        run: |
+          git config user.name "arena-bot" && git config user.email "arena@bots.local"
+          git add live-out
+          git commit -m "read-only tx lookup from runner" || echo "nothing to commit"
+          git push origin HEAD:arena/01a07716-auctorail || true
