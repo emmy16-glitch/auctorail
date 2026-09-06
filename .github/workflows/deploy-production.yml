@@ -2,6 +2,9 @@ name: Deploy Auctorail Production
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 concurrency:
   group: auctorail-production-deploy
@@ -9,6 +12,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: "${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'deploy:') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
