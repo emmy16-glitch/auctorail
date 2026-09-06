@@ -7,29 +7,50 @@ import type {
   IntentAcquisitionContext
 } from "./adaptive-orchestrator.js";
 
+const CANONICAL_LOW_FRAUD_MINER_ID = "95822412";
+
 /**
- * Keep the public/hackathon path on Telegraph's ranked automatic Intent route.
+ * Acquire real Telegraph evidence while keeping Auctorail's policy separate
+ * from transport routing.
  *
- * The existing live client switches to a direct Miner endpoint when a quorum
- * asks for more than one distinct provider. For the public Auctorail flow we
- * deliberately avoid that Miner selection. We preserve prior Miner IDs in the
- * request context (so Telegraph can prefer a different provider) but give the
- * transport a routing-only copy of the quorum with minimumDistinctMiners=1.
+ * LOW-risk public payments use a direct Telegraph/x402 first hop to the
+ * canonical Refut FRAUD_DETECTION Miner. Production testing showed that the
+ * generic /v1/ask discovery layer can intermittently spend most of the LOW
+ * evidence window before returning any usable provider, while Refut itself is
+ * the repeatedly proven compatible provider for the exact Base Sepolia vendor
+ * check. The direct hop still goes through Telegraph's engine and x402 gate;
+ * Auctorail does not call the Miner behind Telegraph or trust it automatically.
  *
- * IMPORTANT: this does NOT weaken Auctorail's quorum. collectAdaptiveEvidence
- * still evaluates the original plan and still requires the original number of
- * distinct Miners before an Intent is considered satisfied.
+ * Returned evidence must still independently pass the untouched original
+ * policy: exact subject/chain, required Intent, signal hash, confidence floor,
+ * freshness, negative veto, spend, attempt and deadline rules. If a direct
+ * provider is explicitly unusable, later bounded attempts can select another
+ * eligible direct provider without counting duplicate Miner identities.
+ *
+ * MEDIUM/HIGH flows retain the established ranked auto-route-first behavior
+ * and direct corroboration for provider diversity.
  */
 export function createAutoRoutedLiveIntentAcquirer(
   options: LiveIntentClientOptions
 ): (
   context: IntentAcquisitionContext
 ) => Promise<LiveIntentAcquisitionResult> {
-  const acquire = createLiveIntentAcquirer(options);
+  const normalAcquire = createLiveIntentAcquirer(options);
+  const lowAcquire = createLiveIntentAcquirer({
+    ...options,
+    preferDirectInitialRoute: true,
+    preferredInitialMinerId: CANONICAL_LOW_FRAUD_MINER_ID
+  });
 
   return (context) => {
+    const isLowFraudCheck =
+      context.plan.riskTier === "LOW" &&
+      context.requirement.intent === "FRAUD_DETECTION";
     const hasPriorMiner =
       (context.priorMinerIds?.length ?? 0) > 0;
+    const acquire = isLowFraudCheck
+      ? lowAcquire
+      : normalAcquire;
 
     return acquire({
       ...context,
@@ -38,20 +59,17 @@ export function createAutoRoutedLiveIntentAcquirer(
         quorum: {
           ...context.requirement.quorum,
 
-          // Attempt one remains on Telegraph's ranked /v1/ask route.
-          // After an accepted or rejected provider has already been seen,
-          // transport may directly target another ranked unused Miner.
-          //
-          // This is routing-only. collectAdaptiveEvidence still evaluates
-          // the untouched original requirement and therefore does not
-          // weaken Auctorail's authorization quorum.
+          // For a later attempt, transport may directly choose another unused
+          // Miner. This is routing-only; collectAdaptiveEvidence evaluates the
+          // untouched original requirement and therefore does not weaken the
+          // authorization quorum.
           minimumDistinctMiners:
             hasPriorMiner
               ? Math.max(
                   2,
                   context.requirement.quorum.minimumDistinctMiners
                 )
-              : 1
+              : context.requirement.quorum.minimumDistinctMiners
         }
       }
     });
