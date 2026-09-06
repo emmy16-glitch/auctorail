@@ -4,11 +4,11 @@ This guide is for developers using Android + Termux to inspect, run and test Auc
 
 Auctorail is a Node/TypeScript/React/Vite project with browser tooling and optional native/browser-adjacent dependencies. Termux can run much of the project, but some browser automation packages are easier on a normal Linux desktop/VM.
 
-## Recommended runtime
+## Required runtime
 
-For the current dependency set, **Node 24 is recommended**.
+Current `main` requires **Node `>=24.15.0`** through `package.json`. The repository `.nvmrc` selects Node 24 and current GitHub Actions workflows use Node 24.
 
-Several modern development dependencies now officially target Node 22/24, including browser/DOM tooling. Older Node 20 environments may still install/run parts of the project but can emit `EBADENGINE` warnings and should not be treated as the preferred baseline.
+Node 20 is not a supported baseline for the current dependency set.
 
 ## Basic Termux preparation
 
@@ -27,7 +27,7 @@ git --version
 python --version
 ```
 
-Aim for a modern Node 24 environment where available.
+Confirm that `node -v` is at least `v24.15.0`. If Termux's packaged Node is older, use a supported Node 24 installation method or a `proot-distro` Ubuntu environment rather than forcing an unsupported dependency install.
 
 ## Clone
 
@@ -223,7 +223,7 @@ proot-distro install ubuntu
 proot-distro login ubuntu
 ```
 
-Inside Ubuntu, install a supported Node runtime and dependencies.
+Inside Ubuntu, install Node `>=24.15.0` and project dependencies.
 
 Even there, browser sandbox/native-library requirements can differ from a full VM.
 
@@ -239,9 +239,7 @@ Check Node version:
 node -v
 ```
 
-The current dependency set includes packages requiring Node 22/24. Upgrade to Node 24 where possible.
-
-Do not assume an installation warning is harmless simply because another environment happened to pass.
+On current `main`, a Node version below `24.15.0` is outside the declared engine baseline. Upgrade the runtime rather than treating engine warnings as harmless compatibility noise.
 
 ## If installation fails on a native package
 
