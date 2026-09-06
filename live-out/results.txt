@@ -1,5 +1,10 @@
-loaded check screen
+--- attempt 1
 clicked CHECK
-terminal-non-tx state
-tx= NONE
+--- attempt 2
+clicked CHECK
+--- attempt 3
+clicked CHECK
+--- attempt 4
+clicked CHECK
+FINAL tx= NONE
 done
