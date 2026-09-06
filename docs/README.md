@@ -1,352 +1,353 @@
 # Auctorail documentation
 
-This folder contains the deeper technical and hackathon documentation for Auctorail.
+This directory is the canonical documentation set for **Auctorail**, a pre-execution authorization layer for autonomous agents.
 
-If you are new to the project, do **not** try to read every file from top to bottom. Some documents record older milestones, old ProofGate naming, or validation snapshots that were correct at the time they were written. This page tells you what to read first and which facts are current.
+The project was previously called ProofGate, so some historical schema identifiers, audit artifacts, filenames and the already-deployed `ProofGateVendor` contract still retain the old name. Those are compatibility/provenance details, not a second product.
 
----
+## Read this first
 
-## Start here
-
-### If you are a judge or reviewer
-
-Read these in order:
-
-1. [`../README.md`](../README.md) — plain-English project overview.
-2. [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md) — public, committed real Telegraph/x402 usage only.
-3. [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) — canonical protected Base Sepolia execution.
-4. [`HACKATHON_DEMO.md`](HACKATHON_DEMO.md) — judge-facing demo path.
-5. [`FINAL_SUBMISSION.md`](FINAL_SUBMISSION.md) — claim boundaries and submission copy.
-
-### If you are a developer
-
-Read:
-
-1. [`../README.md`](../README.md)
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md)
-3. [`RISK_POLICY.md`](RISK_POLICY.md)
-4. [`DEVELOPER_INTEGRATION.md`](DEVELOPER_INTEGRATION.md)
-5. [`V1_2_GENERAL_QUORUM.md`](V1_2_GENERAL_QUORUM.md)
-6. [`../packages/sdk/README.md`](../packages/sdk/README.md)
-
-### If you are reviewing security
-
-Read:
-
-1. [`ARCHITECTURE.md`](ARCHITECTURE.md)
-2. [`RESILIENCE_INVARIANTS.md`](RESILIENCE_INVARIANTS.md)
-3. [`ATTACK_LAB.md`](ATTACK_LAB.md)
-4. [`permit-consumption-store.md`](permit-consumption-store.md)
-5. [`V1_2_VALIDATION.md`](V1_2_VALIDATION.md)
-6. the current source under `src/`, because code is authoritative when an older document and the implementation differ.
-
-### If you are an AI assistant trying to understand the repository
-
-Use this order of trust:
+If you remember only one rule from the documentation, use this:
 
 ```text
-CURRENT SOURCE CODE / CONSTANTS
+CURRENT SOURCE CODE
+        ↓
+CURRENT GREEN TEST / QA RESULTS
         ↓
 COMMITTED REAL EVIDENCE + RECEIPTS
         ↓
-CURRENT GREEN CI / QA RESULTS
+CURRENT README / ARCHITECTURE / RISK DOCS
         ↓
-ROOT README + THIS DOC INDEX
-        ↓
-CURRENT ARCHITECTURE / RISK DOCS
-        ↓
-OLDER MILESTONE / VALIDATION DOCS
+HISTORICAL MILESTONE DOCS
 ```
 
-Do not infer current behavior from an old README paragraph, an old test count, or a historical Auctorail filename when the implementation says something else.
+When prose and implementation disagree, the current implementation and its passing tests are authoritative.
 
----
+## Auctorail in one paragraph
 
-## Current facts that are easy to get wrong
+Auctorail sits between an AI agent and a protected external effect. The principal defines bounded standing authority. The agent proposes one exact action. Auctorail freezes the action, checks whether it is inside the principal's Mandate, derives any evidence requirements from the consequence, acquires and verifies Telegraph Miner evidence when needed, and returns deterministic `ALLOW`, `HOLD`, or `BLOCK`. Only an executable `ALLOW` can produce short-lived one-use authority for the protected executor. Telegraph intelligence informs authorization but cannot create authority the principal never delegated.
 
-These are the main places where older write-ups can mislead a human or an AI.
+## Start here by audience
 
-### 1. Current product name vs historical name
+### Judges / hackathon reviewers
 
-**Current product name:** `Auctorail`
+1. [`../README.md`](../README.md) — canonical project overview.
+2. [`PRODUCT_STORY.md`](PRODUCT_STORY.md) — simplest explanation of the problem and product differentiation.
+3. [`HACKATHON_DEMO.md`](HACKATHON_DEMO.md) — exact judge-facing demonstration sequence.
+4. [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md) — conservative ledger of genuine Telegraph/x402 usage.
+5. [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) — canonical protected Base Sepolia proof.
+6. [`FINAL_SUBMISSION.md`](FINAL_SUBMISSION.md) — claim boundaries and submission copy.
+7. [`JUDGING_CRITERIA.md`](JUDGING_CRITERIA.md) — evidence mapped to judging criteria.
 
-Historical names still intentionally exist in the repository:
+### Developers integrating an agent or protected tool
 
-- repository slug: `proof-gate`;
-- contract: `ProofGateVendor`;
-- wire/schema identifiers such as `proofgate.action.v2`;
-- some older documentation headings and generated audit artifacts;
-- compatibility exports such as `legacy-proofgate`.
+1. [`../README.md`](../README.md)
+2. [`ARCHITECTURE.md`](ARCHITECTURE.md)
+3. [`DEVELOPER_INTEGRATION.md`](DEVELOPER_INTEGRATION.md)
+4. [`RISK_POLICY.md`](RISK_POLICY.md)
+5. [`V1_2_GENERAL_QUORUM.md`](V1_2_GENERAL_QUORUM.md)
+6. [`../packages/sdk/README.md`](../packages/sdk/README.md)
+7. [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
 
-Do not rename cryptographic/deployed identifiers casually. They may be part of a hash, stored artifact, historical deployment, or compatibility path.
+### Security reviewers
 
-The correct interpretation is:
+1. [`SECURITY_MODEL.md`](SECURITY_MODEL.md)
+2. [`ARCHITECTURE.md`](ARCHITECTURE.md)
+3. [`RESILIENCE_INVARIANTS.md`](RESILIENCE_INVARIANTS.md)
+4. [`ATTACK_LAB.md`](ATTACK_LAB.md)
+5. [`permit-consumption-store.md`](permit-consumption-store.md)
+6. [`V1_2_GENERAL_QUORUM.md`](V1_2_GENERAL_QUORUM.md)
+7. [`V1_2_VALIDATION.md`](V1_2_VALIDATION.md)
+8. current code under `src/`.
+
+### Demo / recording operators
+
+1. [`DEMO_TODAY.md`](DEMO_TODAY.md)
+2. [`HACKATHON_DEMO.md`](HACKATHON_DEMO.md)
+3. [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
+4. [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md)
+
+### AI assistants analyzing the repository
+
+Read [`GLOSSARY.md`](GLOSSARY.md), then apply the source-of-truth order at the top of this page. Do not infer current behavior from stale test counts, old screenshots, old ProofGate branding or historical threshold values.
+
+## Current facts — September 2026
+
+These are the facts most likely to become stale or be misstated.
+
+### Product and repository name
 
 ```text
-Auctorail = current product/brand
-ProofGate = historical repository/identifier lineage
+Current product:     Auctorail
+Current repository:  emmy16-glitch/auctorail
+Historical name:     ProofGate
 ```
 
----
+Legacy identifiers can intentionally remain in:
 
-### 2. Current payment evidence tiers
+- `proofgate.*` schema/wire-format names;
+- `ProofGateVendor` contract and artifacts;
+- historical audit artifact filenames;
+- compatibility SDK exports;
+- historical validation headings/logs.
 
-The current implementation in `src/telegraph/adaptive-evidence-plan.ts` uses:
+Public product copy should use **Auctorail**.
+
+### Current payment evidence tiers
+
+The authoritative implementation is `src/telegraph/adaptive-evidence-plan.ts`.
+
+| Tier | Proposed amount | Fraud requirement | Extra Intents | Attempts | Max evidence spend | Overall deadline |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| LOW | `<= 5 USDC` | 1 distinct positive Miner at `>=0.70` | none | 3 | `0.035 USDC` | **12s** |
+| MEDIUM | `>5 to 50 USDC` | 2 distinct positives at `>=0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
+| HIGH | `>50 USDC` | 3 distinct Miners, at least 2 positives at `>=0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
+
+The LOW window used to be documented as `35s`; that is stale. It is now **12 seconds**.
+
+### Autonomous execution ceiling
+
+The current adaptive payment policy has a separate hard ceiling:
 
 ```text
-LOW     <= 5 USDC
-MEDIUM  > 5 to 50 USDC
-HIGH    > 50 USDC
+10 USDC per autonomous action
 ```
 
-Current default requirements:
-
-| Tier | Fraud quorum | Extra Intents | Confidence | Max evidence spend | Deadline |
-| --- | --- | --- | ---: | ---: | ---: |
-| LOW | 1 distinct / 1 positive | none | `>= 0.70` | `0.035 USDC` | `35s` |
-| MEDIUM | 2 distinct / 2 positive | `ONCHAIN_TX_LOOKUP` | `>= 0.75` | `0.060 USDC` | `60s` |
-| HIGH | 3 distinct / 2 positive | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | `>= 0.80` | `0.100 USDC` | `90s` |
-
-Older text that says `<=1`, `1–5`, `5–10` as LOW/MEDIUM/HIGH is stale relative to the current implementation.
-
----
-
-### 3. Evidence tier is not execution authority
-
-The current adaptive payment policy has a hard **10 USDC autonomous execution ceiling**.
-
-So a HIGH evidence plan does not mean an autonomous agent may execute a payment above 10 USDC.
+Evidence tier and spending authority are different concepts.
 
 ```text
 risk tier → how much evidence is required
-authority → what the principal actually permits
+Mandate/policy → what the agent is actually permitted to execute
 ```
 
-Stronger evidence cannot create authority that does not already exist.
+### LOW evidence requirements
 
----
+For the current Base Sepolia payment lane, LOW still requires:
 
-### 4. Current validation snapshot
+- required Intent `FRAUD_DETECTION`;
+- exact subject/recipient applicability;
+- exact chain binding (`84532`);
+- confidence `>= 0.70`;
+- usable signal commitment/hash;
+- no explicit negative evidence;
+- bounded attempts/spend/deadline;
+- final deterministic policy `ALLOW`.
 
-Older documentation may mention:
+The shorter latency window does **not** weaken those requirements.
+
+### Live upstream timeout protection
+
+The deployed API path additionally bounds individual Telegraph HTTP calls so one slow upstream request cannot leave the interactive LOW-risk flow waiting indefinitely.
+
+### Current validation snapshot
+
+The latest green `main` validation for the redesigned version completed:
 
 ```text
-225 tests
-7300 fuzz cases
+53 test files
+268 / 268 tests passed
 ```
 
-Those numbers were valid historical snapshots, but the latest green feature-branch CI at the time this index was added completed:
+Deterministic fuzz suites:
 
 ```text
-267 / 267 tests across 53 files
-7400 / 7400 deterministic adversarial fuzz cases
-0 unauthorized executions / authorizations in the fuzz suites
-0 production dependency vulnerabilities reported by npm audit
-```
-
-Fuzz breakdown:
-
-```text
-1100 payment authorization
-3200 adaptive + quorum
-3100 general authorization
+1100 payment authorization cases
+3200 adaptive + quorum cases
+3100 general authorization cases
 ----
-7400 total
+7400 adversarial cases contained
+
+0 unauthorized executions / authorizations
+0 uncaught fuzz errors
 ```
 
-Always prefer the newest green CI run over a frozen number in an older milestone document.
-
----
-
-### 5. Real usage vs deterministic demo
-
-Keep these categories separate.
-
-#### Publicly committed real activity
-
-Current conservative public totals:
+Production dependency audit:
 
 ```text
-2 genuine Telegraph Miner acquisitions
-$0.02 committed x402 evidence spend
-1 protected Base Sepolia execution
+0 vulnerabilities reported
 ```
 
-See [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md).
+The current browser/Playwright product-flow audit also passed.
 
-#### Deterministic / offline activity
+Older docs mentioning 225 or 267 tests are historical snapshots unless explicitly marked current.
 
-These do **not** count as real Telegraph usage:
+### Current Node recommendation
 
-- Guided Demo;
-- Security Lab;
-- unit tests;
-- fuzz harnesses;
-- deterministic SDK examples;
-- Content Trust demo evidence.
+The redesigned dependency set includes browser/DOM development packages that officially require Node 22/24.
 
-#### Content Trust live path
+**Node 24 is recommended for current local development.**
 
-A bounded live Telegraph/x402 Content Trust client exists, but the project should not claim a real Content Trust Miner run until such a run has actually been performed, reviewed and preserved as a safe artifact.
+Some existing workflow configuration still exercises Node 20 and currently passes, but its `EBADENGINE` warnings should not be interpreted as a long-term supported dependency baseline.
 
----
+### Public real usage
+
+Conservative committed totals:
+
+```text
+Real Telegraph Miner acquisitions: 2
+Committed x402 evidence cost:       $0.02
+Protected Base Sepolia executions:  1
+```
+
+Do not include deterministic demo, Security Lab, unit tests, fuzz tests or mocked Content Trust output in these numbers.
+
+## The most important conceptual distinction
+
+```text
+proposal ≠ authority
+Miner result ≠ authority
+confidence ≠ authority
+stronger evidence ≠ expanded authority
+```
+
+A favorable evidence result can satisfy a policy requirement only **inside existing delegated authority**.
+
+## Current product surfaces
+
+- **Home** — plain-language explanation and interactive product story.
+- **Watch Demo** — deterministic valid/mutated/replay/missing-evidence scenarios.
+- **Check / Live** — real payment authorization path when live mode is configured.
+- **Permissions** — principal-facing public demo settings.
+- **Activity** — decisions and execution/receipt details.
+- **Verify** — proof/receipt verification.
+- **Content Trust** — generic content authorization lane.
+- **Security Lab** — deterministic adversarial scenarios.
+- **SDK / Docs** — repository-local integration surface.
 
 ## Documentation map
 
-| File | What it is for | Notes |
+| Document | Purpose | Authority level |
 | --- | --- | --- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Trust boundaries, Action/Mandate models, evidence planning, quorum, permits and execution. | Some headings still use the historical Auctorail name. The technical identifiers remain relevant. |
-| [`RISK_POLICY.md`](RISK_POLICY.md) | Current payment consequence bands and why evidence tiers are separate from authority. | Use this with the source code for current thresholds. |
-| [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md) | Conservative ledger of only publicly committed real Telegraph/x402 usage. | Best source for judge-facing real-usage counts. |
-| [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) | Canonical protected Base Sepolia transaction and its evidence chain. | Public proof artifact. |
-| [`DEVELOPER_INTEGRATION.md`](DEVELOPER_INTEGRATION.md) | Guidance for adding trusted protected-action integrations. | Read before building an adapter. |
-| [`V1_2_GENERAL_QUORUM.md`](V1_2_GENERAL_QUORUM.md) | Exact distinct-Miner quorum semantics. | Useful when reasoning about duplicate providers, positives and vetoes. |
-| [`ATTACK_LAB.md`](ATTACK_LAB.md) | Deterministic attack scenarios and what each scenario proves. | Offline; not real Telegraph usage. |
-| [`RESILIENCE_INVARIANTS.md`](RESILIENCE_INVARIANTS.md) | Failure and recovery invariants. | Useful for security/reliability review. |
-| [`permit-consumption-store.md`](permit-consumption-store.md) | Replay-prevention/permit-consumption persistence model. | Deployment-oriented. |
-| [`HACKATHON_DEMO.md`](HACKATHON_DEMO.md) | Short judge-facing presentation sequence. | Presentation document, not architecture source of truth. |
-| [`DEMO_TODAY.md`](DEMO_TODAY.md) | Operational demo checklist. | Useful immediately before recording/presenting. |
-| [`FINAL_SUBMISSION.md`](FINAL_SUBMISSION.md) | Submission wording, public claim discipline and checklist. | Keep claims aligned with committed artifacts. |
-| [`JUDGING_CRITERIA.md`](JUDGING_CRITERIA.md) | Mapping between the project and hackathon criteria. | Judge-oriented. |
-| [`TERMUX.md`](TERMUX.md) | Running the project in the developer's Termux environment. | Environment-specific. |
-| [`RESPONSIVE_UI_NOTES.md`](RESPONSIVE_UI_NOTES.md) | Small UI/responsive notes. | Not a product architecture document. |
-| [`V1_1_COMPETITIVE_PLAN.md`](V1_1_COMPETITIVE_PLAN.md) | Historical planning document. | Treat as project history, not current source of truth. |
-| [`V1_1_VALIDATION.md`](V1_1_VALIDATION.md) | Historical validation snapshot. | Counts may be stale. |
-| [`V1_2_VALIDATION.md`](V1_2_VALIDATION.md) | Later validation snapshot. | Prefer latest CI for current counts. |
-| [`LOCKED_DECISIONS.md`](LOCKED_DECISIONS.md) | Earlier locked product/security decisions. | Check against current code before treating every item as current. |
-| [`TRACK3_ARCHITECTURE.md`](TRACK3_ARCHITECTURE.md) | Telegraph-track architecture notes. | Useful historical/context document. |
+| [`../README.md`](../README.md) | Canonical overview, current facts, proof and scope. | Current |
+| [`PRODUCT_STORY.md`](PRODUCT_STORY.md) | Product narrative, differentiation and judge pitch. | Current |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Components, data/trust flow and protected execution architecture. | Current |
+| [`SECURITY_MODEL.md`](SECURITY_MODEL.md) | Threat model, trust boundaries and security invariants. | Current |
+| [`RISK_POLICY.md`](RISK_POLICY.md) | Adaptive payment evidence thresholds and rationale. | Current |
+| [`DEVELOPER_INTEGRATION.md`](DEVELOPER_INTEGRATION.md) | How to integrate a new agent/protected adapter safely. | Current |
+| [`REAL_USAGE_LOG.md`](REAL_USAGE_LOG.md) | Only publicly committed genuine Telegraph/x402 usage. | Current ledger |
+| [`LIVE_EXECUTION.md`](LIVE_EXECUTION.md) | Canonical real Telegraph + Base Sepolia execution proof. | Current proof |
+| [`HACKATHON_DEMO.md`](HACKATHON_DEMO.md) | Judge-facing demo structure and narration. | Current presentation |
+| [`DEMO_TODAY.md`](DEMO_TODAY.md) | Recording/demo operational checklist. | Current operations |
+| [`FINAL_SUBMISSION.md`](FINAL_SUBMISSION.md) | Submission claims, boundaries and checklist. | Current submission |
+| [`JUDGING_CRITERIA.md`](JUDGING_CRITERIA.md) | Evidence mapped to evaluation criteria. | Current judge aid |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Live/demo/deployment diagnosis. | Current operations |
+| [`GLOSSARY.md`](GLOSSARY.md) | Exact project terminology. | Current reference |
+| [`RESILIENCE_INVARIANTS.md`](RESILIENCE_INVARIANTS.md) | Failure/recovery invariants. | Current security |
+| [`ATTACK_LAB.md`](ATTACK_LAB.md) | Deterministic adversarial scenarios. | Current validation |
+| [`permit-consumption-store.md`](permit-consumption-store.md) | Replay-prevention persistence model. | Current design |
+| [`V1_2_GENERAL_QUORUM.md`](V1_2_GENERAL_QUORUM.md) | Detailed distinct-provider quorum semantics. | Current technical context |
+| [`RESPONSIVE_UI_NOTES.md`](RESPONSIVE_UI_NOTES.md) | Responsive redesign notes and QA expectations. | Current UI |
+| [`TERMUX.md`](TERMUX.md) | Environment-specific local setup notes. | Operational |
+| [`LOCKED_DECISIONS.md`](LOCKED_DECISIONS.md) | Historical locked decisions with current status notes. | Historical/current mix |
+| [`TRACK3_ARCHITECTURE.md`](TRACK3_ARCHITECTURE.md) | Telegraph-track architecture evolution. | Historical context |
+| [`V1_1_COMPETITIVE_PLAN.md`](V1_1_COMPETITIVE_PLAN.md) | Earlier competitive/product planning. | Historical |
+| [`V1_1_VALIDATION.md`](V1_1_VALIDATION.md) | Earlier validation snapshot. | Historical |
+| [`V1_2_VALIDATION.md`](V1_2_VALIDATION.md) | Later validation snapshot plus current delta. | Historical/current context |
 
----
-
-## Main code map
-
-A human or AI that wants to verify documentation should check these implementation areas.
+## Code map for documentation verification
 
 ```text
 src/core/
-  Action and Mandate models.
-
-src/telegraph/
-  Telegraph routing, adaptive evidence plans, x402 acquisition controls,
-  evidence bundles and distinct-Miner quorum logic.
+  Action and Mandate primitives.
 
 src/policy/
-  Payment and Content Trust policies.
+  Deterministic payment/content authorization policies.
+
+src/telegraph/
+  Telegraph routing, x402 controls, evidence planning,
+  normalization, exact binding and quorum.
 
 src/permit/
-  Decision commitments and signed one-use authority.
+  Decision commitments and signed execution authority.
 
 src/executor/
-  Protected execution, replay prevention, durable execution and spend controls.
+  Protected execution, durable state, replay and ambiguity controls.
 
 src/receipt/
-  Payment and content proof receipts.
+  Payment/content proof receipts.
 
 src/sdk/
-  Trusted internal integration/adaptor layer.
+  Trusted integration/adaptor logic.
 
 packages/sdk/
-  Small repository-local JS SDK exposed in the product Docs surface.
+  Thin repository-local JavaScript client.
 
 web/
-  Product UI.
+  Product UI and HTTP API surfaces.
 
 qa/
-  Browser/Playwright checks.
+  Browser automation and product-flow validation.
 
 data/evidence/
-  Sanitized real Telegraph evidence artifacts.
+  Sanitized real evidence artifacts.
 
 data/receipts/
-  Stored receipts used by verification flows.
+  Stored receipt artifacts.
 ```
 
----
+## Deterministic vs live activity
 
-## Demo mode and live mode
+### Deterministic / no intentional live evidence purchase
 
-This distinction should be explicit in any documentation, screenshot, tweet or AI-generated summary.
+- Watch Demo;
+- Security Lab;
+- unit tests;
+- fuzz harnesses;
+- repository SDK examples using `live:false`;
+- Content Trust demo mode.
 
-### Deterministic / zero protected side effects
+### Live / potentially paid or consequential
 
-```text
-Guided Demo
-Security Lab
-most tests/fuzz harnesses
-SDK examples when live:false
-Content Trust demo mode
-```
+- payment Live Mode;
+- live Telegraph/x402 evidence acquisition;
+- protected Base Sepolia execution;
+- Content Trust live client when explicitly enabled.
 
-These are used to explain or test policy behavior.
+A live evidence request can spend funds through x402. A protected execution can create a real testnet transaction. Keep demo polish separate from live-value operations.
 
-### Live / paid or externally consequential
+## Claim discipline
 
-```text
-payment Live Mode
-proof:live / proof:adaptive runs
-Telegraph/x402 acquisitions
-protected Base Sepolia execution
-Content Trust live mode when explicitly enabled
-```
-
-A live Telegraph acquisition can spend funds through x402. A protected execution can create an on-chain effect. Do not trigger these paths just for visual polish.
-
----
-
-## Words to use carefully
-
-To keep the project credible and avoid AI-generated overclaiming:
-
-### Good
+### Good language
 
 - “pre-execution authorization layer”
-- “authorization rail”
+- “authorization rail for autonomous agents”
 - “evidence is not authority”
 - “distinct-Miner quorum”
+- “exact-action binding”
 - “one-use permit”
-- “publicly committed real Telegraph evidence”
-- “deterministic attack/fuzz validation”
+- “fail-closed HOLD”
+- “publicly committed real Telegraph/x402 evidence”
+- “protected Base Sepolia execution”
+- “deterministic adversarial validation”
 - “repository-local SDK”
-- “bounded live Content Trust client exists”
 
-### Avoid unless independently proved
+### Avoid unless independently established
 
-- “the first ever”
 - “unhackable”
 - “military-grade”
-- “production ready”
+- “production certified”
 - “independently audited”
-- “fully decentralized”
 - “guarantees safe AI”
+- “fully decentralized”
+- “first ever”
+- “every product lane is live through Telegraph”
 - “AI detection proves truth”
-- “live Content Trust proof” when only demo output exists
-- “public npm SDK” before the package is actually published
+- “public npm SDK” before publication
 
-Clear, specific evidence is stronger than hype.
+## How to update documentation correctly
 
----
+When implementation behavior changes:
 
-## How to document a new feature correctly
+1. Change code first.
+2. Add/update tests that lock the intended behavior.
+3. Run typecheck/tests/fuzz/browser QA.
+4. Update the owning technical document.
+5. Update root README if the public mental model changed.
+6. Update this current-facts index for thresholds/counts/runtime changes.
+7. Update demo/submission docs if the public claim changed.
+8. Update `REAL_USAGE_LOG.md` only for genuine preserved external activity.
+9. Preserve historical cryptographic/protocol identifiers unless migration is intentional.
+10. Clearly separate **implemented**, **demonstrated**, and **planned**.
 
-When behavior changes:
+## Compact summary for another AI
 
-1. Update the code and tests first.
-2. Re-run CI/security checks.
-3. Update the root README if the user-facing model changed.
-4. Update the specific technical doc that owns the behavior.
-5. Update this index if a new major doc or product lane was added.
-6. If real Telegraph/x402 activity occurred, preserve only safe/sanitized artifacts and update `REAL_USAGE_LOG.md`.
-7. Do not turn deterministic test traffic into a “real usage” number.
-8. Do not keep old thresholds/test counts in judge-facing copy once the code changed.
-9. Preserve historical cryptographic/deployment identifiers when changing branding.
-10. Record exactly what is implemented, what has been demonstrated live, and what is still planned.
-
----
-
-## A compact explanation for another AI
-
-If another AI assistant needs a minimal project summary, use this:
-
-> Auctorail is a pre-execution authorization layer for autonomous agents. The principal defines bounded authority through a Mandate. The agent proposes an exact action. Auctorail freezes that action, checks authority before paid evidence acquisition, derives a consequence-based Telegraph evidence plan, verifies the actual serving Miners and evidence bindings, and returns `ALLOW`, `HOLD`, or `BLOCK`. Executable `ALLOW` decisions can produce short-lived one-use authority for a protected executor. Telegraph evidence informs authorization but never creates authority. The repository has a real Base Sepolia payment proof, publicly committed real Telegraph/x402 evidence, deterministic attack/fuzz validation, Content Trust, receipt verification, and a repository-local SDK. Current product branding is Auctorail; ProofGate remains in historical repository/deployment/schema identifiers.
-
-That summary is intentionally factual and avoids claims that are not supported by committed artifacts.
+> Auctorail is a pre-execution authorization layer for autonomous agents. A principal creates bounded standing authority. An agent proposes an exact action. Auctorail freezes the action, checks authority before paying for external evidence, derives consequence-based Telegraph requirements, verifies the actual serving Miner/evidence binding, and returns `ALLOW`, `HOLD`, or `BLOCK`. Only executable `ALLOW` decisions can create short-lived one-use authority for a protected executor. Evidence informs policy but never manufactures authority. The repository contains genuine Telegraph/x402 payment evidence, a protected Base Sepolia execution, deterministic attack/fuzz validation, Content Trust, proof verification, a repository-local SDK, and a redesigned responsive web product. Current branding is Auctorail; some `proofgate.*` and `ProofGateVendor` identifiers remain intentionally for compatibility and provenance.
