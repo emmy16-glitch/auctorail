@@ -66,6 +66,8 @@ export interface LiveIntentClientOptions {
   settlementReconciler?: (
     input: X402ReconciliationInput
   ) => Promise<X402ReconciliationProof | null>;
+  preferDirectInitialRoute?: boolean;
+  preferredInitialMinerId?: string;
 }
 
 export interface LiveIntentAcquisitionResult
@@ -89,7 +91,9 @@ type RoutePlan =
       directTarget: null;
     }
   | {
-      mode: "TELEGRAPH_DIRECT_CORROBORATION";
+      mode:
+        | "TELEGRAPH_DIRECT_ROUTE"
+        | "TELEGRAPH_DIRECT_CORROBORATION";
       url: string;
       body: {
         method: DirectDiversityCandidate["method"];
@@ -301,20 +305,37 @@ function resolveRoutePlan(input: {
   context: IntentAcquisitionContext;
   engineUrl: string;
   miners: TelegraphMinerRecord[];
+  preferDirectInitialRoute?: boolean;
+  preferredInitialMinerId?: string;
 }): RoutePlan {
   const prior = input.context.priorMinerIds ?? [];
   const needsIndependentProviders =
     input.context.requirement.quorum.minimumDistinctMiners > 1;
+  const directInitial =
+    Boolean(input.preferDirectInitialRoute) &&
+    prior.length === 0;
+  const directCorroboration =
+    needsIndependentProviders && prior.length > 0;
 
-  if (needsIndependentProviders && prior.length > 0) {
+  if (directInitial || directCorroboration) {
     const diversity = planDirectDiversity({
       action: input.context.action,
       intent: input.context.requirement.intent,
       miners: input.miners,
       excludeMinerIds: prior,
-      count: 1
+      count: Math.max(1, input.miners.length)
     });
-    const directTarget = diversity.selected[0];
+
+    const preferred =
+      directInitial && input.preferredInitialMinerId
+        ? diversity.selected.find(
+            (candidate) =>
+              candidate.miner.id ===
+              String(input.preferredInitialMinerId)
+          )
+        : undefined;
+    const directTarget =
+      preferred ?? diversity.selected[0];
 
     if (directTarget) {
       const expectedMiner = input.miners.find(
@@ -338,7 +359,9 @@ function resolveRoutePlan(input: {
         `/v1/ask/${encodedMinerId}`;
 
       return {
-        mode: "TELEGRAPH_DIRECT_CORROBORATION",
+        mode: directInitial
+          ? "TELEGRAPH_DIRECT_ROUTE"
+          : "TELEGRAPH_DIRECT_CORROBORATION",
         url: `${input.engineUrl}${engineEndpoint}`,
         body: {
           method: directTarget.method,
@@ -378,7 +401,7 @@ function routeRequestRecord(
     remainingBudgetRaw: context.remainingBudgetRaw,
     ...(route.directTarget
       ? {
-          directCorroboration: {
+          directRoute: {
             minerId: route.directTarget.miner.id,
             minerSlug: route.directTarget.miner.slug,
             minerEndpoint: route.directTarget.endpoint,
@@ -688,7 +711,11 @@ export function createLiveIntentAcquirer(
     const route = resolveRoutePlan({
       context,
       engineUrl,
-      miners: options.miners
+      miners: options.miners,
+      preferDirectInitialRoute:
+        options.preferDirectInitialRoute,
+      preferredInitialMinerId:
+        options.preferredInitialMinerId
     });
 
     const url = route.url;
@@ -937,7 +964,7 @@ export function createLiveIntentAcquirer(
         (compactBody ? `:${compactBody}` : "");
 
       if (
-        route.mode === "TELEGRAPH_DIRECT_CORROBORATION" &&
+        route.mode !== "TELEGRAPH_AUTO_ROUTE" &&
         (response.status === 404 || response.status === 405)
       ) {
         const rejectedAt = new Date().toISOString();
