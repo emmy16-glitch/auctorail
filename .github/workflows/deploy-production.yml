@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN2 || secrets.VERCEL_TOKEN }}
       VERCEL_SCOPE: emmy16-glitchs-projects
       VERCEL_PROJECT_NAME: auctorail
 
@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::VERCEL_TOKEN GitHub Actions secret is not configured."
+            echo "::error::Neither VERCEL_TOKEN2 nor VERCEL_TOKEN is configured."
             exit 1
           fi
 
