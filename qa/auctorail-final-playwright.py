@@ -51,7 +51,7 @@ async def visible_target(locator, minimum=40):
 async def enter_live(page):
     landing = page.get_by_test_id("home-landing-screen")
     if await landing.count():
-        button = landing.get_by_role("button", name="ENTER LIVE MODE", exact=False)
+        button = landing.get_by_role("button", name="RUN A REAL TESTNET TRANSFER", exact=False)
         await visible_target(button)
         await button.click()
     await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible(timeout=3000)
@@ -66,17 +66,17 @@ async def landing_and_demo(browser, width, height, suffix):
     await expect(landing).to_be_visible()
     await expect(landing.get_by_role("heading", name="Prove authority before execution.")).to_be_visible()
     await expect(page.locator("#root .brand-lockup strong").first).to_have_text("AUCTORAIL")
-    await expect(landing.get_by_role("heading", name="Paste it. Check the evidence before you act.")).to_be_visible()
+    await expect(landing.get_by_role("heading", name="The same rail. A different threat.")).to_be_visible()
 
     # Landing/demo deliberately preserve the locked 1536px desktop composition
     # by scaling it into Android Desktop-Site-like widths. On that one viewport
     # the browser itself renders the whole reference surface smaller, so verify
     # visibility/clickability rather than applying the unscaled 40px target rule.
     landing_target_min = 26 if 900 < width < 1536 else 40
-    await visible_target(landing.get_by_role("button", name="CHECK CONTENT", exact=False), landing_target_min)
+    await visible_target(landing.get_by_role("button", name="TRY IT — CHECK SUSPICIOUS CONTENT", exact=False), landing_target_min)
     await visible_target(page.locator(".nav-side").get_by_role("button", name="TRUST", exact=True), landing_target_min)
-    demo = landing.get_by_role("button", name="WATCH DEMO", exact=False)
-    live = landing.get_by_role("button", name="ENTER LIVE MODE", exact=False)
+    demo = landing.get_by_role("button", name="WATCH THE RAIL HOLD", exact=False)
+    live = landing.get_by_role("button", name="RUN A REAL TESTNET TRANSFER", exact=False)
     await visible_target(demo, landing_target_min)
     await visible_target(live, landing_target_min)
     await no_overflow(page, f"landing {width}px")
@@ -117,7 +117,7 @@ async def content_and_receipt_verify(browser, width, height, suffix):
     await page.route("**/api/content-check", mock_content_live)
     await page.goto(BASE_URL, wait_until="networkidle")
     landing = page.get_by_test_id("home-landing-screen")
-    await landing.get_by_role("button", name="CHECK CONTENT", exact=False).click()
+    await landing.get_by_role("button", name="TRY IT — CHECK SUSPICIOUS CONTENT", exact=False).click()
     screen = page.get_by_test_id("content-trust-screen")
     await expect(screen).to_be_visible()
     await expect(screen.get_by_role("heading", name="Check the evidence before you act.")).to_be_visible()
