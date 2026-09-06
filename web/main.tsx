@@ -20,6 +20,7 @@ const MAX_USDC = 10;
 const BASE_SEPOLIA_CHAIN_ID = 84532;
 const DURATION_STEPS = [900, 1800, 3600, 7200, 14400, 28800, 86400] as const;
 const GITHUB_URL = "https://github.com/emmy16-glitch/auctorail";
+const BASESCAN_TX_URL = "https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc";
 
 export type Route = "home" | "check" | "activity" | "permissions" | "security" | "trust" | "content" | "verify" | "demo" | "docs";
 
@@ -239,6 +240,7 @@ function TopNav({ route }: { route: Route }) {
         <div className="nav-side">
           <NavButton target="trust" label="TRUST" />
           <NavButton target="docs" label="DOCS" />
+          <a className="nav-gh" href={GITHUB_URL} target="_blank" rel="noreferrer">GITHUB ↗</a>
           <span className="status-pill"><span className="status-dot" aria-hidden="true" />BASE SEPOLIA · TESTNET</span>
         </div>
       </div>
@@ -287,8 +289,10 @@ function SiteFooter() {
         <p>Prove authority before execution · Base Sepolia testnet build</p>
         <nav aria-label="Footer">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
+          <a href={BASESCAN_TX_URL} target="_blank" rel="noreferrer">Base Sepolia contract ↗</a>
           <a href={routePath("docs")}>Docs</a>
           <a href={routePath("trust")}>Trust</a>
+          <span>Built on Telegraph / x402</span>
         </nav>
       </div>
     </footer>

@@ -18,6 +18,31 @@ const ladder = [
   { n: "05", title: "Leave a verifiable proof", tag: "ON-CHAIN", key: false, copy: "The outcome becomes a tamper-evident receipt anyone can re-verify, with the transaction on Base Sepolia open for independent inspection." }
 ];
 
+// The real, recorded Base Sepolia protected payment — wired to every "verify on BaseScan" link.
+const CANONICAL_TX = "0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc";
+const BASESCAN_TX_URL = `https://sepolia.basescan.org/tx/${CANONICAL_TX}`;
+const GITHUB_URL = "https://github.com/emmy16-glitch/auctorail";
+
+// Ten attacks, each runnable in the Security Lab. Results mirror the lab's actual outcomes.
+const attacks = [
+  { n: "01", name: "REPLAY", tries: "Reuses a signed permit from an earlier action", layer: "04 · ONE-USE PERMIT", result: "Permit consumed. Replay dies." },
+  { n: "02", name: "AMOUNT SUBSTITUTION", tries: "Changes 10 → 100 USDC after capture", layer: "01 · EXACT ACTION", result: "Hash mismatch. Request frozen." },
+  { n: "03", name: "RECIPIENT SWAP", tries: "Redirects payment to an attacker address", layer: "02 · DELEGATION", result: "Pinned recipient violated. BLOCK." },
+  { n: "04", name: "LIMIT OVERRIDE", tries: "Pushes spend past the delegation cap", layer: "02 · DELEGATION", result: "Limit checked before any Miner is paid. HOLD." },
+  { n: "05", name: "TIME EXPIRY", tries: "Replays inside a lapsed time window", layer: "02 · DELEGATION", result: "Delegation dead. BLOCK." },
+  { n: "06", name: "EVIDENCE SKIP", tries: "Triggers the action without buying evidence", layer: "03 · TELEGRAPH EVIDENCE", result: "Fail-closed: no evidence, no permit. HOLD." },
+  { n: "07", name: "PERMIT MUTATION", tries: "Edits amount/recipient on a signed permit", layer: "04 · ONE-USE PERMIT", result: "Signature invalid. Permit dies." },
+  { n: "08", name: "FORGED RECEIPT", tries: "Fabricates proof for an action that never ran", layer: "05 · VERIFIABLE PROOF", result: "Re-verification fails. Openly." },
+  { n: "09", name: "REASON SPOOFING", tries: "Swaps the declared reason/reference", layer: "01 · EXACT ACTION", result: "Reason is hashed into the action. Mismatch." },
+  { n: "10", name: "RAIL BYPASS", tries: "Calls the effect contract directly, skipping everything", layer: "04 · ONE-USE PERMIT", result: "No valid permit, no effect. The contract enforces it." }
+];
+
+const telegraph = {
+  buy: "When a consequence demands evidence, Auctorail pays Miners through x402 for exactly one thing: bounded, verifiable intelligence about THIS action — recipient risk profile, counterparty reputation, intent-consistency and transfer-pattern verification. Not a subscription. Not a feed. One purchase, one action, cryptographically bound to the frozen hash from layer 01.",
+  when: "Only when the consequence demands it. A low-stakes action inside delegation doesn't spend a cent — the local policy engine decides alone. The moment the stakes cross the boundary, evidence is purchased BEFORE the permit is issued. Never after. Never retroactively.",
+  why: "We didn't write the intelligence. We bought it, bounded it, and bound it to the action. The moment Auctorail verifies itself, Auctorail becomes the attack surface. Telegraph gives us intelligence we don't control — and therefore can't quietly compromise — paid per-action through x402, so every purchase is itself a receipt on the rail. Evidence from a vendor you trust is a dependency. Evidence bought on an open market is a claim anyone can audit."
+};
+
 const demos = [
   {
     kicker: "GUIDED DEMO",
@@ -91,20 +116,18 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
           Prove <span className="accent-word">authority</span> before execution.
         </h1>
         <p className="hero-sub fade-rise" style={{ "--d": "160ms" } as React.CSSProperties}>
-          Every autonomous action starts with one question: did the human actually authorize
-          <em> this exact action</em>? Auctorail freezes the request, checks the real delegation,
-          buys genuine evidence when the consequence demands it — and only then lets a signed
-          one-use permit cause the effect.
+          An agent asked to pay one bill can be prompt-injected into draining a wallet.
+          Auctorail makes that <em>structurally impossible</em> — not just unlikely.
         </p>
         <div className="hero-actions fade-rise" style={{ "--d": "240ms" } as React.CSSProperties}>
           <button className="btn btn-primary btn-lg" type="button" onClick={onDemo}>
             <PlayIcon style={{ width: 15, height: 15 }} />
-            <span>WATCH DEMO</span>
+            <span>WATCH THE RAIL HOLD</span>
             <span className="arrow" aria-hidden="true">→</span>
           </button>
           <button className="btn btn-lg" type="button" onClick={onLive}>
             <BoltIcon style={{ width: 15, height: 19 }} />
-            <span>ENTER LIVE MODE</span>
+            <span>RUN A REAL TESTNET TRANSFER</span>
           </button>
         </div>
       </section>
@@ -183,10 +206,55 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
         </div>
       </section>
 
+      <section className="landing-section" aria-labelledby="telegraph-title">
+        <div className="page-inner" style={{ padding: "0 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">01.5</span><span className="sec-dash">—</span>BUILT ON TELEGRAPH</span>
+            <h2 className="section-title" id="telegraph-title">The verification is purchased, bounded, and bound to the action.</h2>
+            <p className="section-lede">Auctorail doesn't trust intelligence it can't pay for, bound, and re-verify. Telegraph is where that intelligence comes from.</p>
+          </div>
+          <div className="telegraph-grid">
+            <div className="telegraph-card"><strong>WHAT WE BUY</strong><p>{telegraph.buy}</p></div>
+            <div className="telegraph-card"><strong>WHEN WE BUY IT</strong><p>{telegraph.when}</p></div>
+            <div className="telegraph-card"><strong>WHY TELEGRAPH, NOT A HOMEGROWN ORACLE</strong><p>{telegraph.why}</p></div>
+          </div>
+          <p className="telegraph-failclosed">If Telegraph can't deliver the evidence, the rail doesn't guess. It holds. <span className="accent-word">Fail-closed is the whole point.</span></p>
+        </div>
+      </section>
+
+      <section className="landing-section" aria-labelledby="attacks-title" style={{ background: "var(--bg-deep)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+        <div className="page-inner" style={{ padding: "84px 28px" }}>
+          <div className="section-head v2">
+            <span className="sec-label"><span className="sec-num">02</span><span className="sec-dash">—</span>THE ATTACK MATRIX</span>
+            <h2 className="section-title" id="attacks-title">Claims are cheap. Attacks are not.</h2>
+            <p className="section-lede">Ten ways to break the rail. Each one was tried. Each row is runnable — not described, executed. The rail holds, or your browser says why it didn't.</p>
+          </div>
+          <div className="attack-table" role="table" aria-label="Attack matrix">
+            <div className="attack-row attack-head" role="row">
+              <span role="columnheader">#</span><span role="columnheader">ATTACK</span><span role="columnheader">WHAT THE ATTACKER TRIES</span><span role="columnheader">LAYER THAT STOPS IT</span><span role="columnheader">RESULT</span><span role="columnheader" />
+            </div>
+            {attacks.map((a) => (
+              <div className="attack-row" role="row" key={a.n}>
+                <span className="mono" role="cell">{a.n}</span>
+                <strong role="cell">{a.name}</strong>
+                <span role="cell">{a.tries}</span>
+                <span className="mono" role="cell">{a.layer}</span>
+                <span role="cell">{a.result}</span>
+                <button className="btn btn-sm" type="button" onClick={onSecurity} role="cell">RUN ▸</button>
+              </div>
+            ))}
+          </div>
+          <div className="attack-summary">
+            <span className="mono">10 attacks. 10 holds. 0 payments that shouldn't exist.</span>
+            <button className="btn btn-primary" type="button" onClick={onSecurity}>RUN ALL TEN ▸</button>
+          </div>
+        </div>
+      </section>
+
       <section className="landing-section" aria-labelledby="demos-title" style={{ background: "var(--bg-deep)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
         <div className="page-inner" style={{ padding: "84px 28px" }}>
           <div className="section-head v2">
-            <span className="sec-label"><span className="sec-num">02</span><span className="sec-dash">—</span>SEE IT WORKING</span>
+            <span className="sec-label"><span className="sec-num">03</span><span className="sec-dash">—</span>SEE IT WORKING</span>
             <h2 className="section-title" id="demos-title">These are not illustrations.</h2>
             <p className="section-lede">They are working demonstrations of the enforcement built into every layer of the platform. Run them — they are deterministic, they are live in your browser, and they fail loudly when the rails hold.</p>
           </div>
@@ -201,6 +269,10 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
               </button>
             ))}
           </div>
+          <div className="demo-proof-links">
+            <a className="btn btn-sm" href={BASESCAN_TX_URL} target="_blank" rel="noreferrer">VERIFY THIS RECEIPT ON BASESCAN ↗</a>
+            <button className="btn btn-sm" type="button" onClick={onVerify}>VIEW THE PERMIT ▸</button>
+          </div>
         </div>
       </section>
 
@@ -208,8 +280,8 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
         <div className="page-inner" style={{ padding: "0 28px" }}>
           <div className="split-section">
             <div>
-              <span className="sec-label"><span className="sec-num">03</span><span className="sec-dash">—</span>CONTENT TRUST · SAME AUTHORIZATION CORE</span>
-              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 16 }}>Paste it. Check the evidence before you act.</h2>
+              <span className="sec-label"><span className="sec-num">04</span><span className="sec-dash">—</span>CONTENT TRUST · THE SAME RAIL, A DIFFERENT THREAT</span>
+              <h2 className="section-title" id="content-trust-title" style={{ marginTop: 16 }}>An agent that acts on bad input is as dangerous as one that acts without authority.</h2>
               <p className="section-lede">
                 The same fail-closed ALLOW / HOLD / BLOCK model, applied to suspicious text.
                 Demo mode is zero-cost; live mode routes real Telegraph/x402 evidence when enabled.
@@ -238,9 +310,13 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
           Run the deterministic demo to see every rail hold — or enter live mode and let Auctorail
           authorize a real Base Sepolia transfer, evidence and all.
         </p>
+        <p className="closing-sub fade-rise" style={{ "--d": "200ms" } as React.CSSProperties}>
+          The demo above ran on testnet. The rail doesn't know the difference.
+        </p>
         <div className="hero-actions fade-rise" style={{ "--d": "240ms" } as React.CSSProperties}>
-          <button className="btn btn-primary btn-lg" type="button" onClick={onDemo}><span>RUN THE DEMO</span> <span className="arrow" aria-hidden="true">→</span></button>
-          <button className="btn btn-lg" type="button" onClick={onLive}><span>START A REAL CHECK</span></button>
+          <button className="btn btn-primary btn-lg" type="button" onClick={onLive}><span>RUN LIVE MODE — AUTHORIZE A REAL BASE SEPOLIA TRANSFER</span></button>
+          <a className="btn btn-lg" href={GITHUB_URL} target="_blank" rel="noreferrer"><span>READ THE CODE — GITHUB ↗</span></a>
+          <a className="btn btn-lg" href={BASESCAN_TX_URL} target="_blank" rel="noreferrer"><span>VERIFY THE RECEIPTS — BASESCAN ↗</span></a>
         </div>
         <div className="closing-term fade-rise" style={{ "--d": "320ms" } as React.CSSProperties}>
           <AutoTerminal
