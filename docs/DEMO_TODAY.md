@@ -1,359 +1,346 @@
-# Auctorail — demo today
+# Auctorail demo-day operating guide
 
-Use this as the practical runbook immediately before presenting or recording the Telegraph hackathon demo.
+This is the practical checklist to use immediately before recording, presenting, or submitting Auctorail.
 
-The most important rule is simple:
+It is intentionally operational. For the narrative, read `HACKATHON_DEMO.md`. For architecture, read `ARCHITECTURE.md`.
 
-> **Keep deterministic demo output and real Telegraph/x402 activity clearly separated.**
+## Primary goal
 
-The canonical protected payment is already publicly verifiable. Do **not** resend it just for theater.
+The demo should prove one idea clearly:
 
----
+> **The agent can propose a consequential action, but Auctorail controls whether that exact action receives execution authority.**
 
-## Before you start
+The presentation should not depend on a perfect live external route.
 
-Make sure:
+## Best demo order
 
-- you are on the exact revision you intend to present;
-- the web app opens normally on the device you will record;
-- you know whether live payment mode is enabled;
-- Content Trust is left on **DEMO · FREE** unless you intentionally want to pay for a real live Content Trust acquisition;
-- no `.env`, private key, wallet recovery phrase, signing secret, or terminal history containing secrets will appear in the recording;
-- the canonical Basescan transaction is already open in another tab.
-
-Canonical transaction:
-
-https://sepolia.basescan.org/tx/0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
-
----
-
-## 1. Start with Content Trust
-
-From **HOME**, click **CHECK CONTENT**.
-
-Use **LOAD SCAM SAMPLE** and keep the mode on **DEMO · FREE**.
-
-Run the check and show:
+Use this sequence:
 
 ```text
-exact content hash
-→ bound scam evidence
-→ BLOCK
-→ Auctorail content receipt
+1. Home
+2. Watch Demo
+3. Valid action
+4. Changed amount → BLOCK
+5. Replayed permit → BLOCK
+6. Missing evidence → HOLD
+7. Verify / real Telegraph + Base Sepolia proof
+8. Optional Live Mode
 ```
 
-Say:
+This order guarantees that the security value is visible even if Telegraph routing is temporarily unavailable.
 
-> **“This first check is deterministic demo mode, so it makes no real Telegraph payment. I’m showing how Auctorail binds evidence to one exact piece of content and fails closed before someone acts on it.”**
+## Pre-recording repository check
 
-Useful policy points:
-
-- strong scam/phishing evidence can `BLOCK`;
-- missing, stale, weak, or inconclusive required evidence becomes `HOLD`;
-- AI-written text is informational by itself and is not automatically malicious;
-- AI-generation becomes a blocking authorship conflict only when the action is `publish`, authorship is explicitly claimed as `human`, and the configured confidence threshold is crossed.
-
-Do not call the deterministic sample a live Miner result.
-
----
-
-## 2. Verify the generated content receipt
-
-Click **VERIFY RECEIPT**, then **VERIFY PROOF**.
-
-Show `VALID`.
-
-Explain:
-
-> **“The exact subject, action, evidence commitment, decision, and share summary are covered by the receipt. If those bindings change, verification no longer matches.”**
-
-Then clarify:
-
-> **“A valid receipt proves integrity under Auctorail’s rules. It does not turn a classifier or Miner assessment into objective truth.”**
-
----
-
-## 3. Verify the real payment proof
-
-Open **VERIFY** from the header and click **LOAD CANONICAL PROOF**.
-
-Show the valid payment receipt and open Basescan.
-
-Publicly verified facts:
-
-```text
-Network:          Base Sepolia 84532
-Protected amount: 1 USDC
-Telegraph Intent: FRAUD_DETECTION
-Serving Miner:    Refut On-Chain Risk / 95822412
-Miner verdict:    ALLOW @ 0.70
-Evidence cost:    $0.01 via x402
-Signal hash:      0x13499ae...78cae4c
-Transaction:      0x41b1d2...8f59f2ffc
-Block:            46301208
-Receipt hash:     0x036a15...db9e91e3
-```
-
-Say:
-
-> **“This one is real: genuine Telegraph evidence was purchased through x402, then a protected Base Sepolia execution followed after authorization.”**
-
-If `ProofGateVendor` appears on-screen or in the proof, explain that it is the historical immutable deployment name from before the Auctorail rename.
-
----
-
-## 4. Explain the shared authorization model
-
-Use this simplified comparison:
-
-```text
-PAYMENT
-agent proposes payment
-→ freeze exact payment
-→ check principal authority
-→ verify required Telegraph evidence
-→ ALLOW / HOLD / BLOCK
-→ one-use permit on ALLOW
-→ protected execution
-→ receipt
-
-CONTENT TRUST
-user/agent supplies content
-→ hash exact content
-→ verify bound evidence
-→ ALLOW / HOLD / BLOCK
-→ content receipt
-```
-
-The payment lane is the demonstrated executable adapter. Content Trust shows how the same generic Action / Mandate / Decision ideas can also protect a non-payment decision.
-
----
-
-## 5. Explain consequence-adaptive evidence correctly
-
-Use these current examples:
-
-```text
-1 USDC — LOW
-1 distinct positive FRAUD_DETECTION Miner
-confidence >= 0.70
-
-7 USDC — MEDIUM
-2 distinct positive fraud Miners
-confidence >= 0.75
-+ ONCHAIN_TX_LOOKUP
-
-75 USDC — HIGH evidence classification
-3 distinct fraud Miners / at least 2 positives
-confidence >= 0.80
-+ ONCHAIN_TX_LOOKUP
-+ WALLET_BALANCE_CHECK
-```
-
-Then immediately explain the authority boundary:
-
-> **“Evidence tier and permission are separate. The current autonomous execution ceiling is 10 USDC, so the HIGH example shows how the evidence planner scales, not that the agent is allowed to send 75 USDC.”**
-
-Provider independence is counted by **distinct Miner ID**, not number of requests.
-
-If the required diversity or confidence cannot be established inside the bounded attempts, deadline, and evidence budget, Auctorail returns `HOLD`.
-
----
-
-## 6. Show Security Lab
-
-Open **SECURITY LAB**.
-
-Run the modified-amount attack and then the full deterministic suite.
-
-Use these three examples:
-
-```text
-ACTION MUTATION
-1.00 authorized → 2.00 attempted
-→ action binding mismatch
-→ BLOCKED
-
-PERMIT REPLAY
-same permit submitted twice
-→ already consumed
-→ BLOCKED
-
-INSUFFICIENT EVIDENCE
-required threshold not reached
-→ no execution authority
-→ HELD
-```
-
-Say:
-
-> **“Security Lab is deterministic, offline, and zero-payment. I’m using it to show the enforcement boundary, not to inflate live Telegraph usage.”**
-
----
-
-## 7. Show Guided Demo and SDK briefly
-
-### Guided Demo
-
-Open **WATCH DEMO** and show the four outcomes:
-
-```text
-VALID REQUEST      → EXECUTED (DEMO)
-MODIFIED AMOUNT    → BLOCKED
-REPLAYED PERMIT    → BLOCKED
-MISSING EVIDENCE   → HELD
-```
-
-### SDK
-
-Open **DOCS → SDK** and show the repository-local install:
-
-```bash
-npm install ./packages/sdk
-```
-
-Explain:
-
-> **“The SDK asks the trusted Auctorail service for authorization. It does not contain the signing keys or mint its own permission.”**
-
-The safest code example for a presentation is a local preflight:
-
-```js
-const auth = await rail.authorize({
-  amount: "1.00",
-  recipient: "0xB38d...2c14",
-  limit: "10.00",
-  live: false
-});
-```
-
-`live: false` prevents the example from intentionally purchasing Telegraph evidence.
-
-Do not claim a public npm release. The SDK is currently repository-local/private.
-
----
-
-## 8. State the real usage count exactly
-
-Current conservative publicly committed minimum:
-
-```text
-Real Telegraph Miner acquisitions: 2
-Committed x402 evidence cost:       $0.02
-Protected on-chain executions:      1
-```
-
-Do **not** add any of these to that total:
-
-- Content Trust demo checks;
-- Security Lab runs;
-- Guided Demo steps;
-- SDK examples;
-- unit tests;
-- fuzz cases.
-
-A bounded Content Trust live Telegraph/x402 client exists, but it is not a real usage claim until a live run is actually performed, reviewed, and safely preserved.
-
----
-
-## 9. Only run another live payment if you really mean to
-
-Use **ENTER LIVE MODE** only if:
-
-- the configured wallet is ready;
-- evidence budgets/limits are correct;
-- you intentionally want another genuine Telegraph/x402 acquisition;
-- you accept that the result may correctly be `ALLOW`, `HOLD`, or `BLOCK`.
-
-A new live payment is **not required** to prove the project because the canonical real payment and evidence are already public.
-
-If a real live check returns `HOLD` or `BLOCK`, present it as correct enforcement when the policy/evidence requires that outcome. Do not retry blindly just to obtain a prettier result.
-
----
-
-## 10. Validation to quote
-
-The latest green feature-branch snapshot before this documentation cleanup recorded:
-
-```text
-267 / 267 unit tests across 53 files
-7400 / 7400 deterministic adversarial fuzz cases contained
-0 unauthorized executions / authorizations in those fuzz suites
-0 production dependency vulnerabilities reported by npm audit
-```
-
-Fuzz breakdown:
-
-```text
-1100 payment authorization
-3200 adaptive + quorum
-3100 general authorization
-```
-
-The browser workflow also passed the main product paths at approximately:
-
-```text
-390px   phone
-980px   Android desktop-site-like viewport
-1440px  desktop
-```
-
-Before recording, confirm the exact final SHA is green rather than relying only on the numbers written here.
-
----
-
-## 11. Final verification commands
-
-Run on the exact final revision:
+Before touching the browser:
 
 ```bash
 npm ci
 npm run ci
 npm run audit:prod
-npm run attack:lab
+```
+
+For a deeper security pass:
+
+```bash
 npm run security:fuzz
 npm run security:fuzz:adaptive
 npm run security:fuzz:general
-npm run vendor:verify
-git rev-parse HEAD
 ```
 
-The GitHub Actions **Auctorail CI** and **Auctorail UI Playwright** workflows should both be green on the same SHA used for the recording.
+Current expected green validation snapshot:
 
----
+```text
+53 test files
+268 / 268 tests
+7400 deterministic adversarial cases contained
+0 unauthorized executions / authorizations in fuzz suites
+0 production dependency vulnerabilities reported
+```
 
-## Close
+## Recommended local runtime
 
-Use this line:
+Use **Node 24** for current local development because the redesigned browser/DOM dependency set includes packages that officially require Node 22/24.
 
-> **“Telegraph tells autonomous software what the outside world says. The principal defines what the agent may do. Auctorail combines sufficiently bound evidence with delegated authority to decide whether one exact consequence may proceed.”**
+Some current CI workflow steps still exercise Node 20 for compatibility, but `EBADENGINE` warnings are expected there.
 
----
+## Browser setup
 
-## Claim discipline
+For a clean recording:
 
-### Safe
+- use a modern Chromium-based browser;
+- hide bookmarks bar if it adds clutter;
+- close unrelated tabs;
+- use 100% browser zoom unless the screen size requires otherwise;
+- use a clean viewport with no devtools visible;
+- ensure reduced-motion settings are known, because the Home terminals have a calm reduced-motion mode;
+- if recording mobile, use a common width around `390px` and verify no horizontal scroll.
 
-- the canonical Base Sepolia payment and its Telegraph/x402 evidence are real;
-- the repository contains two publicly committed genuine Miner acquisitions;
-- the public real evidence cost currently totals $0.02;
-- Content Trust and content-receipt verification are implemented;
-- Content Trust demo output is explicitly deterministic/non-Telegraph;
-- Verify checks Auctorail receipt integrity and bindings;
-- current adaptive evidence bands are `<=5`, `>5–50`, and `>50` USDC;
-- the current autonomous execution ceiling is 10 USDC;
-- duplicate Miner routing does not create provider independence;
-- Security Lab/demo/fuzz activity is separate from live evidence.
+## Responsive check
 
-### Do not say
+The redesigned UI has explicit mobile fixes for grid minimum widths and the SDK layout.
 
-- “the first ever” or “the first AI payment agent that…”;
-- Content Trust demo output is a real Miner result;
-- a content verdict proves objective truth;
-- the successful historical payment used the later adaptive multi-Miner path;
-- a successful real three-distinct-Miner HIGH quorum artifact has been captured;
-- autonomous payments above 10 USDC are currently supported;
-- `@auctorail/sdk` is already published on npm;
-- Auctorail is “unhackable,” “production ready,” or independently security audited.
+Before recording mobile:
 
-Specific proof is more convincing than inflated language.
+1. open Home;
+2. open Watch Demo;
+3. open Check/Live;
+4. open Execution/result screen;
+5. open SDK;
+6. verify no horizontal overflow;
+7. verify long addresses/hashes do not push the page wider than the viewport.
+
+## Deterministic demo check
+
+Run **Watch Demo** before recording.
+
+Confirm all four scenarios:
+
+### Valid action
+
+Expected outcome: successful deterministic authorization/execution presentation.
+
+### Modified amount
+
+Expected outcome: `BLOCK`.
+
+### Permit replay
+
+Expected outcome: `BLOCK`.
+
+### Missing evidence
+
+Expected outcome: `HOLD` with no execution authority.
+
+If any deterministic scenario fails, fix that before trying live mode.
+
+## Verify surface check
+
+Confirm the canonical public proof can be inspected.
+
+Canonical transaction:
+
+```text
+0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc
+```
+
+Canonical receipt hash:
+
+```text
+0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3
+```
+
+Canonical fraud evidence:
+
+```text
+Intent: FRAUD_DETECTION
+Miner: Refut On-Chain Risk
+Miner ID: 95822412
+Verdict: ALLOW
+Confidence: 0.70
+```
+
+## Live Mode readiness
+
+Only use live mode in the demo if all of the following are true:
+
+- the deployment is on the intended commit;
+- live evidence acquisition is enabled intentionally;
+- the burner/evidence payer wallet is funded appropriately;
+- evidence spend caps are correct;
+- the pinned recipient is correct;
+- the action is LOW risk if you want the fastest path;
+- the audience understands that external Miner availability can still produce a safe `HOLD`.
+
+## Current LOW live envelope
+
+For `<= 5 USDC`:
+
+```text
+Intent:               FRAUD_DETECTION
+confidence floor:     0.70
+max attempts:         3
+max evidence spend:   0.035 USDC
+overall deadline:     12 seconds
+```
+
+The deployed API also bounds individual Telegraph HTTP calls.
+
+A live request should therefore not sit apparently frozen for the old 35-second window.
+
+## If Live Mode returns HOLD
+
+Do not panic and do not weaken the policy during the presentation.
+
+Explain:
+
+> Auctorail is failing closed because required external evidence did not reach the policy threshold within the bounded acquisition window. No execution authority is issued.
+
+That is a valid security outcome.
+
+Then move to the canonical real proof showing that the lane has successfully executed with genuine Telegraph evidence before.
+
+## If live routing fails repeatedly
+
+Use the deterministic demo + public real proof instead of repeatedly spending x402 evidence budget on camera.
+
+A demo is not stronger because you watch an upstream provider time out three times.
+
+## Do not expose secrets
+
+Before screen recording, check:
+
+- terminal history;
+- `.env` files;
+- browser devtools;
+- wallet/private-key output;
+- Vercel environment screens;
+- shell commands containing secrets.
+
+Use only public addresses, public transaction hashes and sanitized committed evidence.
+
+## Public claims you can safely make
+
+You can say:
+
+- Auctorail is a pre-execution authorization layer for autonomous agents.
+- It separates delegated authority from external evidence.
+- The payment lane integrates Telegraph/x402.
+- Evidence binds to the exact action/subject and chain.
+- Adaptive policy can require distinct Miner providers.
+- `HOLD` is fail-closed.
+- Executable `ALLOW` can produce one-use authority.
+- Permit replay is rejected.
+- The repository contains genuine Telegraph/x402 payment evidence.
+- The repository contains one protected Base Sepolia USDC execution.
+- Current deterministic validation has 268 passing tests and 7400 adversarial fuzz cases contained.
+
+## Claims to avoid
+
+Do not say:
+
+- “unhackable”;
+- “guaranteed safe”;
+- “independently audited”;
+- “production certified”;
+- “all lanes are live through Telegraph”;
+- “we already captured a successful HIGH three-Miner production quorum”;
+- “Auctorail proves every Miner answer is true”;
+- “the SDK is already a public npm package.”
+
+## 60-second recording shot list
+
+### Shot 1 — Home
+
+Duration: about 5–8 seconds.
+
+Show the Auctorail name and “Prove authority before execution.”
+
+Narration:
+
+> AI agents can already take real actions, but capability isn't authority.
+
+### Shot 2 — Watch Demo / valid action
+
+Duration: about 8–10 seconds.
+
+Narration:
+
+> Auctorail freezes the exact action, checks delegated authority and required evidence, and only then creates execution authority.
+
+### Shot 3 — Amount mutation
+
+Duration: about 8 seconds.
+
+Narration:
+
+> Change the amount after authorization and the old authority no longer matches. Blocked.
+
+### Shot 4 — Replay
+
+Duration: about 7 seconds.
+
+Narration:
+
+> Reuse a consumed permit and it's blocked.
+
+### Shot 5 — Missing evidence
+
+Duration: about 8 seconds.
+
+Narration:
+
+> If required evidence is missing, Auctorail doesn't guess. It holds the action.
+
+### Shot 6 — Real proof
+
+Duration: about 10–15 seconds.
+
+Narration:
+
+> The payment lane is also connected to real Telegraph/x402 evidence and a protected Base Sepolia execution.
+
+End:
+
+> Intelligence tells agents what they know. Auctorail determines what they're allowed to do.
+
+## Judge presentation fallback plan
+
+Have three levels ready.
+
+### Level A — full live
+
+Deterministic demo + Live Mode + public proof.
+
+### Level B — live evidence unavailable
+
+Deterministic demo + explain safe HOLD + public real proof.
+
+### Level C — internet/deployment issue
+
+Run local deterministic demo + show committed evidence/transaction references from repository/docs.
+
+Never let one external dependency destroy the entire story.
+
+## Vercel deployment check
+
+Before presenting the hosted app:
+
+- confirm deployment state is `READY`;
+- confirm `/` returns `200`;
+- confirm the API function loads rather than `FUNCTION_INVOCATION_FAILED`;
+- confirm a GET to `/api/authorize` reaches the app and returns its normal application-level not-found response;
+- inspect recent runtime errors;
+- confirm the deployment is pinned to the intended Git commit.
+
+See `TROUBLESHOOTING.md` for deployment-specific issues.
+
+## Social post checklist
+
+For an X post:
+
+- lead with the problem, not implementation jargon;
+- keep the video under roughly 60 seconds if possible;
+- use one strong sentence per visual state;
+- show `BLOCK` and `HOLD` clearly;
+- include the real Telegraph/Base Sepolia claim only if you can link to the project/proof;
+- avoid overlong hash strings in the main caption;
+- emphasize authorization rather than “we queried a Miner.”
+
+## Final 10-minute checklist
+
+- [ ] correct branch/commit;
+- [ ] current app loads;
+- [ ] no open unrelated browser tabs;
+- [ ] deterministic demo passes;
+- [ ] mobile/desktop viewport looks clean;
+- [ ] Verify/public proof accessible;
+- [ ] no secret values visible;
+- [ ] live wallet/budget checked if using live mode;
+- [ ] know the current LOW deadline is 12s;
+- [ ] know the exact canonical transaction facts;
+- [ ] narration rehearsed once;
+- [ ] fallback plan ready.
+
+## Final rule
+
+**Do not make the demo depend on external luck. Demonstrate the deterministic authorization property first, then use the real Telegraph/x402 and Base Sepolia artifacts as proof that the same architecture has crossed the boundary into genuine external execution.**
