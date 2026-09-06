@@ -55,7 +55,7 @@ async def enter_live(page):
         await visible_target(button)
         await button.click()
     await expect(page.get_by_role("heading", name="Control what an agent can do.")).to_be_visible(timeout=3000)
-    await expect(page.locator("#root .brand-lockup strong").filter(has_text="AUCTORAIL")).to_be_visible()
+    await expect(page.locator("#root .top-nav .brand-lockup strong").filter(has_text="AUCTORAIL")).to_be_visible()
 
 async def landing_and_demo(browser, width, height, suffix):
     page = await browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
@@ -175,7 +175,7 @@ async def sdk_surface(browser, width, height, suffix):
     await expect(sdk.get_by_text("npm install ./packages/sdk", exact=False)).to_be_visible()
     body = await sdk.inner_text()
     assert "api.auctorail.dev" not in body, "SDK page must not advertise an undeployed API domain"
-    assert "PUBLIC NPM RELEASE NOT CLAIMED" in body
+    assert "public npm release not claimed" in body.lower(), "SDK page must state that no public npm release is claimed"
     await sdk.get_by_role("button", name="RUN REQUEST", exact=False).click()
     await expect(sdk.locator(".sdk-demo-valid .sdk-demo-result b")).to_have_text("ALLOW", timeout=5000)
     await sdk.get_by_role("button", name="RUN ATTACK", exact=False).click()

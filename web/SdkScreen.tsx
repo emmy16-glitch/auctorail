@@ -162,7 +162,7 @@ export function SdkScreen() {
 
       <div className="card card-pad" style={{ marginTop: 20 }}>
         <span className="eyebrow" style={{ display: "block", marginBottom: 16 }}>HOW IT WORKS</span>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+        <div className="sdk-how-grid">
           {[
             { t: "YOUR AGENT", c: "Sends the exact proposed action" },
             { t: "AUCTORAIL SDK", c: "Runs policy + live evidence flow" },
