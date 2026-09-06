@@ -69,7 +69,7 @@ describe(
         expect(plan.maxEvidenceSpendRaw)
           .toBe("35000");
         expect(plan.maxEvidenceLatencyMs)
-          .toBe(12000);
+          .toBe(20000);
       }
     );
 
