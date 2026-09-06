@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "web:typecheck": "tsc -p tsconfig.web.json",
     "sdk:check": "node --check packages/sdk/index.js && node -e \"import('./packages/sdk/index.js').then(m=>{if(typeof m.Auctorail!=='function')process.exit(1)})\"",
-    "ci": "node --check scripts/dev.mjs && npm run sdk:check && npm run typecheck && npm run web:typecheck && npm test && npm run web:build",
+    "ci": "node --check scripts/dev.mjs && npm run sdk:check && npm run typecheck && npm run web:typecheck && npm test && npm run web:build && npm run vercel:build",
     "audit:prod": "npm audit --omit=dev",
     "demo": "tsx scripts/demo-proof.ts",
     "proof:live": "tsx scripts/prove-telegraph.ts",
@@ -41,7 +41,8 @@
     "web:dev": "vite --host 0.0.0.0",
     "web:build": "node scripts/copy-ocr-assets.mjs && vite build",
     "web:preview": "vite preview --host 0.0.0.0",
-    "web:api": "tsx web/api-bundle.ts"
+    "web:api": "tsx web/api-bundle.ts",
+    "vercel:build": "node scripts/build-vercel.mjs"
   },
   "keywords": [
     "auctorail",
@@ -81,7 +82,7 @@
     "puppeteer": "^25.10.0",
     "puppeteer-core": "^25.10.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react-dom": "^19.2.7",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
