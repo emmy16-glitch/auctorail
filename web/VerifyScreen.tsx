@@ -23,6 +23,11 @@ interface VerifyScreenProps {
 const canonicalHash = "0x036a153a1d89d23fbe6c6fda64383c4f8a7e4731d7a6d61f9e6328c0db9e91e3";
 const canonicalTx = "0x41b1d2516a510ed330d5745bec5886911b090c96062ab4f8160de8a8f59f2ffc";
 
+function shortVerify(hash: string | null | undefined): string {
+  if (!hash) return "—";
+  return hash.length > 16 ? `${hash.slice(0, 14)}…` : hash;
+}
+
 function utilityUrl(path: string): string {
   const env = import.meta.env as Record<string, string | undefined>;
   const base = (env.VITE_AUCTORAIL_UTILITY_API_URL ?? "").replace(/\/$/, "");
@@ -141,6 +146,32 @@ export function VerifyScreen({ initialInput = "" }: VerifyScreenProps) {
                 <strong>{result.valid ? "VALID" : "INVALID"}</strong>
                 <p style={{ margin: 0, fontSize: 13.5, color: "var(--text-2)", lineHeight: 1.55 }}>{result.summaryLine ?? result.code}</p>
                 <small className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{result.kind?.toUpperCase() ?? "UNKNOWN"} RECEIPT</small>
+              </div>
+
+              <div className="demo-console verify-trace" aria-label="Recomputation trace">
+                <div className="console-bar">
+                  <span className="console-title">
+                    <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+                    auctorail verify — recompute trace
+                  </span>
+                  <span className={`console-state ${result.valid ? "done" : "paused"}`}>{result.valid ? "RECOMPUTED" : "MISMATCH"}</span>
+                </div>
+                <div className="console-body">
+                  <span className="wire-line cmd"><span className="wl-cmd">verify-proof --input {input.trim().length > 52 ? `${input.trim().slice(0, 50)}…` : input.trim()}</span></span>
+                  <span className={`wire-line ${result.valid ? "ok" : "bad"}`}>
+                    integrity — recomputed {shortVerify(result.receiptHash)} — {result.valid ? "matches stored receipt" : `failed · ${result.code}`}
+                  </span>
+                  {(result.checks ?? []).map((check) => {
+                    const positive = new Set(["PASS", "BOUND", "ALLOW", "EXECUTED", "CONFIRMED"]).has(check.status);
+                    return (
+                      <span key={`trace-${check.label}`} className={`wire-line ${positive ? "ok" : "bad"}`}>
+                        {check.label.toLowerCase()} — {check.status}
+                      </span>
+                    );
+                  })}
+                  {result.transactionHash && <span className="wire-line ok">chain — {shortVerify(result.transactionHash)} · base-sepolia · explorer linked</span>}
+                  <span className={`wire-line ${result.valid ? "ok" : "bad"}`}>result — {result.valid ? "valid" : result.code}</span>
+                </div>
               </div>
 
               {(result.checks ?? []).length > 0 && (

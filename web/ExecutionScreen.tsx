@@ -107,6 +107,35 @@ function executionMessage(phase: ExecutionUiPhase, amount: string, response: Exe
   };
 }
 
+function executionWire(phase: ExecutionUiPhase, authorization: ExecutionAuthorizationSummary, response: ExecutionResponse | null, error: string | null) {
+  const lines: { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] = [
+    { cmd: true, text: `execute --permit ${authorization.permit.id} --amount ${authorization.action.amount} USDC --to ${authorization.action.recipient}` },
+    { text: `permit verified · ${shortHash(authorization.permit.hash)} · one-use · bound to action ${shortHash(authorization.action.hash)}`, tone: "ok" }
+  ];
+  if (phase === "executing") {
+    lines.push({ text: "broadcasting signed transfer to base-sepolia · confirmation pending…", pending: true });
+    return lines;
+  }
+  if (phase === "executed" && response) {
+    lines.push({ text: "POST /api/execute · 200 OK · EXECUTED", tone: "ok" });
+    if (response.transaction.transactionHash) {
+      lines.push({ text: `tx ${shortHash(response.transaction.transactionHash, 10, 8)} · block ${response.transaction.blockNumber ?? "—"} · nonce ${response.transaction.nonce ?? "—"} · op ${response.transaction.operationId ?? "—"}`, tone: "ok" });
+    }
+    if (response.transaction.confirmedVia) {
+      lines.push({ text: `confirmed via ${response.transaction.confirmedVia} · ${response.transaction.confirmedAt ?? ""}` });
+    }
+    lines.push({ text: `receipt written · ${shortHash(response.receipt.hash)} · ${response.receipt.schemaVersion}`, tone: "ok" });
+    return lines;
+  }
+  if (phase === "execution_ambiguous") {
+    lines.push({ text: response?.transaction.transactionHash ? `tx ${shortHash(response.transaction.transactionHash, 10, 8)} present · confirmation unverified` : "broadcast unverified", tone: "warn" });
+    lines.push({ text: "no automatic rebroadcast allowed — resolve the uncertain transaction first", tone: "warn" });
+    return lines;
+  }
+  lines.push({ text: `execution stopped · ${response?.code ?? error ?? "failed"} · no automatic retry`, tone: "bad" });
+  return lines;
+}
+
 export function ExecutionScreen(props: {
   phase: ExecutionUiPhase;
   authorization: ExecutionAuthorizationSummary;
@@ -154,6 +183,24 @@ export function ExecutionScreen(props: {
               <strong style={{ fontSize: 15, fontWeight: 650, display: "block", overflowWrap: "anywhere" }}>{authorization.action.amount} USDC → Auctorail Vendor</strong>
               <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>{authorization.action.reason} · Ref: {authorization.action.reference || "—"}</span>
             </div>
+          </div>
+        </div>
+
+        <div className="demo-console wire-console exec-wire" aria-label="Execution wire log" role="log">
+          <div className="console-bar">
+            <span className="console-title">
+              <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+              auctorail wire — protected execution
+            </span>
+            <span className={`console-state ${pending ? "running" : confirmed ? "done" : "paused"}`}>{pending ? "BROADCASTING" : confirmed ? "CONFIRMED" : ambiguous ? "UNCERTAIN" : "STOPPED"}</span>
+          </div>
+          <div className="console-body">
+            {executionWire(phase, authorization, response, error).map((line, index) => (
+              <span key={index} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""} ${line.pending ? "pending" : ""}`}>
+                {line.cmd ? <span className="wl-cmd">{line.text}</span> : line.text}
+                {line.pending && <span className="console-cursor" aria-hidden="true" />}
+              </span>
+            ))}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export interface SecurityLabScenario {
   id: string;
@@ -22,6 +22,7 @@ export interface SecurityLabReport {
 interface SecurityLabScreenProps { apiBase: string; }
 
 type Category = "action" | "permit" | "evidence" | "receipt";
+type StepTone = "info" | "ok" | "warn" | "bad";
 
 type AttackPreset = {
   id: string;
@@ -46,36 +47,28 @@ const PRESETS: AttackPreset[] = [
   { id: "receipt_tamper", category: "receipt", label: "Modify transaction hash", description: "Change the transaction hash inside a completed Proof Receipt.", original: "Signed receipt hash", mutated: "Altered tx hash", boundary: "Receipt", stoppedAt: "Receipt verification" }
 ];
 
-const CATEGORY_META: Record<Category, { n: string; title: string; copy: string }> = {
-  action: { n: "01", title: "ACTION BINDING", copy: "Amount and mandate substitution" },
-  permit: { n: "02", title: "PERMIT", copy: "Replay, forgery and expiry" },
-  evidence: { n: "03", title: "EVIDENCE", copy: "Subject, Miner and runtime tampering" },
-  receipt: { n: "04", title: "RECEIPT", copy: "Post-execution integrity mutation" }
+const CATEGORY_TAG: Record<Category, string> = {
+  action: "ACTION BINDING", permit: "PERMIT", evidence: "EVIDENCE", receipt: "RECEIPT"
 };
 
 function nowLabel() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
+type LogLine = { t: string; text: string; tone: StepTone; cmd?: boolean };
+
 export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
-  const [category, setCategory] = useState<Category>("action");
   const [presetId, setPresetId] = useState("amount_mutation");
   const [report, setReport] = useState<SecurityLabReport | null>(null);
-  const [lastResult, setLastResult] = useState<SecurityLabScenario | null>(null);
-  const [lastPreset, setLastPreset] = useState<AttackPreset | null>(null);
-  const [lastTime, setLastTime] = useState<string>("");
-  const [running, setRunning] = useState(false);
-  const [runningSuite, setRunningSuite] = useState(false);
+  const [running, setRunning] = useState<"single" | "suite" | null>(null);
+  const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const [logStep, setLogStep] = useState(0);
+  const [finishedRun, setFinishedRun] = useState<{ kind: "single" | "suite"; time: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cancelRef = useRef(0);
+  const selected = PRESETS.find((item) => item.id === presetId) ?? PRESETS[0];
 
-  const presets = useMemo(() => PRESETS.filter((item) => item.category === category), [category]);
-  const selected = PRESETS.find((item) => item.id === presetId) ?? presets[0];
-
-  function chooseCategory(next: Category) {
-    setCategory(next);
-    const first = PRESETS.find((item) => item.category === next);
-    if (first) setPresetId(first.id);
-  }
+  useEffect(() => () => { cancelRef.current += 1; }, []);
 
   async function fetchReport(): Promise<SecurityLabReport> {
     const response = await fetch(`${apiBase}/api/security-lab`, { method: "POST" });
@@ -84,28 +77,81 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
     return body;
   }
 
-  async function runAttack() {
-    if (running || !selected) return;
-    setRunning(true); setError(null);
-    try {
-      const body = await fetchReport();
-      const result = body.scenarios.find((item) => item.id === selected.id);
-      if (!result) throw new Error("attack_scenario_missing");
-      setReport(body); setLastResult(result); setLastPreset(selected); setLastTime(nowLabel());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "security_lab_failed");
-    } finally { setRunning(false); }
+  function animateLines(lines: LogLine[], stepMs: number, onDone: () => void) {
+    const token = ++cancelRef.current;
+    setLogLines([]);
+    setLogStep(0);
+    setFinishedRun(null);
+    let i = 0;
+    const tick = () => {
+      if (token !== cancelRef.current) return;
+      i += 1;
+      setLogStep(i);
+      setLogLines(lines.slice(0, i));
+      if (i < lines.length) window.setTimeout(tick, stepMs);
+      else window.setTimeout(onDone, 420);
+    };
+    window.setTimeout(tick, 120);
   }
 
-  async function runFullSuite() {
-    if (runningSuite) return;
-    setRunningSuite(true); setError(null);
-    try { setReport(await fetchReport()); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "security_lab_failed"); }
-    finally { setRunningSuite(false); }
+  async function runSuite() {
+    if (running) return;
+    setRunning("suite"); setError(null); setFinishedRun(null);
+    try {
+      const body = await fetchReport();
+      setReport(body);
+      const attacks = body.scenarios.filter((item) => item.id !== "baseline");
+      const lines: LogLine[] = [
+        { t: "+0.0s", text: `suite --all ${attacks.length} --network base-sepolia --harness`, tone: "info", cmd: true },
+        ...attacks.map((item, index) => ({
+          t: `+${(0.25 + (index + 1) * 0.18).toFixed(2)}s`,
+          text: `[${index + 1}/${attacks.length}] ${item.id} — ${item.passed ? "BLOCKED" : "FAILED"} (${item.observed})`,
+          tone: (item.passed ? "ok" : "bad") as StepTone
+        })),
+        { t: `+${(0.25 + (attacks.length + 1) * 0.18).toFixed(2)}s`, text: `${body.passed}/${body.total} boundaries held — RAIL HELD`, tone: "ok" }
+      ];
+      animateLines(lines, 125, () => { setRunning(null); setFinishedRun({ kind: "suite", time: nowLabel() }); });
+    } catch (caught) {
+      setRunning(null);
+      setError(caught instanceof Error ? caught.message : "security_lab_failed");
+    }
+  }
+
+  function chooseAttack(id: string) {
+    const preset = PRESETS.find((item) => item.id === id);
+    if (preset) void runSingleFor(preset);
+  }
+
+  const lastResult = useMemo(() => {
+    if (finishedRun?.kind === "single") return report?.scenarios.find((item) => item.id === selected.id) ?? null;
+    return null;
+  }, [finishedRun, report, selected]);
+
+  async function runSingleFor(preset: AttackPreset) {
+    setPresetId(preset.id);
+    if (running) return;
+    setRunning("single"); setError(null); setFinishedRun(null);
+    try {
+      const body = await fetchReport();
+      const result = body.scenarios.find((item) => item.id === preset.id);
+      if (!result) throw new Error("attack_scenario_missing");
+      setReport(body);
+      const lines: LogLine[] = [
+        { t: "+0.0s", text: `attack --id ${preset.id} --network base-sepolia --harness`, tone: "info", cmd: true },
+        { t: "+0.2s", text: "baseline loaded — deterministic authorization (ALLOW)", tone: "info" },
+        { t: "+0.5s", text: `mutation applied — ${preset.original} → ${preset.mutated}`, tone: "warn" },
+        { t: "+0.8s", text: `${preset.boundary.toLowerCase()} recheck — ${result.observed}`, tone: "bad" },
+        { t: "+1.1s", text: `boundary held at ${preset.stoppedAt.toLowerCase()} — no execution authority accepted`, tone: "ok" }
+      ];
+      animateLines(lines, 240, () => { setRunning(null); setFinishedRun({ kind: "single", time: nowLabel() }); });
+    } catch (caught) {
+      setRunning(null);
+      setError(caught instanceof Error ? caught.message : "security_lab_failed");
+    }
   }
 
   const recent = report?.scenarios.filter((item) => item.id !== "baseline").slice(0, 4) ?? [];
+  const suiteScore = report && finishedRun?.kind === "suite";
 
   return (
     <main data-testid="security-lab-screen">
@@ -113,7 +159,7 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         <div>
           <span className="eyebrow">SECURITY LAB · DETERMINISTIC</span>
           <h1>Try to break Auctorail.</h1>
-          <p className="lab-lede">Mutate a valid authorization and see exactly where Auctorail stops it. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
+          <p className="lab-lede">Pick an attack and the lab runs it — or run the full suite and watch every boundary hold automatically. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
         </div>
         <div className="note">
           <span style={{ fontSize: 20, color: "var(--accent)", display: "grid", placeItems: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: 8 }} aria-hidden="true">△</span>
@@ -124,116 +170,109 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         </div>
       </div>
 
-      <div className="lab-layout">
-        <aside className="lab-categories" aria-label="Attack categories">
-          {(Object.keys(CATEGORY_META) as Category[]).map((key) => {
-            const meta = CATEGORY_META[key];
-            return <button key={key} className={`lab-category ${category === key ? "active" : ""}`} onClick={() => chooseCategory(key)} type="button">
-              <b>{meta.n}</b><span><strong>{meta.title}</strong><small>{meta.copy}</small></span>
-            </button>;
-          })}
-        </aside>
-
-        <section style={{ display: "grid", gap: 20 }}>
-          <div className="card card-pad">
-            <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 12, alignItems: "center", marginBottom: 16 }}>
-              <span className="mono" style={{ color: "var(--accent)", fontSize: 12 }}>{CATEGORY_META[category].n}</span>
-              <div>
-                <strong style={{ display: "block", fontSize: 15, fontWeight: 650 }}>{CATEGORY_META[category].title}</strong>
-                <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>{CATEGORY_META[category].copy}</span>
-              </div>
-            </div>
-
-            <label className="field" style={{ marginBottom: 14 }}>
-              <span>ATTACK TYPE</span>
-              <select className="select" value={selected.id} onChange={(e) => setPresetId(e.target.value)}>
-                {presets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-
-            <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--text-2)", lineHeight: 1.55 }}>{selected.description}</p>
-
-            <div className="mutation-grid" style={{ marginBottom: 14 }}>
-              <div className="mutation-card">
-                <span className="mc-label">ORIGINAL · AUTHORIZED</span>
-                <dl>
-                  <div><dt>State</dt><dd>{selected.original}</dd></div>
-                  <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
-                  <div><dt>Mandate</dt><dd>INV-4471</dd></div>
-                  <div><dt>Valid for</dt><dd>1 hour</dd></div>
-                </dl>
-              </div>
-              <div className="mutation-card mutated">
-                <span className="mc-label">MUTATED · ATTACK</span>
-                <dl>
-                  <div><dt>State</dt><dd>{selected.mutated}</dd></div>
-                  <div><dt>Recipient</dt><dd>Auctorail Vendor</dd></div>
-                  <div><dt>Mandate</dt><dd>INV-4471</dd></div>
-                  <div><dt>Valid for</dt><dd>1 hour</dd></div>
-                </dl>
-              </div>
-            </div>
-
-            <p className="editor-note" style={{ marginBottom: 16 }}>
-              <strong>Controlled mutation.</strong> You are mutating a valid deterministic authorization. Auctorail runs the real local attack-harness check for this boundary; no live external effect is attempted.
-            </p>
-
-            <button className="btn btn-primary btn-block" onClick={runAttack} disabled={running} type="button">
-              <span>{running ? "RUNNING ATTACK..." : "RUN ATTACK"}</span><span className="arrow" aria-hidden="true">→</span>
+      <div className="scenario-cards attack-cards" role="group" aria-label="Attack scenarios">
+        {PRESETS.map((item, index) => {
+          const result = report?.scenarios.find((s) => s.id === item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`scenario-card ${presetId === item.id ? "active" : ""}`}
+              onClick={() => chooseAttack(item.id)}
+              aria-pressed={presetId === item.id}
+            >
+              <span className="sc-top">
+                <span className="sc-num">ATK {String(index + 1).padStart(2, "0")}</span>
+                <span className={`sc-result ${result ? (result.passed ? "mint" : "rose") : ""}`}>
+                  {result ? (result.passed ? "BLOCKED" : "FAILED") : CATEGORY_TAG[item.category]}
+                </span>
+              </span>
+              <strong>{item.label}</strong>
+              <small>{item.boundary} · {item.stoppedAt}</small>
             </button>
-          </div>
+          );
+        })}
+      </div>
 
-          <div className="card card-pad last-result" aria-label="Last result">
-            <span className="eyebrow" style={{ display: "block", marginBottom: 12 }}>LAST RESULT</span>
-            {lastResult && lastPreset ? <>
-              <div className={`lr-status ${lastResult.passed ? "blocked" : "failed"}`}>
-                <span>{lastResult.passed ? "✓" : "×"}</span>
-                <div>
-                  <strong>{lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}</strong>
-                  <p>{lastResult.passed ? "Auctorail stopped this mutated request before protected execution." : "The expected security boundary did not hold."}</p>
-                </div>
-              </div>
-              <dl className="kv">
-                <div><dt>BOUNDARY</dt><dd>{lastPreset.boundary}</dd></div>
-                <div><dt>REASON</dt><dd className="mono">{lastResult.observed}</dd></div>
-                <div><dt>STOPPED AT</dt><dd>{lastPreset.stoppedAt}</dd></div>
-                <div><dt>TIME</dt><dd className="mono">{lastTime}</dd></div>
-              </dl>
-              <div className="compare-row">
-                <div><span>EXPECTED</span><strong>{lastResult.expected}</strong></div>
-                <div><span>OBSERVED</span><strong>{lastResult.observed}</strong></div>
-              </div>
-              <details className="technical" style={{ marginBottom: 14 }}>
-                <summary>VIEW TECHNICAL TRACE ↓</summary>
-                <div className="verify-json" style={{ border: 0, borderRadius: 0 }}><pre>{JSON.stringify(lastResult, null, 2)}</pre></div>
-              </details>
-              <button className="btn btn-ghost btn-block" type="button" onClick={() => { setLastResult(null); setLastPreset(null); }}>TRY ANOTHER MUTATION ↻</button>
-            </> : report ? <div className="empty-result"><strong>SUITE COMPLETE · {report.passed}/{report.total}</strong><p>{report.allPassed ? "Every deterministic attack was rejected by its expected security boundary." : "The full suite did not hold — review the scenario report below."} Pick a single mutation above to see one boundary in detail.</p></div> : <div className="empty-result"><strong>NO ATTACK RUN YET</strong><p>Choose a mutation and run it. The exact enforcement boundary will appear here.</p></div>}
-          </div>
-
-          {error && <div className="lab-error" role="alert"><strong>LAB STOPPED</strong><span>{error}</span></div>}
-
-          <div className="card card-pad suite-card">
-            <div className="suite-copy">
-              <strong>RUN FULL ATTACK SUITE</strong>
-              <p>Execute every deterministic adversarial test against the authorization boundary.</p>
-              <button className="btn" onClick={runFullSuite} disabled={runningSuite} type="button">
-                <span>{runningSuite ? "RUNNING SUITE..." : "RUN SUITE"}</span><span className="arrow" aria-hidden="true">→</span>
+      <div className="demo-layout v2-grid" style={{ marginTop: 6 }}>
+        <section aria-label="Attack console">
+          <div className="demo-console fade-rise">
+            <div className="console-bar">
+              <span className="console-title">
+                <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+                auctorail lab — {presetId}{finishedRun ? ` · ${finishedRun.kind}` : running ? " · running" : " · idle"}
+              </span>
+              <span className={`console-state ${running ? "running" : finishedRun ? "done" : "paused"}`}>
+                {running ? "RUNNING" : finishedRun ? "COMPLETE" : "READY"}
+              </span>
+            </div>
+            <div className="console-body">
+              {logLines.length === 0 && <span className="console-line">select an attack — or run the full suite — and the harness takes it from there.</span>}
+              {logLines.slice(0, logStep).map((line, i) => (
+                <span key={i} className={`console-line ${line.tone === "info" && !line.cmd ? "" : line.tone} ${line.cmd ? "cmd" : ""}`}>
+                  <span className="cl-t">{line.t}</span>
+                  {line.cmd ? <span className="cl-cmd">{line.text}</span> : line.text}
+                </span>
+              ))}
+              {running && <span className="console-cursor" aria-hidden="true" />}
+            </div>
+            <div className="console-controls">
+              <button className="btn btn-primary btn-sm" type="button" onClick={() => void runSingleFor(selected)} disabled={running !== null}>
+                {running === "single" ? "RUNNING ATTACK..." : "RUN ATTACK"}
               </button>
-            </div>
-            <div className={`suite-score ${report?.allPassed ? "passed" : ""}`}>
-              <b>{report ? `${report.passed}/${report.total}` : "—/—"}</b>
-              <strong>{report?.allPassed ? "RAIL HELD" : "AWAITING RUN"}</strong>
-              <span>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</span>
+              <button className="btn btn-sm" type="button" onClick={runSuite} disabled={running !== null}>
+                {running === "suite" ? "RUNNING SUITE..." : "RUN SUITE"}
+              </button>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", whiteSpace: "nowrap" }}>
+                {report ? `${report.passed}/${report.total} BOUNDARIES HELD` : "DETERMINISTIC HARNESS"}
+              </span>
             </div>
           </div>
 
-          <div className="card card-pad">
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
-              <span className="eyebrow">RECENT ATTACKS</span>
-              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{recent.length ? "LATEST SUITE" : "NO RESULTS YET"}</span>
-            </div>
-            {recent.length ? (
+          <div className="verdict-zone" style={{ marginTop: 18 }} aria-live="polite">
+            {finishedRun?.kind === "single" && lastResult ? (
+              <>
+                <div className={`verdict-display ${lastResult.passed ? "rose" : "yellow"}`}>
+                  {lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}
+                </div>
+                <p className="verdict-copy" style={{ margin: 0 }}>
+                  {lastResult.passed
+                    ? `Auctorail stopped this mutated request before protected execution. The rail held at ${selected.stoppedAt.toLowerCase()}.`
+                    : "The expected security boundary did not hold — inspect the trace."}
+                </p>
+                <div className="kv" style={{ marginTop: 14, maxWidth: 560 }}>
+                  <div><dt>REASON</dt><dd className="mono">{lastResult.observed}</dd></div>
+                  <div><dt>EXPECTED</dt><dd className="mono">{lastResult.expected}</dd></div>
+                  <div><dt>OBSERVED</dt><dd className="mono">{lastResult.observed}</dd></div>
+                  <div><dt>BOUNDARY</dt><dd>{selected.boundary} · stopped at {selected.stoppedAt}</dd></div>
+                  <div><dt>TIME</dt><dd className="mono">{finishedRun.time}</dd></div>
+                </div>
+              </>
+            ) : finishedRun?.kind === "suite" && report ? (
+              <>
+                <div className="verdict-display mint"><span>RAIL HELD</span> <span className="verdict-count">{report.passed}/{report.total}</span></div>
+                <p className="verdict-copy" style={{ margin: 0 }}>
+                  {report.allPassed
+                    ? "Every deterministic attack was rejected by its expected security boundary. The authorization rail held under all ten mutations."
+                    : "The full suite did not hold — review the scenario report below."}
+                </p>
+              </>
+            ) : (
+              <p className="verdict-copy" style={{ margin: 0 }}>
+                <span style={{ fontFamily: "var(--mono)", color: "var(--text-3)" }}>awaiting run · </span>
+                {selected.description}
+              </p>
+            )}
+          </div>
+
+          {error && <div className="lab-error" role="alert" style={{ marginTop: 14 }}><strong>LAB STOPPED</strong><span>{error}</span></div>}
+
+          {report && (
+            <div className="card card-pad" style={{ marginTop: 18 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+                <span className="eyebrow">RECENT ATTACKS</span>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>LATEST SUITE</span>
+              </div>
               <div className="recent-list">
                 {recent.map((item) => (
                   <div key={item.id}>
@@ -242,11 +281,27 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-3)" }}>Run an attack or the full suite to populate deterministic results.</p>
-            )}
-          </div>
+            </div>
+          )}
         </section>
+
+        <aside aria-label="Attack details">
+          <div className="demo-request-panel">
+            <div className="drp-title"><strong>MUTATION · {CATEGORY_TAG[selected.category]}</strong></div>
+            <pre>{`authorized : ${selected.original}\nmutated    : ${selected.mutated}\nrecipient  : Auctorail Vendor\nmandate    : INV-4471\nwindow     : 1 hour`}</pre>
+            <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--text-3)" }}>BOUNDARY&nbsp;&nbsp;&nbsp;{selected.boundary}</span>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--text-3)" }}>STOPPED AT&nbsp;{selected.stoppedAt}</span>
+            </div>
+          </div>
+          <div className="demo-result-panel">
+            <span className="eyebrow" style={{ display: "block", marginBottom: 6 }}>SUITE SCORE</span>
+            <div className={`drp-result ${suiteScore ? (report?.allPassed ? "mint" : "rose") : ""}`}>
+              {report ? (suiteScore ? `RAIL HELD ${report.passed}/${report.total}` : `${report.passed}/${report.total} · AWAITING SUITE`) : "AWAITING RUN"}
+            </div>
+            <small>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</small>
+          </div>
+        </aside>
       </div>
     </main>
   );

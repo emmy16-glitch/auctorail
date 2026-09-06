@@ -228,7 +228,7 @@ function TopNav({ route }: { route: Route }) {
         <a className="brand-lockup home-brand" href={routePath("home")}>
           <ShieldIcon className="brand-shield" />
           <span>
-            <strong>AUCTORAIL</strong>
+            <strong><DecodeText text="AUCTORAIL" /></strong>
             <small>Authorization rails</small>
           </span>
         </a>
@@ -245,13 +245,43 @@ function TopNav({ route }: { route: Route }) {
   );
 }
 
+const SCRAMBLE_CHARS = "AUCTORAILXKMNZ0123456789#";
+
+function DecodeText({ text }: { text: string }) {
+  const [display, setDisplay] = useState(text);
+  useEffect(() => {
+    if (typeof window === "undefined" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setDisplay(text);
+      return;
+    }
+    let frame = 0;
+    const totalFrames = 22;
+    const id = window.setInterval(() => {
+      frame += 1;
+      const resolved = Math.floor((frame / totalFrames) * text.length);
+      if (resolved >= text.length) {
+        window.clearInterval(id);
+        setDisplay(text);
+        return;
+      }
+      let out = "";
+      for (let i = 0; i < text.length; i++) {
+        out += i < resolved ? text[i] : SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+      }
+      setDisplay(out);
+    }, 42);
+    return () => window.clearInterval(id);
+  }, [text]);
+  return <span aria-label={text}>{display}</span>;
+}
+
 function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
         <a className="brand-lockup" href={routePath("home")}>
           <ShieldIcon className="brand-shield" />
-          <span><strong>AUCTORAIL</strong><small>Authorization rails</small></span>
+          <span><strong><DecodeText text="AUCTORAIL" /></strong><small>Authorization rails</small></span>
         </a>
         <p>Prove authority before execution · Base Sepolia testnet build</p>
         <nav aria-label="Footer">

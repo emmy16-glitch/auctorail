@@ -2355,3 +2355,110 @@ details.technical .kv { padding: 8px 14px 12px; }
 .demo-layout > * { min-width: 0; }
 .console-body { overflow-wrap: anywhere; }
 .console-controls { overflow-wrap: anywhere; }
+
+/* ============================================================
+   v3 polish — terminal-technical pass
+   coloured buttons, blueprint grid, mono/typography craft
+   ============================================================ */
+
+/* buttons: primary gradient + glow, secondary accent hover, accent-soft variant */
+
+.btn-primary {
+  background: linear-gradient(135deg, #46d99a 0%, #3ecf8e 45%, #2eb87c 100%);
+  border-color: rgba(62, 207, 142, 0.9);
+  box-shadow: 0 10px 26px rgba(62, 207, 142, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 14px 34px rgba(62, 207, 142, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+.btn:not(.btn-primary):not(.btn-ghost) {
+  border-color: rgba(62, 207, 142, 0.22);
+}
+.btn:not(.btn-primary):not(.btn-ghost):hover:not(:disabled) {
+  border-color: rgba(62, 207, 142, 0.6);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.08);
+}
+
+.btn-accent-soft {
+  background: var(--accent-soft);
+  border-color: rgba(62, 207, 142, 0.45);
+  color: var(--accent);
+}
+.btn-accent-soft:hover:not(:disabled) {
+  background: rgba(62, 207, 142, 0.2);
+  border-color: rgba(62, 207, 142, 0.75);
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.12);
+}
+
+/* blueprint grid texture on hero + closing + consoles */
+
+.grid-texture {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.landing-hero {
+  background-image:
+    radial-gradient(1100px 560px at 72% -12%, var(--accent-glow), transparent 62%),
+    radial-gradient(800px 420px at 8% -6%, rgba(62, 207, 142, 0.05), transparent 58%),
+    linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
+  background-size: auto, auto, 44px 44px, 44px 44px;
+}
+.closing-band {
+  background-image:
+    radial-gradient(900px 420px at 50% 120%, var(--accent-glow), transparent 65%),
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
+}
+.demo-console {
+  background-image:
+    linear-gradient(rgba(62, 207, 142, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(62, 207, 142, 0.02) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+/* typography craft: tabular numerals for data, mono polish */
+
+.stat b, .verdict-count, .suite-score b, .console-line .cl-t { font-variant-numeric: tabular-nums; }
+.hero-title .accent-word { text-shadow: 0 0 34px rgba(62, 207, 142, 0.4); }
+.closing-band h2 .accent-word { text-shadow: 0 0 34px rgba(62, 207, 142, 0.35); }
+.sec-label { letter-spacing: 0.16em; }
+.eyebrow { letter-spacing: 0.16em; }
+
+/* brand decode */
+
+.brand-lockup strong { font-family: var(--mono); letter-spacing: 0.12em; }
+.brand-lockup strong span { display: inline-block; min-width: 9ch; text-align: left; }
+
+/* attack cards: 3-up grid for the 9 lab attacks */
+
+.attack-cards { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 760px) { .attack-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .attack-cards { grid-template-columns: 1fr; } }
+.verdict-count { font-family: var(--mono); font-weight: 620; }
+
+/* wire terminal (live authorization) */
+
+.wire-console .console-body { min-height: 150px; }
+.wire-line { display: block; color: var(--text-2); animation: fade-rise 260ms var(--ease-out) both; overflow-wrap: anywhere; }
+.wire-line .wl-t { color: var(--text-3); margin-right: 12px; font-variant-numeric: tabular-nums; }
+.wire-line .wl-cmd::before { content: "auctorail$ "; color: var(--accent); }
+.wire-line.ok { color: var(--ok); }
+.wire-line.warn { color: var(--hold); }
+.wire-line.bad { color: var(--block); }
+
+/* verify recompute trace */
+.verify-trace .console-body { min-height: 0; padding: 14px 16px 16px; }
+
+.wire-console { margin-bottom: 18px; }
+
+/* compact wire consoles (execution + content trust) */
+.wire-console.exec-wire .console-body, .wire-console.content-wire .console-body { min-height: 0; justify-content: flex-start; padding-top: 14px; }
+.wire-console.exec-wire { margin-bottom: 16px; }

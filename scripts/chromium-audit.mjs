@@ -242,10 +242,17 @@ console.log("\n=== 2. mocked live happy path ===");
   check("checking state: REAL CHECKS RUNNING", await page.evaluate(() => (document.body.textContent ?? "").includes("REAL CHECKS RUNNING")));
   check("checking state: active stage auto-expanded", await page.evaluate(() => Boolean(document.querySelector(".timeline-stage.running.is-open"))));
   await shot(page, "audit-flow-checking.png");
-  await sleep(900); // live answered, execute in flight: EXECUTING REQUEST
-  const executing = await page.evaluate(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("executing request")));
-  check("executing state visible", executing);
-  await shot(page, "audit-flow-executing.png");
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("executing request")),
+    { timeout: 4000, polling: 100 }
+  ).then(async () => {
+    const executing = await page.evaluate(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("executing request")));
+    check("executing state visible", executing);
+    await shot(page, "audit-flow-executing.png");
+  }).catch(async () => {
+    check("executing state visible", await page.evaluate(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("executing request"))));
+    await shot(page, "audit-flow-executing.png");
+  });
   await page.waitForFunction(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent.toLowerCase().includes("payment executed")), { timeout: 15000 });
   await overflow(page, "flow executed 1440");
   check("executed: Auctorail Vendor", await page.evaluate(() => (document.body.textContent ?? "").includes("Auctorail Vendor")));

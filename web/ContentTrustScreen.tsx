@@ -51,6 +51,59 @@ function confidence(value: number | null): string {
   return value === null ? "NOT PROVIDED" : `${Math.round(value * 100)}%`;
 }
 
+function shortContent(hash: string | null | undefined): string {
+  if (!hash) return "—";
+  return hash.length > 16 ? `${hash.slice(0, 14)}…` : hash;
+}
+
+function contentWire(args: {
+  status: "idle" | "running" | "done" | "error";
+  mode: ContentMode;
+  proposedAction: ProposedAction;
+  authorshipClaim: AuthorshipClaim;
+  result: ContentCheckResponse | null;
+  error: string | null;
+}): { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] {
+  const { status, mode, proposedAction, authorshipClaim, result, error } = args;
+  if (status === "idle" && !result) return [];
+  const lines: { text: string; tone?: "ok" | "warn" | "bad"; cmd?: boolean; pending?: boolean }[] = [
+    { cmd: true, text: `content --action ${proposedAction} --authorship ${authorshipClaim} --mode ${mode === "demo" ? "deterministic-demo" : "live-telegraph-x402"}` }
+  ];
+  if (status === "running") {
+    lines.push({ text: "hashing exact subject…", pending: true });
+    lines.push({
+      text: mode === "demo"
+        ? "policy content-strict-v1 · evaluating signals locally (no Miner call)…"
+        : "telegraph content route · acquiring real x402 evidence…",
+      pending: true
+    });
+    return lines;
+  }
+  if (status === "error" && !result) {
+    lines.push({ text: `check stopped · ${error ?? "failed closed"}`, tone: "bad" });
+    return lines;
+  }
+  if (result) {
+    lines.push({ text: `subject frozen · ${shortContent(result.subjectHash)}` });
+    lines.push({
+      text: mode === "demo" ? "policy content-strict-v1 · deterministic demo · no Miner call" : `telegraph content route · real x402 · spend raw ${result.spendRaw}`,
+      tone: "ok"
+    });
+    for (const signal of result.signals) {
+      lines.push({
+        text: `${signal.kind} · ${confidence(signal.confidence)} · ${signal.minerName}`,
+        tone: signal.kind === "SCAM" ? "bad" : signal.kind === "DEEPFAKE" ? "bad" : signal.kind === "AI_GENERATED" ? "warn" : undefined
+      });
+    }
+    lines.push({
+      text: `decision ${result.decision} · ${result.reason}`,
+      tone: result.decision === "ALLOW" ? "ok" : result.decision === "HOLD" ? "warn" : "bad"
+    });
+    lines.push({ text: `receipt written · ${shortContent(result.receipt.receiptHash)} · ${result.receipt.schemaVersion}`, tone: "ok" });
+  }
+  return lines;
+}
+
 function kindClass(kind: ContentSignal["kind"]): string {
   if (kind === "SCAM") return "s-scam";
   if (kind === "DEEPFAKE") return "s-deepfake";
@@ -194,6 +247,27 @@ export function ContentTrustScreen({ onVerifyReceipt }: ContentTrustScreenProps)
         </section>
 
         <aside aria-live="polite" style={{ display: "grid", gap: 16 }}>
+          {(status !== "idle" || result) && (
+            <div className="demo-console wire-console content-wire" aria-label="Content check wire log" role="log">
+              <div className="console-bar">
+                <span className="console-title">
+                  <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+                  auctorail wire — content trust
+                </span>
+                <span className={`console-state ${status === "running" ? "running" : status === "error" ? "paused" : "done"}`}>
+                  {status === "running" ? "STREAMING" : status === "error" ? "STOPPED" : "COMPLETE"}
+                </span>
+              </div>
+              <div className="console-body">
+                {contentWire({ status, mode, proposedAction, authorshipClaim, result, error }).map((line, index) => (
+                  <span key={index} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""} ${line.pending ? "pending" : ""}`}>
+                    {line.cmd ? <span className="wl-cmd">{line.text}</span> : line.text}
+                    {line.pending && <span className="console-cursor" aria-hidden="true" />}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {!result ? (
             <div className="result-empty">
               <span className="eyebrow">RESULT</span>

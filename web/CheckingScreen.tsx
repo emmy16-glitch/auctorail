@@ -4,6 +4,8 @@ import {
   describeAuthorizationOutcome,
   evidenceExplanation,
   evidenceTechnical,
+  formatEvidenceSpend,
+  sourceNames,
   type AuthorizationPresentationResult,
   type PresentationDetail
 } from "./authorization-presenter";
@@ -53,6 +55,11 @@ interface TimelineDisclosure {
 }
 
 function formatUsdc(value: number): string { return value.toFixed(2); }
+
+function shortHash(hash: string | null | undefined): string {
+  if (!hash) return "—";
+  return hash.length > 14 ? `${hash.slice(0, 12)}…` : hash;
+}
 function durationLabel(seconds: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
   if (seconds === 3600) return "1 hour";
@@ -142,6 +149,112 @@ function requestTechnical(
     { label: "Action hash", value: result?.action.hash ?? "Pending policy preflight", mono: true },
     { label: "Freeze fingerprint", value: result?.freezeFingerprint ?? "Pending policy preflight", mono: true }
   ];
+}
+
+interface WireLine {
+  time?: string;
+  text: string;
+  tone?: "ok" | "warn" | "bad";
+  cmd?: boolean;
+  pending?: boolean;
+}
+
+function WireLog(props: {
+  phase: CheckPhase;
+  stage: CheckStage;
+  times: EventTimes | null;
+  result: AuthorizationPresentationResult | null;
+  error: string | null;
+  errorCode: string | null;
+  snapshot: CheckingSnapshot;
+  agentId: string;
+  recipientLabel: string;
+  recipientAddress: string;
+  minerSkipped: boolean;
+  stopsBeforeTelegraph: boolean;
+}) {
+  const { phase, stage, times, result, error, errorCode, snapshot, agentId, recipientLabel, recipientAddress, minerSkipped, stopsBeforeTelegraph } = props;
+
+  const lines: WireLine[] = [];
+
+  if (times?.request) {
+    lines.push({ time: times.request, cmd: true, text: `authorize --agent ${agentId} --amount ${formatUsdc(snapshot.amount)} USDC --to ${recipientAddress}` });
+    lines.push({
+      time: times.request,
+      text: result
+        ? `snapshot frozen · action ${shortHash(result.action.hash)} · freeze ${shortHash(result.freezeFingerprint)}`
+        : "snapshot frozen · hashing exact action…"
+    });
+  }
+
+  if (stage !== "rules" || times?.rules || result || phase !== "checking") {
+    if (result) {
+      lines.push({ time: times?.rules, tone: "ok", text: `policy preflight · ${result.policyId} v${result.policyVersion} · limit ${result.mandate.maxPerAction} USDC · mandate ${shortHash(result.mandate.hash)}` });
+    } else if (phase === "checking") {
+      lines.push({ text: "policy preflight · verifying delegated permission, limit, recipient, window…", pending: true });
+    } else if (phase === "error" && !times?.rules) {
+      lines.push({ time: times?.rules, tone: "bad", text: `policy preflight stopped · ${errorCode ?? "failed closed before any external call"}` });
+    }
+  }
+
+  if (minerSkipped) {
+    lines.push({ time: times?.miners, tone: "warn", text: "telegraph /v1/ask · skipped — local decision already blocks · no x402 spend" });
+  } else if (stage === "miners" && phase === "checking") {
+    lines.push({ text: "telegraph /v1/ask · routing intent to real Miners · bounded x402 spend…", pending: true });
+  } else if (result && result.evidence.status === "COMPLETE") {
+    lines.push({
+      time: times?.miners,
+      tone: "ok",
+      text: `telegraph /v1/ask · evidence COMPLETE · bundle ${shortHash(result.evidence.bundleHash)} · spend ${formatEvidenceSpend(result.evidence.spendRaw)} · sources ${sourceNames(result.evidence.sources)}`
+    });
+  } else if (result && result.evidence.status !== "NOT_REQUESTED") {
+    lines.push({
+      time: times?.miners,
+      tone: result.decision === "BLOCK" ? "bad" : "warn",
+      text: `telegraph /v1/ask · evidence ${result.evidence.status} · ${result.evidence.code ?? result.reason}${result.evidence.bundleHash ? ` · bundle ${shortHash(result.evidence.bundleHash)}` : ""}`
+    });
+  } else if (phase === "error" && times?.miners) {
+    lines.push({ time: times.miners, tone: "bad", text: stopsBeforeTelegraph ? `live check not started · ${errorCode ?? "failed before Miner call"}` : `telegraph /v1/ask · ${error ?? "untrusted result"} — failed closed` });
+  } else if (phase === "error" && !times?.miners && stage === "miners") {
+    lines.push({ time: times?.miners, tone: "warn", text: `live check not started · ${errorCode ?? "stopped before Miner call"}` });
+  }
+
+  if (phase === "ready" && result) {
+    lines.push({
+      time: times?.decision,
+      tone: result.decision === "ALLOW" ? "ok" : result.decision === "HOLD" ? "warn" : "bad",
+      text: `decision ${result.decision} · ${result.reason}`
+    });
+    if (result.decision === "ALLOW" && result.permit) {
+      lines.push({ time: times?.decision, tone: "ok", text: `execution permit signed · ${shortHash(result.permit.hash)} · one-use · bound to exact action` });
+    }
+  } else if (phase === "error") {
+    lines.push({ time: times?.decision ?? times?.miners ?? times?.rules, tone: "bad", text: `stopped safely · no execution authority · ${errorCode ?? error ?? "unknown"}` });
+  }
+
+  const state = phase === "checking" ? "STREAMING" : phase === "error" ? "STOPPED" : "COMPLETE";
+
+  return (
+    <div className="demo-console wire-console" aria-label="Live authorization wire log" role="log">
+      <div className="console-bar">
+        <span className="console-title">
+          <span className="console-dots" aria-hidden="true"><i /><i /><i /></span>
+          auctorail wire — live authorization
+        </span>
+        <span className={`console-state ${phase === "checking" ? "running" : phase === "error" ? "paused" : "done"}`}>{state}</span>
+      </div>
+      <div className="console-body">
+        {lines.map((line, index) => (
+          <span key={index} className={`wire-line ${line.tone ?? ""} ${line.cmd ? "cmd" : ""} ${line.pending ? "pending" : ""}`}>
+            {line.time && <span className="wl-t">{line.time}</span>}
+            {line.cmd ? <span className="wl-cmd">{line.text}</span> : line.text}
+            {line.pending && <span className="console-cursor" aria-hidden="true" />}
+          </span>
+        ))}
+        {lines.length === 0 && <span className="wire-line">waiting for request snapshot…</span>}
+      </div>
+    </div>
+  );
 }
 
 export function CheckingScreen(props: CheckingScreenProps) {
@@ -358,6 +471,21 @@ export function CheckingScreen(props: CheckingScreenProps) {
             </div>
           </div>
         </div>
+
+        <WireLog
+          phase={phase}
+          stage={stage}
+          times={times}
+          result={result}
+          error={error}
+          errorCode={errorCode}
+          snapshot={snapshot}
+          agentId={agentId}
+          recipientLabel={recipientLabel}
+          recipientAddress={recipientAddress}
+          minerSkipped={minerSkipped}
+          stopsBeforeTelegraph={stopsBeforeTelegraph(errorCode)}
+        />
 
         <div className={`check-status ${statusClass}`} role="status" aria-live="polite">
           <div className="cs-icon" aria-hidden="true">&gt;_</div>
