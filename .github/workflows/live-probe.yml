@@ -2,20 +2,24 @@ name: live-probe
 on:
   push:
     branches: [ arena/01a07716-auctorail ]
-    paths: [ 'trigger-probe.txt', '.github/workflows/live-probe.yml' ]
+    paths: [ 'trigger-probe.txt', '.github/workflows/live-probe.yml', 'scripts/live-capture.mjs' ]
 jobs:
-  probe:
+  capture:
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
         with: { ref: arena/01a07716-auctorail }
-      - name: network test
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-audit --no-fund
+      - run: npm i playwright @ffmpeg-installer/ffmpeg --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/live-capture.mjs
+      - name: convert + push
         run: |
-          curl -sS -o /dev/null -w "vercel %{http_code}\n" https://auctorail.vercel.app/ || echo "vercel FAIL"
-          curl -sS -o /dev/null -w "basescan %{http_code}\n" https://sepolia.basescan.org/ || echo "basescan FAIL"
-      - name: marker + push
-        run: |
+          FF=node_modules/@ffmpeg-installer/linux-x64/ffmpeg; chmod +x $FF
+          WEBM=$(ls live-out/vid/*.webm | head -1)
+          $FF -y -i "$WEBM" -vf scale=1920:1080 -c:v libx264 -crf 20 -an live-out/live-execution.mp4 || true
           git config user.name "arena-bot" && git config user.email "arena@bots.local"
-          echo "probe $(date -u +%FT%TZ)" > probe-result.txt
-          git add probe-result.txt && git commit -m "live-probe result" && git push origin HEAD:arena/01a07716-auctorail
+          git add live-out && git commit -m "live capture from runner" && git push origin HEAD:arena/01a07716-auctorail
