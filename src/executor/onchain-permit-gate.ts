@@ -21,7 +21,10 @@ export const AUCTORAIL_PERMIT_GATE_DOMAIN_NAME =
   "AuctorailPermitGate";
 export const AUCTORAIL_PERMIT_GATE_DOMAIN_VERSION = "1";
 
-export const AUCTORAIL_EXECUTION_PERMIT_TYPES = {
+export const AUCTORAIL_EXECUTION_PERMIT_TYPES: Record<
+  string,
+  ethers.TypedDataField[]
+> = {
   ExecutionPermit: [
     { name: "permitHash", type: "bytes32" },
     { name: "actionHash", type: "bytes32" },
@@ -31,7 +34,7 @@ export const AUCTORAIL_EXECUTION_PERMIT_TYPES = {
     { name: "amount", type: "uint256" },
     { name: "deadline", type: "uint256" }
   ]
-} as const;
+};
 
 const GATE_INTERFACE = new ethers.Interface([
   "function token() view returns (address)",
