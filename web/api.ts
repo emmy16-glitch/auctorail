@@ -623,6 +623,7 @@ async function performPendingExecution(
     return { status: 500, body: { error: "proof_receipt_verification_failed" } };
   }
   saveReceipt(receipt);
+  const availableGateRaw = outcome.error?.match(/available=(\d+)/)?.[1] ?? null;
 
   return {
     status: 200,
@@ -643,6 +644,18 @@ async function performPendingExecution(
         executionPath: artifact?.executionPath ?? "auctorail_permit_gate_v1",
         onchainPermitConsumed: outcome.status === "EXECUTED",
         bootstrap: artifact?.bootstrap ?? bootstrap ?? null
+      },
+      funding: {
+        network: "Base Sepolia",
+        chainId: BASE_SEPOLIA_CHAIN_ID,
+        asset: "USDC",
+        tokenAddress: BASE_SEPOLIA_USDC,
+        gateAddress: artifact?.gateAddress ?? resolvedGateAddress ?? null,
+        requiredAmount: (Number(pending.action.payload.amountRaw) / 1_000_000).toFixed(2),
+        requiredAmountRaw: pending.action.payload.amountRaw,
+        availableAmount: availableGateRaw ? (Number(availableGateRaw) / 1_000_000).toFixed(2) : null,
+        availableAmountRaw: availableGateRaw,
+        instructions: "Fund the permit gate with Base Sepolia USDC before retrying if its balance is insufficient."
       },
       network: {
         chain: "Base Sepolia",

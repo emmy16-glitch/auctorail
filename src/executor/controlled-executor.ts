@@ -15,6 +15,7 @@ import type { PermitConsumptionStore } from "./permit-store.js";
 export type ExecutorCode =
   | "executed"
   | "execution_failed"
+  | "insufficient_gate_balance"
   | "execution_ambiguous"
   | "permit_store_unavailable"
   | "permit_verifier_unavailable"
@@ -120,6 +121,14 @@ export async function executeProtectedAction<T>(
       consumedAt: now.toISOString()
     };
   } catch (error: unknown) {
+    if (error instanceof Error && (error as Error & { code?: string }).code === "insufficient_gate_balance") {
+      return {
+        status: "FAILED",
+        code: "insufficient_gate_balance",
+        consumedAt: now.toISOString(),
+        error: error.message
+      };
+    }
     if (error instanceof AmbiguousExecutionError) {
       return {
         status: "AMBIGUOUS",

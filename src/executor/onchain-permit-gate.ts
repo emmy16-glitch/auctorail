@@ -42,6 +42,7 @@ const GATE_INTERFACE = new ethers.Interface([
   "function consumed(bytes32) view returns (bool)",
   "function execute((bytes32 permitHash,bytes32 actionHash,bytes32 decisionHash,address token,address destination,uint256 amount,uint256 deadline) permit,bytes signature) returns (bool)"
 ]);
+const ERC20_INTERFACE = ["function balanceOf(address) view returns (uint256)"];
 
 export const DEFAULT_PERMIT_GATE_RPCS = [
   "https://sepolia-preconf.base.org",
@@ -67,6 +68,19 @@ export interface ExecutePermitGatedUsdcInput {
   journal?: FileOperationJournal;
   confirmationAttempts?: number;
   confirmationDelayMs?: number;
+}
+
+export class InsufficientPermitGateBalanceError extends Error {
+  readonly code = "insufficient_gate_balance" as const;
+
+  constructor(
+    public readonly gateAddress: string,
+    public readonly requiredRaw: bigint,
+    public readonly availableRaw: bigint
+  ) {
+    super(`insufficient_gate_balance:available=${availableRaw.toString()}:required=${requiredRaw.toString()}`);
+    this.name = "InsufficientPermitGateBalanceError";
+  }
 }
 
 function assertBytes32(value: string, code: string): void {
@@ -322,6 +336,14 @@ export async function executeBaseSepoliaPermitGatedUsdcTransfer(
   const configuredToken = String(await gate.token());
   if (!addressesEqual(configuredToken, BASE_SEPOLIA_USDC)) {
     throw new Error("onchain_gate_token_mismatch");
+  }
+
+  const gateBalance = BigInt(
+    await new ethers.Contract(configuredToken, ERC20_INTERFACE, provider).balanceOf(gateAddress)
+  );
+  const requiredBalance = BigInt(input.action.payload.amountRaw);
+  if (gateBalance < requiredBalance) {
+    throw new InsufficientPermitGateBalanceError(gateAddress, requiredBalance, gateBalance);
   }
 
   const wallet = new ethers.Wallet(input.privateKey, provider);

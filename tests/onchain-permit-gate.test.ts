@@ -10,6 +10,7 @@ import type { Permit } from "../src/permit/permit.js";
 import {
   AUCTORAIL_EXECUTION_PERMIT_TYPES,
   createOnchainExecutionPermit,
+  InsufficientPermitGateBalanceError,
   permitGateDomain,
   permitHashForOnchainGate,
   signOnchainExecutionPermit
@@ -55,6 +56,17 @@ function fixture() {
 }
 
 describe("Auctorail on-chain execution permit", () => {
+  it("exposes a user-actionable error when the permit gate lacks USDC", () => {
+    const error = new InsufficientPermitGateBalanceError(GATE, 1_000_000n, 470_000n);
+
+    expect(error.code).toBe("insufficient_gate_balance");
+    expect(error.gateAddress).toBe(GATE);
+    expect(error.requiredRaw).toBe(1_000_000n);
+    expect(error.availableRaw).toBe(470_000n);
+    expect(error.message).toContain("available=470000");
+    expect(error.message).toContain("required=1000000");
+  });
+
   it("derives the on-chain permit from the upstream Auctorail authorization", () => {
     const { action, permit } = fixture();
     const derived = createOnchainExecutionPermit(action, permit);

@@ -70,6 +70,18 @@ export interface ExecutionResponse {
     sources?: ExecutionIntelligenceSource[];
   };
   receipt: { id: string; hash: string; schemaVersion: string; createdAt: string };
+  funding?: {
+    network: string;
+    chainId: number;
+    asset: string;
+    tokenAddress: string;
+    gateAddress: string | null;
+    requiredAmount: string;
+    requiredAmountRaw: string;
+    availableAmount: string | null;
+    availableAmountRaw: string | null;
+    instructions: string;
+  };
   error?: string;
 }
 
@@ -92,6 +104,10 @@ function sourceNames(sources: ExecutionIntelligenceSource[] | undefined): string
   return sources.map((source) => source.name).join(" · ");
 }
 
+function isInsufficientGateBalance(response: ExecutionResponse | null, error: string | null): boolean {
+  return response?.code === "insufficient_gate_balance" || error?.startsWith("insufficient_gate_balance:") === true;
+}
+
 function executionMessage(phase: ExecutionUiPhase, amount: string, response: ExecutionResponse | null, error: string | null) {
   if (phase === "executed") return { title: "Payment confirmed.", copy: `The authorized ${amount} USDC action was confirmed on Base Sepolia and a verifiable Auctorail receipt was created.` };
   if (phase === "execution_ambiguous") return {
@@ -99,6 +115,10 @@ function executionMessage(phase: ExecutionUiPhase, amount: string, response: Exe
     copy: response?.transaction.transactionHash
       ? "A transaction hash exists, but confirmation could not be established safely. Auctorail will not broadcast another payment automatically."
       : "The execution request may have reached the network, but a trustworthy final result was not available. Auctorail will not create a replacement transaction automatically."
+  };
+  if (phase === "execution_failed" && isInsufficientGateBalance(response, error)) return {
+    title: "Insufficient protected balance.",
+    copy: `Authorization passed, but the permit gate does not hold enough Base Sepolia USDC for this ${amount} USDC payment. No vendor payment was made. Fund the gate and retry.`
   };
   if (phase === "execution_failed") return { title: "Execution stopped.", copy: error ?? response?.error ?? "The authorized payment did not complete. Auctorail did not automatically retry it." };
   return {
@@ -160,6 +180,8 @@ export function ExecutionScreen(props: {
   const riskTier = authorization.riskTier;
   const routeEndpoint = authorization.routing.endpoint;
   const statusClass = confirmed ? "ok" : ambiguous ? "hold" : failed ? "block" : "";
+  const funding = response?.funding;
+  const fundingGate = funding?.gateAddress ?? null;
 
   return (
     <div className="execution-layout" data-testid="execution-screen">
@@ -248,6 +270,26 @@ export function ExecutionScreen(props: {
             </dl>
           </details>
         </div>
+
+        {funding && (
+          <div className="card card-pad" data-testid="permit-gate-funding" style={{ marginTop: 16 }}>
+            <span className="eyebrow" style={{ display: "block", marginBottom: 8 }}>PROTECTED EXECUTION BALANCE</span>
+            <strong>{funding.asset} on {funding.network}</strong>
+            <p style={{ color: "var(--text-3)", margin: "8px 0 12px" }}>
+              Anyone can fund this permit gate before retrying. It must hold at least {funding.requiredAmount} USDC for this request{funding.availableAmount ? `, but currently has ${funding.availableAmount} USDC` : ""}. Do not send ETH here.
+            </p>
+            <div className="mono" style={{ overflowWrap: "anywhere", fontSize: 12 }}>
+              {fundingGate ?? "Gate address unavailable"}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              {fundingGate && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void navigator.clipboard?.writeText(fundingGate)}>COPY GATE ADDRESS</button>}
+              {fundingGate && <a className="btn btn-ghost btn-sm" href={`https://sepolia.basescan.org/address/${fundingGate}`} target="_blank" rel="noreferrer">OPEN BASESCAN ↗</a>}
+            </div>
+            <p style={{ color: "var(--text-3)", margin: "10px 0 0", fontSize: 12 }}>
+              Token contract: <span className="mono">{funding.tokenAddress}</span>
+            </p>
+          </div>
+        )}
 
         <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
           <button type="button" className="btn btn-block" disabled={pending || ambiguous} onClick={onNewRequest}
