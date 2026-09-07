@@ -172,6 +172,37 @@ async function reconcileTransaction(
   return { state: "AMBIGUOUS", receipt: null, rpc: null };
 }
 
+async function permitConsumptionObserved(
+  gateAddress: string,
+  permitHash: string,
+  rpcs: string[],
+  attempts: number,
+  delayMs: number
+): Promise<{ consumed: boolean; rpc: string | null }> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    for (const rpc of rpcs) {
+      try {
+        const provider = providerFor(rpc);
+        if (await actualChainId(provider) !== BASE_SEPOLIA_CHAIN_ID) continue;
+        const consumed = Boolean(
+          await new ethers.Contract(
+            ethers.getAddress(gateAddress),
+            GATE_INTERFACE.fragments,
+            provider
+          ).consumed(permitHash)
+        );
+        if (consumed) return { consumed: true, rpc };
+      } catch {
+        // Read-after-write propagation may lag on an individual RPC.
+      }
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return { consumed: false, rpc: null };
+}
+
 export function permitHashForOnchainGate(permit: Permit): string {
   return hashCanonicalPayload(canonicalize(permit));
 }
@@ -435,14 +466,14 @@ export async function executeBaseSepoliaPermitGatedUsdcTransfer(
     );
   }
 
-  const consumedAfter = Boolean(
-    await new ethers.Contract(
-      gateAddress,
-      GATE_INTERFACE.fragments,
-      providerFor(reconciliation.rpc)
-    ).consumed(onchainPermit.permitHash)
+  const consumedAfter = await permitConsumptionObserved(
+    gateAddress,
+    onchainPermit.permitHash,
+    rpcs,
+    Math.max(3, input.confirmationAttempts ?? 30),
+    input.confirmationDelayMs ?? 2_000
   );
-  if (!consumedAfter) {
+  if (!consumedAfter.consumed) {
     journal.update(operation.operationId, {
       state: "FAILED",
       transactionHash,
@@ -459,7 +490,7 @@ export async function executeBaseSepoliaPermitGatedUsdcTransfer(
     transactionHash,
     metadata: {
       blockNumber: reconciliation.receipt.blockNumber,
-      confirmedVia: reconciliation.rpc,
+      confirmedVia: consumedAfter.rpc ?? reconciliation.rpc,
       confirmedAt: new Date().toISOString(),
       onchainPermitConsumed: true
     }
@@ -469,7 +500,7 @@ export async function executeBaseSepoliaPermitGatedUsdcTransfer(
     transactionHash,
     blockNumber: reconciliation.receipt.blockNumber,
     confirmedAt: new Date().toISOString(),
-    confirmedVia: reconciliation.rpc,
+    confirmedVia: consumedAfter.rpc ?? reconciliation.rpc,
     sender: wallet.address,
     nonce,
     operationId: operation.operationId
