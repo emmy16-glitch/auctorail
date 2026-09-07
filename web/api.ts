@@ -22,7 +22,13 @@ import { mintPermit, type Permit } from "../src/permit/permit.js";
 import { Ed25519PermitSigner } from "../src/permit/signer.js";
 import { executeProtectedAction } from "../src/executor/controlled-executor.js";
 import { FilePermitConsumptionStore } from "../src/executor/permit-store.js";
-import { executeBaseSepoliaUsdcTransfer } from "../src/executor/base-sepolia-usdc.js";
+import {
+  executeBaseSepoliaPermitGatedUsdcTransfer
+} from "../src/executor/onchain-permit-gate.js";
+import {
+  bootstrapPermitGate,
+  type PermitGateBootstrapResult
+} from "../src/executor/permit-gate-bootstrap.js";
 import type { PaymentExecutionArtifact } from "../src/gateway/payment-gateway.js";
 import { createProofReceipt, verifyProofReceipt, type ReceiptExecution } from "../src/receipt/proof-receipt.js";
 
@@ -84,6 +90,12 @@ interface IdempotentExecutionEntry {
   token: string;
   promise: Promise<ApiReply>;
   createdAt: number;
+}
+
+interface GatedPaymentExecutionArtifact extends PaymentExecutionArtifact {
+  executionPath: "auctorail_permit_gate_v1";
+  gateAddress: string;
+  bootstrap?: PermitGateBootstrapResult;
 }
 
 const rateWindows = new Map<string, number[]>();
@@ -359,6 +371,11 @@ function executorPrivateKey(): `0x${string}` | null {
   return value && /^0x[0-9a-fA-F]{64}$/.test(value) ? value as `0x${string}` : null;
 }
 
+function configuredPermitGateAddress(): string | null {
+  const value = process.env.AUCTORAIL_PERMIT_GATE_ADDRESS ?? process.env.PROOFGATE_PERMIT_GATE_ADDRESS;
+  return value && /^0x[0-9a-fA-F]{40}$/.test(value) ? value : null;
+}
+
 function commonRecord(input: {
   action: ReturnType<typeof createActionContract>;
   mandate: ReturnType<typeof createMandateContract>;
@@ -366,13 +383,13 @@ function commonRecord(input: {
   reference: string;
   freezeFingerprint: string;
 }) {
+  const lowDirect = input.plan.riskTier === "LOW";
   return {
     freezeFingerprint: input.freezeFingerprint,
     riskTier: input.plan.riskTier,
-    routing: {
-      mode: "TELEGRAPH_AUTO_INTENT",
-      endpoint: "/v1/ask"
-    },
+    routing: lowDirect
+      ? { mode: "TELEGRAPH_DIRECT_INTENT", endpoint: "/v1/ask/95822412" }
+      : { mode: "TELEGRAPH_AUTO_INTENT", endpoint: "/v1/ask" },
     action: {
       id: input.action.id,
       hash: input.action.actionHash,
@@ -507,7 +524,8 @@ async function performLiveAuthorization(input: {
         execution: {
           status: "READY",
           token,
-          endpoint: "/api/execute"
+          endpoint: "/api/execute",
+          enforcement: "AUCTORAIL_ONCHAIN_PERMIT_GATE"
         }
       }
     };
@@ -540,7 +558,10 @@ async function performPendingExecution(
   executionId: string
 ): Promise<ApiReply> {
   const store = new FilePermitConsumptionStore(path.join(process.cwd(), ".proofgate", "consumed"));
-  const outcome = await executeProtectedAction<PaymentExecutionArtifact>({
+  let bootstrap: PermitGateBootstrapResult | undefined;
+  let resolvedGateAddress = configuredPermitGateAddress();
+
+  const outcome = await executeProtectedAction<GatedPaymentExecutionArtifact>({
     mandate: pending.mandate,
     permit: pending.permit,
     action: pending.action,
@@ -549,10 +570,36 @@ async function performPendingExecution(
     verifier: pending.signer,
     store,
     executionId,
-    execute: (action) => executeBaseSepoliaUsdcTransfer({ action, privateKey })
+    execute: async (action) => {
+      if (!resolvedGateAddress) {
+        bootstrap = await bootstrapPermitGate({
+          privateKey,
+          // Bootstrap only the amount already authorized for this exact action.
+          // The gate, not the agent, owns these funds until the permit executes.
+          fundRaw: BigInt(action.payload.amountRaw)
+        });
+        resolvedGateAddress = bootstrap.gateAddress;
+      }
+
+      const executed = await executeBaseSepoliaPermitGatedUsdcTransfer({
+        action,
+        authorizationPermit: pending.permit,
+        privateKey,
+        gateAddress: resolvedGateAddress,
+        confirmationAttempts: 12,
+        confirmationDelayMs: 1_000
+      });
+
+      return {
+        ...executed,
+        executionPath: "auctorail_permit_gate_v1" as const,
+        gateAddress: resolvedGateAddress,
+        ...(bootstrap ? { bootstrap } : {})
+      };
+    }
   });
 
-  const artifact = outcome.result as Partial<PaymentExecutionArtifact> | undefined;
+  const artifact = outcome.result as Partial<GatedPaymentExecutionArtifact> | undefined;
   const receiptExecution: ReceiptExecution = {
     status: outcome.status === "EXECUTED" ? "EXECUTED" : outcome.status === "AMBIGUOUS" ? "AMBIGUOUS" : outcome.status === "BLOCKED" ? "BLOCKED" : "FAILED",
     code: outcome.code,
@@ -588,6 +635,14 @@ async function performPendingExecution(
         id: pending.permit.payload.permitId,
         hash: permitHash(pending.permit),
         expiresAt: pending.permit.payload.expiresAt
+      },
+      enforcement: {
+        mode: "AUCTORAIL_ONCHAIN_PERMIT_GATE",
+        failClosed: true,
+        gateAddress: artifact?.gateAddress ?? resolvedGateAddress ?? null,
+        executionPath: artifact?.executionPath ?? "auctorail_permit_gate_v1",
+        onchainPermitConsumed: outcome.status === "EXECUTED",
+        bootstrap: artifact?.bootstrap ?? bootstrap ?? null
       },
       network: {
         chain: "Base Sepolia",
@@ -867,6 +922,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`Auctorail web API listening on ${PORT}`);
   console.log(`Live Telegraph auto-route authorization: ${LIVE_ENABLED ? "enabled" : "disabled"}`);
   console.log("Authorized Base Sepolia execution endpoint: /api/execute");
+  console.log("Execution enforcement: AuctorailPermitGate (fail closed; no direct ERC-20 fallback)");
 });
 
 process.on("SIGTERM", () => server.close());
