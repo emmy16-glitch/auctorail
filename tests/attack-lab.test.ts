@@ -1,7 +1,8 @@
 import {
   describe,
   expect,
-  it
+  it,
+  vi
 } from "vitest";
 
 import {
@@ -11,6 +12,17 @@ import {
 describe(
   "Auctorail deterministic Attack Lab",
   () => {
+    it("runs with production signer restrictions and no network", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Lab must stay offline"));
+      try {
+        expect((await runAttackLab()).allPassed).toBe(true);
+        expect(network).not.toHaveBeenCalled();
+      } finally {
+        network.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    });
     it(
       "contains every locked mutation/replay/integrity attack without network or blockchain writes",
       async () => {
@@ -26,7 +38,7 @@ describe(
         expect(
           report.total
         ).toBe(
-          10
+          13
         );
 
         expect(
@@ -86,7 +98,10 @@ describe(
           [
             "receipt_tamper",
             "false"
-          ]
+          ],
+          ["recipient_mutation", "BLOCK:mandate_destination_violation:no_permit"],
+          ["expired_permission", "BLOCK:mandate_expired:no_permit"],
+          ["missing_evidence", "HOLD:telegraph_evidence:no_permit"]
         ]);
       }
     );

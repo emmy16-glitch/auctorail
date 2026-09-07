@@ -1,5 +1,7 @@
 # Auctorail v1.1 validation — historical snapshot
 
+> Historical record: preserve the results below as recorded. For current runtime, evidence deadlines, deployment boundaries and verification, see [current status](CURRENT_STATUS.md).
+
 > **Status: HISTORICAL.** This file preserves the validation mindset and milestone context from an earlier ProofGate/Auctorail revision. It is not the source of truth for current test counts or current policy thresholds.
 
 ## Why keep historical validation

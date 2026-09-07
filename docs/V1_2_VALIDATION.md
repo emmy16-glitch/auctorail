@@ -1,5 +1,7 @@
 # Auctorail v1.2 validation record and current delta
 
+> Historical record: preserve the results below as recorded. For current runtime, evidence deadlines, deployment boundaries and verification, see [current status](CURRENT_STATUS.md).
+
 This document preserves the v1.2 validation milestone that introduced stronger adaptive evidence, same-Intent distinct-Miner quorum and the generalized authorization core, then explains how current `main` has moved beyond that snapshot.
 
 > **Status:** historical milestone with current-delta notes. For present-tense submission claims, use the latest green CI plus `docs/README.md`.

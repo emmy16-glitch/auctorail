@@ -1,5 +1,7 @@
 # Auctorail permit consumption and replay-prevention model
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document explains how Auctorail treats one-use execution authority, why consumption state must be durable, and how replay/ambiguity concerns interact with protected external execution.
 
 ## Core rule

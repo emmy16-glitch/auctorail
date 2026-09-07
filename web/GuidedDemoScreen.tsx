@@ -77,6 +77,18 @@ const scenarios: Scenario[] = [
       { title: "Authorization held", detail: "No execution authority is issued.", tone: "warn" },
       { title: "No execution sent", detail: "Vendor action remains untouched.", tone: "warn" }
     ]
+  },
+  {
+    n: "05", id: "over_limit", title: "OVER SPENDING LIMIT", shortTitle: "Over Limit",
+    subtitle: "7 requested · 5 allowed", tone: "rose", result: "BLOCKED", amount: "7.00",
+    description: "The agent requests 7 USDC against a 5 USDC permission. Delegation fails before evidence spend.",
+    steps: [
+      { title: "Request captured", detail: "Requested payment: 7.00 USDC.", tone: "info" },
+      { title: "Permission loaded", detail: "Principal permits at most 5.00 USDC per action.", tone: "info" },
+      { title: "Limit exceeded", detail: "7.00 USDC exceeds the delegated 5.00 USDC limit.", tone: "bad" },
+      { title: "Authorization blocked", detail: "No permit issued. No paid evidence requested.", tone: "bad" },
+      { title: "No transaction", detail: "Protected execution never starts (demo).", tone: "warn" }
+    ]
   }
 ];
 
@@ -90,8 +102,8 @@ export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, on
   const [ranScenarios, setRanScenarios] = useState<Set<number>>(new Set());
   const scenario = scenarios[scenarioIndex];
   const terminal = stepIndex === scenario.steps.length - 1;
-  const absoluteStep = scenarioIndex * 6 + stepIndex + 1;
-  const overallProgress = Math.min(100, (absoluteStep / (scenarios.length * 6)) * 100);
+  const absoluteStep = scenarios.slice(0, scenarioIndex).reduce((sum, item) => sum + item.steps.length, 0) + stepIndex + 1;
+  const overallProgress = Math.min(100, (absoluteStep / scenarios.reduce((sum, item) => sum + item.steps.length, 0)) * 100);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,7 +148,7 @@ export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, on
 
   function skip() {
     if (scenarioIndex < scenarios.length - 1) { selectScenario(scenarioIndex + 1); return; }
-    setStepIndex(5);
+    setStepIndex(scenario.steps.length - 1);
     setPlaying(false);
     setFinished(true);
   }
@@ -151,7 +163,7 @@ export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, on
   const verdictTone = finished ? "mint" : scenarioDone ? scenario.tone : null;
   const verdictText = finished ? "DEMO COMPLETE" : scenarioDone ? scenario.result : "RUNNING";
   const verdictCopy = finished
-    ? "All four deterministic scenarios completed. The rails held where they were supposed to."
+    ? "Walkthrough finished. Replay any scenario, or open Security Lab to run the engine checks."
     : scenarioDone
       ? scenario.description
       : scenario.steps[stepIndex].detail;
@@ -163,7 +175,7 @@ export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, on
         <div>
           <span className="eyebrow">DEMO MODE · DETERMINISTIC · ZERO PAYMENTS</span>
           <h1>Watch Auctorail in action.</h1>
-          <p>Pick a scenario and run it. Auctorail executes the exact check sequence against frozen, deterministic data — success, tamper, replay and hold. No real payments.</p>
+          <p>Pick a scenario and run it. This scripted walkthrough illustrates success, tamper, replay, missing evidence and spending limits. Run Security Lab for actual engine checks. No real payments.</p>
         </div>
       </div>
 
@@ -218,7 +230,7 @@ export function GuidedDemoScreen({ onBack, onLive, onActivity, onPermissions, on
               </button>
               <div className="console-progress" aria-hidden="true"><span style={{ width: `${overallProgress}%` }} /></div>
               <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)", whiteSpace: "nowrap" }}>
-                {scenarioIndex + 1}/4 · STEP {stepIndex + 1}/6
+                {scenarioIndex + 1}/{scenarios.length} · STEP {stepIndex + 1}/{scenario.steps.length}
               </span>
             </div>
           </div>

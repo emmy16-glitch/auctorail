@@ -1,5 +1,7 @@
 # Auctorail developer integration guide
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This guide explains how to integrate an autonomous agent or application with Auctorail and how to design a new protected-action adapter without accidentally moving authority back into the agent.
 
 ## Integration goal
@@ -372,7 +374,7 @@ See `TROUBLESHOOTING.md`.
 Auctorail's current adaptive payment defaults are:
 
 ```text
-LOW     <=5 USDC: 0.035 USDC evidence budget, 12s deadline
+LOW     <=5 USDC: 0.035 USDC evidence budget, 20s deadline
 MEDIUM  >5–50:    0.060 USDC evidence budget, 60s deadline
 HIGH    >50:      0.100 USDC evidence budget, 90s deadline
 ```

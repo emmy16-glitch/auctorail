@@ -31,7 +31,7 @@ Historical `proofgate.*` schema identifiers may remain in source for compatibili
 
 | Proposed amount | Tier | Fraud requirement | Additional Intents | Max fraud attempts | Max evidence spend | Overall evidence deadline |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| `<= 5 USDC` | `LOW` | 1 distinct positive `FRAUD_DETECTION` Miner at `>= 0.70` | none | 3 | `0.035 USDC` | **12s** |
+| `<= 5 USDC` | `LOW` | 1 distinct positive `FRAUD_DETECTION` Miner at `>= 0.70` | none | 3 | `0.035 USDC` | **20s** |
 | `> 5 to 50 USDC` | `MEDIUM` | 2 distinct positive `FRAUD_DETECTION` Miners at `>= 0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
 | `> 50 USDC` | `HIGH` | 3 distinct fraud Miners, at least 2 positives at `>= 0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
 
@@ -55,10 +55,10 @@ signal commitment:    required
 explicit negative:    must not be present
 attempts:             <= 3
 combined spend:       <= 0.035 USDC
-combined deadline:    <= 12 seconds
+combined deadline:    <= 20 seconds
 ```
 
-The shorter 12-second deadline is a liveness change, not a security downgrade. If usable evidence cannot be obtained within the bound, the request fails closed as `HOLD`.
+The bounded 20-second deadline is a liveness change, not a security downgrade. If usable evidence cannot be obtained within the bound, the request fails closed as `HOLD`.
 
 ## Why LOW allows up to three attempts
 
@@ -287,7 +287,7 @@ Positive floor:      0.70
 Distinct providers:  1 required
 Attempts:            up to 3
 Evidence budget:     0.035 USDC
-Evidence deadline:   12 seconds
+Evidence deadline:   20 seconds
 ```
 
 The repository contains historical real evidence from `Refut On-Chain Risk` (`95822412`) for the canonical vendor with verdict `ALLOW`, confidence `0.70` and a signal hash. That artifact proves the lane has worked, but runtime authorization still validates current evidence rather than hard-coding historical success as permission.
@@ -327,7 +327,7 @@ Current tests/fuzzing cover attempts to tamper with:
 - bundle commitments;
 - action substitution.
 
-The latest green suite reports 268/268 tests and 7400/7400 deterministic adversarial fuzz cases contained across the three fuzz harnesses.
+The latest green suite reports 281/281 tests and 7400/7400 deterministic adversarial fuzz cases contained across the three fuzz harnesses.
 
 ## Change-control checklist
 

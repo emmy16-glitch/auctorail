@@ -216,7 +216,7 @@ Do **not** claim this exact run exercised:
 - the later generalized action-adapter path;
 - every current Content Trust feature;
 - every newer durable PostgreSQL/Ed25519-oriented deployment control;
-- the current 12-second LOW evidence window.
+- the current 20-second LOW evidence window.
 
 Those are current code/test capabilities or later design elements, not properties retroactively added to the 2026-09-02 transaction.
 
@@ -277,7 +277,7 @@ That would overstate what the artifact demonstrates.
 Separate from this historical live proof, current `main` also has:
 
 ```text
-268 / 268 tests passed
+281 / 281 tests passed
 7400 / 7400 deterministic adversarial cases contained
 0 unauthorized executions / authorizations in the fuzz suites
 0 production dependency vulnerabilities reported by npm audit

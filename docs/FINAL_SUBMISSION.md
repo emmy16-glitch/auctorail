@@ -1,5 +1,7 @@
 # Auctorail final submission guide
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document is the final claim-control and submission-preparation guide for Auctorail.
 
 Its purpose is to keep the hackathon submission **clear, technically specific and evidence-backed** without overstating what the repository proves.
@@ -112,7 +114,7 @@ subject binding:      required
 chain binding:        required
 max fraud attempts:   3
 max evidence spend:   0.035 USDC
-overall deadline:     12 seconds
+overall deadline:     20 seconds
 ```
 
 Do not submit stale `35s` wording.
@@ -160,11 +162,11 @@ See `REAL_USAGE_LOG.md` and `LIVE_EXECUTION.md`.
 
 ## Current deterministic validation
 
-Latest green `main` snapshot:
+Local verification snapshot (2026-09-07) snapshot:
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 ```
 
 Fuzzing:
@@ -331,8 +333,8 @@ Use `audit-artifacts/README.md` before quoting those reports. Present-tense subm
 - [ ] no secret/private-key material committed;
 - [ ] README current facts match code;
 - [ ] current Node is `>=24.15.0`;
-- [ ] LOW deadline says `12s`, not `35s`;
-- [ ] test count says `268`, not `267`;
+- [ ] LOW deadline says `20s`, not `35s`;
+- [ ] test count says the freshly recorded local result;
 - [ ] public product branding says Auctorail;
 - [ ] historical ProofGate identifiers are explained rather than randomly renamed;
 - [ ] historical audit artifacts are not presented as current status.

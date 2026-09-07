@@ -1,5 +1,7 @@
 # Auctorail documentation
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This directory is the canonical documentation set for **Auctorail**, a pre-execution authorization layer for autonomous agents.
 
 The project was previously called ProofGate, so some historical schema identifiers, audit artifacts, filenames and the already-deployed `ProofGateVendor` contract still retain the old name. Those are compatibility/provenance details, not a second product.
@@ -98,11 +100,11 @@ The authoritative implementation is `src/telegraph/adaptive-evidence-plan.ts`.
 
 | Tier | Proposed amount | Fraud requirement | Extra Intents | Attempts | Max evidence spend | Overall deadline |
 | --- | --- | --- | --- | ---: | ---: | ---: |
-| LOW | `<= 5 USDC` | 1 distinct positive Miner at `>=0.70` | none | 3 | `0.035 USDC` | **12s** |
+| LOW | `<= 5 USDC` | 1 distinct positive Miner at `>=0.70` | none | 3 | `0.035 USDC` | **20s** |
 | MEDIUM | `>5 to 50 USDC` | 2 distinct positives at `>=0.75` | `ONCHAIN_TX_LOOKUP` | 4 | `0.060 USDC` | `60s` |
 | HIGH | `>50 USDC` | 3 distinct Miners, at least 2 positives at `>=0.80` | `ONCHAIN_TX_LOOKUP` + `WALLET_BALANCE_CHECK` | 5 | `0.100 USDC` | `90s` |
 
-The LOW window used to be documented as `35s`; that is stale. It is now **12 seconds**.
+The LOW window used to be documented as `35s`; that is stale. It is now **20 seconds**.
 
 ### Autonomous execution ceiling
 
@@ -140,11 +142,11 @@ The deployed API path additionally bounds individual Telegraph HTTP calls so one
 
 ### Current validation snapshot
 
-The latest green `main` validation for the redesigned version completed:
+The local verification snapshot (2026-09-07) validation for the redesigned version completed:
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 ```
 
 Deterministic fuzz suites:

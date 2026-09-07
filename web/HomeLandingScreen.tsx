@@ -26,7 +26,7 @@ const GITHUB_URL = "https://github.com/emmy16-glitch/auctorail";
 // Ten attacks, each runnable in the Security Lab. Results mirror the lab's actual outcomes.
 const attacks = [
   { n: "01", id: "attack-permit-replay", name: "PERMIT REPLAY", tries: "Reuses a permit after the authorized action already consumed it", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Consumption guard rejects it. No second execution." },
-  { n: "02", id: "attack-amount-mutation", name: "AMOUNT MUTATION", tries: "Changes 1.00 → 2.00 USDC after authorization", layer: "01 · EXACT ACTION", layerId: "layer-01", result: "Action hash mismatch. Permit verification fails." },
+  { n: "02", id: "attack-amount-mutation", name: "AMOUNT MUTATION", tries: "Changes 1.00 → 100.00 USDC after authorization", layer: "01 · EXACT ACTION", layerId: "layer-01", result: "Action hash mismatch. Permit verification fails." },
   { n: "03", id: "attack-evidence-subject", name: "EVIDENCE SUBJECT SWAP", tries: "Replaces vendor evidence with evidence for another address", layer: "03 · TELEGRAPH EVIDENCE", layerId: "layer-03", result: "Evidence binding mismatch. Authority is rejected." },
   { n: "04", id: "attack-permit-forgery", name: "PERMIT FORGERY", tries: "Alters the signature on an otherwise valid permit", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Signature verification fails." },
   { n: "05", id: "attack-expired-permit", name: "EXPIRED PERMIT", tries: "Attempts execution after the permit TTL", layer: "04 · ONE-USE PERMIT", layerId: "layer-04", result: "Expired authority is rejected." },
@@ -47,7 +47,7 @@ const demos = [
   {
     kicker: "GUIDED DEMO",
     title: "Run the rails yourself",
-    copy: "Four deterministic scenarios: a valid request, a tampered amount, a replayed permit and a held decision.",
+    copy: "Five simulated scenarios: valid request, tampered amount, replay, missing evidence and an exceeded spending limit.",
     checklist: ["Pick a scenario, watch it execute", "Exact failure point shown per attack", "Zero payments · zero API calls"],
     cta: "RUN THE DEMO",
     action: "onDemo" as const
@@ -56,7 +56,7 @@ const demos = [
     kicker: "SECURITY LAB",
     title: "Try to break the rails",
     copy: "Mutate a valid authorization — replay, forge, tamper — and watch the exact boundary where Auctorail stops you.",
-    checklist: ["10 attack scenarios, 10 rails held", "Offline and fully deterministic", "Every block returns a machine code"],
+    checklist: ["13 adversarial checks with observed results", "Offline and fully deterministic", "Every block returns a machine code"],
     cta: "OPEN THE LAB",
     action: "onSecurity" as const
   },
@@ -136,8 +136,8 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
 
       <div className="stats-band">
         <div className="page-inner stats-inner">
-          <div className="stat"><b className="stat-hot">10/10</b><span>attack scenarios contained in lab</span></div>
-          <div className="stat"><b>268</b><span>tests green on every change</span></div>
+          <div className="stat"><b className="stat-hot">13</b><span>offline adversarial checks</span></div>
+          <div className="stat"><b>281</b><span>tests passed · 7 Sep 2026</span></div>
           <div className="stat"><b>7,400</b><span>fuzz cases run against the rails</span></div>
           <div className="stat"><b className="stat-hot">0</b><span>payments without a signed permit</span></div>
         </div>
@@ -229,7 +229,7 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
           <div className="section-head v2">
             <span className="sec-label"><span className="sec-num">02</span><span className="sec-dash">—</span>THE ATTACK MATRIX</span>
             <h2 className="section-title" id="attacks-title">Claims are cheap. Attacks are not.</h2>
-            <p className="section-lede">Ten deterministic attacks are implemented in the Security Lab. Open any case to run the real harness, or run the full suite and inspect the exact boundary that stopped it.</p>
+            <p className="section-lede">Thirteen deterministic checks are implemented in the Security Lab. The matrix below shows ten mutation examples. Open any case to run the real harness, or run the full suite and inspect the exact boundary that stopped it.</p>
           </div>
           <div className="attack-table" role="table" aria-label="Attack matrix">
             <div className="attack-row attack-head" role="row">
@@ -247,8 +247,8 @@ export function HomeLandingScreen(props: HomeLandingScreenProps) {
             ))}
           </div>
           <div className="attack-summary">
-            <span className="mono">10 deterministic attacks. 10 boundaries held. 0 unauthorized protected executions.</span>
-            <button className="btn btn-primary" type="button" onClick={onSecurity}>OPEN LAB · RUN ALL TEN ▸</button>
+            <span className="mono">13 offline checks. Inspect actual outcomes in the Lab.</span>
+            <button className="btn btn-primary" type="button" onClick={onSecurity}>OPEN LAB · RUN ALL CHECKS ▸</button>
           </div>
         </div>
       </section>

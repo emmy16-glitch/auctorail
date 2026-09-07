@@ -2706,3 +2706,9 @@ details.technical .kv { padding: 8px 14px 12px; }
 
 .attack-layer-link{appearance:none;background:none;border:0;padding:0;text-align:left;color:var(--text-2);cursor:pointer;font:inherit;}
 .attack-layer-link:hover{color:var(--text-1);text-decoration:underline;text-underline-offset:3px;}
+
+/* Keep full offline fixture descriptions readable on narrow Lab screens. */
+[data-testid="security-lab-screen"] .demo-request-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

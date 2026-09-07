@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
+import { Ed25519PermitSigner } from "../permit/signer.js";
 import os from "node:os";
 import path from "node:path";
 
@@ -41,10 +43,6 @@ import {
 
 const AGENT =
   "procurement-agent";
-
-const SECRET =
-  "proofgate-attack-lab-secret-" +
-  "x".repeat(64);
 
 const NOW =
   new Date(
@@ -320,6 +318,8 @@ function freshStore(
 
 export async function runAttackLab():
   Promise<AttackLabReport> {
+  // Ephemeral test authority, never the production signer or funded wallet.
+  const signer = new Ed25519PermitSigner(generateKeyPairSync("ed25519").privateKey, "attack-lab-only");
   const mandate =
     buildMandate();
 
@@ -366,7 +366,7 @@ export async function runAttackLab():
       action,
       evidence,
       decision,
-      SECRET,
+      signer,
       {
         now:
           NOW,
@@ -398,8 +398,8 @@ export async function runAttackLab():
         action,
         evidence,
         decision,
-        secret:
-          SECRET,
+        verifier:
+          signer,
         store,
         execute:
           async () => {
@@ -434,8 +434,8 @@ export async function runAttackLab():
         action,
         evidence,
         decision,
-        secret:
-          SECRET,
+        verifier:
+          signer,
         store,
         execute:
           async () => {
@@ -478,7 +478,7 @@ export async function runAttackLab():
   {
     const mutated =
       buildAction(
-        "2000000"
+        "100000000"
       );
 
     const verification =
@@ -488,7 +488,7 @@ export async function runAttackLab():
         mutated,
         evidence,
         decision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -501,7 +501,7 @@ export async function runAttackLab():
     results.push(
       scenario(
         "amount_mutation",
-        "Change 1 USDC to 2 USDC after authorization.",
+        "Change 1 USDC to 100 USDC after authorization.",
         "action_hash_mismatch",
         verification.code
       )
@@ -523,7 +523,7 @@ export async function runAttackLab():
         action,
         tamperedEvidence,
         decision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -562,7 +562,7 @@ export async function runAttackLab():
         action,
         evidence,
         decision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -575,7 +575,7 @@ export async function runAttackLab():
     results.push(
       scenario(
         "permit_forgery",
-        "Forge the HMAC permit signature.",
+        "Forge the Ed25519 permit signature.",
         "invalid_permit_signature",
         verification.code
       )
@@ -591,7 +591,7 @@ export async function runAttackLab():
         action,
         evidence,
         decision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -627,7 +627,7 @@ export async function runAttackLab():
         action,
         evidence,
         tamperedDecision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -661,7 +661,7 @@ export async function runAttackLab():
         action,
         evidence,
         decision,
-        SECRET,
+        signer,
         {
           now:
             new Date(
@@ -818,6 +818,35 @@ export async function runAttackLab():
         )
       )
     );
+  }
+
+  // Policy failures use the real engine and explicitly attempt permit issuance.
+  const recipientAction = createActionContract({
+    ...action.payload, chainId: 84532, type: "payment", destination: OTHER_VENDOR,
+    policyId: action.policyId
+  });
+  const expiredMandate = createMandateContract({
+    ...mandate, expiresAt: NOW.toISOString()
+  });
+  for (const input of [
+    { id: "recipient_mutation", attack: "Replace the delegated vendor with an attacker wallet.",
+      mandate, action: recipientAction, evidence, expected: "BLOCK:mandate_destination_violation:no_permit" },
+    { id: "expired_permission", attack: "Request authority after the mandate expires.",
+      mandate: expiredMandate, action, evidence, expected: "BLOCK:mandate_expired:no_permit" },
+    { id: "missing_evidence", attack: "Remove required Telegraph evidence.",
+      mandate, action, evidence: null, expected: "HOLD:telegraph_evidence:no_permit" }
+  ]) {
+    const denied = evaluatePaymentsAttestedVendorV1(input.mandate, input.action, input.evidence, attestation, { agentId: AGENT, now: NOW });
+    let issuance = "permit_issued";
+    try {
+      // Even supplying the original bound fixture cannot turn a denied
+      // decision into authority: minting must reject the decision first.
+      mintPermit(input.mandate, input.action, input.evidence ?? evidence, denied, signer, { now: NOW });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "decision_not_allow") throw error;
+      issuance = "no_permit";
+    }
+    results.push(scenario(input.id, input.attack, input.expected, `${denied.decision}:${denied.reason}:${issuance}`));
   }
 
   const baseline =

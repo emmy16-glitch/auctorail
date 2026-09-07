@@ -162,7 +162,7 @@ Evidence acquisition through x402 is itself a side effect and must be bounded.
 
 The maximum overall time available for evidence acquisition.
 
-The current LOW-risk payment deadline is 12 seconds.
+The current LOW-risk payment deadline is 20 seconds.
 
 ## x402
 

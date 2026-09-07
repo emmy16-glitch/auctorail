@@ -1,5 +1,7 @@
 # Auctorail Telegraph-track architecture
 
+> Historical record: preserve the results below as recorded. For current runtime, evidence deadlines, deployment boundaries and verification, see [current status](CURRENT_STATUS.md).
+
 This document explains how Auctorail uses Telegraph within the authorization architecture and records the evolution from the earlier ProofGate hackathon design to the current Auctorail implementation.
 
 It is partly historical, but the current-state sections are aligned with `main`.

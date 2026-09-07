@@ -40,7 +40,7 @@ External evidence providers should not be able to leave an authorization request
 Current adaptive deadlines:
 
 ```text
-LOW:     12 seconds
+LOW:     20 seconds
 MEDIUM:  60 seconds
 HIGH:    90 seconds
 ```
@@ -229,7 +229,7 @@ For a `<=5 USDC` adaptive payment:
 ```text
 max fraud attempts:  3
 max evidence spend:  0.035 USDC
-overall deadline:    12 seconds
+overall deadline:    20 seconds
 positive confidence: 0.70
 ```
 
@@ -348,7 +348,7 @@ Current tests/fuzzing cover resilience-related families including:
 Current overall validation:
 
 ```text
-268 / 268 tests
+281 / 281 tests
 7400 / 7400 deterministic adversarial cases contained
 ```
 

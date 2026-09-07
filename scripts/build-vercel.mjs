@@ -182,6 +182,14 @@ cpSync(
   { recursive: true }
 );
 
+// The offline Security Lab verifies the pinned vendor runtime from this
+// public artifact. Serverless functions cannot read the repository checkout.
+cpSync(
+  join(root, "artifacts", "vendor"),
+  join(utilityFunction, "artifacts", "vendor"),
+  { recursive: true }
+);
+
 writeFileSync(
   join(output, "config.json"),
   JSON.stringify(

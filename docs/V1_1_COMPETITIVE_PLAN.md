@@ -1,5 +1,7 @@
 # Auctorail v1.1 competitive plan — historical record
 
+> Historical record: preserve the results below as recorded. For current runtime, evidence deadlines, deployment boundaries and verification, see [current status](CURRENT_STATUS.md).
+
 > **Status: HISTORICAL.** This document records the product/security thinking that shaped an earlier ProofGate/Auctorail milestone. It is retained for project history. For current architecture, thresholds, validation counts and product positioning, use `../README.md`, `PRODUCT_STORY.md`, `ARCHITECTURE.md` and `RISK_POLICY.md`.
 
 ## Why preserve this document

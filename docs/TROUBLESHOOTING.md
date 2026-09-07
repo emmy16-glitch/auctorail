@@ -26,7 +26,7 @@ A failure at stage 3 is fundamentally different from a failure at stage 5 or 10.
 
 ### Expected current behavior
 
-The current LOW-risk evidence plan has a **12-second overall evidence window**. The deployed API also bounds individual Telegraph HTTP calls so one upstream request should not occupy the entire authorization lifecycle indefinitely.
+The current LOW-risk evidence plan has a **20-second overall evidence window**. The deployed API also bounds individual Telegraph HTTP calls so one upstream request should not occupy the entire authorization lifecycle indefinitely.
 
 If a LOW-risk live request cannot obtain usable evidence within the bounded window, the correct result is normally `HOLD`.
 
@@ -356,8 +356,8 @@ Public UI/product copy should say **Auctorail**. Stable protocol/deployment iden
 Current validated suite:
 
 ```text
-53 test files
-268 tests
+54 test files
+281 tests
 ```
 
 Current deterministic fuzz total:
@@ -366,7 +366,7 @@ Current deterministic fuzz total:
 7400 adversarial cases
 ```
 
-If older historical artifacts say 120, 225, or other counts, use their date/revision context. Current maintained docs should use the latest green `main` result.
+If older historical artifacts say 120, 225, or other counts, use their date/revision context. Current maintained docs should use the local verification snapshot (2026-09-07) result.
 
 ## Historical audit report disagrees with current status
 

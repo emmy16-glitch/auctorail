@@ -271,7 +271,7 @@ Quorum must be reached inside the frozen acquisition envelope.
 Current payment defaults:
 
 ```text
-LOW:     3 fraud attempts, 0.035 USDC, 12s
+LOW:     3 fraud attempts, 0.035 USDC, 20s
 MEDIUM:  4 fraud attempts, 0.060 USDC, 60s
 HIGH:    5 fraud attempts, 0.100 USDC, 90s
 ```
@@ -325,7 +325,7 @@ The adaptive/quorum fuzz harness currently contains:
 The complete current validation snapshot is:
 
 ```text
-268 / 268 tests
+281 / 281 tests
 7400 / 7400 total deterministic adversarial cases contained
 0 unauthorized executions / authorizations in the fuzz suites
 ```

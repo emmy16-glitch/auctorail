@@ -1,5 +1,7 @@
 # Auctorail hackathon demo playbook
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This is the judge-facing demonstration script for Auctorail.
 
 The goal is not to show every feature. The goal is to make one security idea unforgettable:
@@ -143,7 +145,7 @@ Base Sepolia 84532
 confidence >= 0.70
 signal hash required
 bounded attempts/spend
-12-second evidence window
+20-second evidence window
 ```
 
 Mention that the shorter bounded window prevents an unavailable upstream Miner from leaving the product hanging indefinitely.
@@ -220,7 +222,7 @@ Do not inflate those counts with deterministic demo/test activity.
 
 ### Do not wait 30+ seconds on a spinner
 
-The current LOW evidence window is 12 seconds, not 35 seconds.
+The current LOW evidence window is 20 seconds, not 35 seconds.
 
 If a live Miner route is unavailable, the request should fail closed as `HOLD`. Do not make a judge watch repeated live retries just to prove the system is “real.”
 
@@ -350,7 +352,7 @@ Before recording/presenting:
 - [ ] confirm live mode is clearly distinguished from deterministic demo;
 - [ ] do not expose private keys or secret environment values;
 - [ ] if live mode is used, confirm burner wallet/evidence budget first;
-- [ ] know the current LOW deadline is 12 seconds;
+- [ ] know the current LOW deadline is 20 seconds;
 - [ ] use the exact public transaction/evidence facts from `LIVE_EXECUTION.md`.
 
 ## Final demo principle

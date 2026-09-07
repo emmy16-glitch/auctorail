@@ -39,8 +39,8 @@ Use these instead:
 Current product name:          Auctorail
 Current repository:            emmy16-glitch/auctorail
 Current Node baseline:         >=24.15.0
-Current LOW evidence deadline: 12 seconds
-Current tests:                 268 / 268 in latest green snapshot
+Current LOW evidence deadline: 20 seconds
+Current tests:                 281 / 281 in latest green snapshot
 Current fuzz total:            7400 / 7400 deterministic cases contained
 ```
 

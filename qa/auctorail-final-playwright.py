@@ -20,13 +20,16 @@ SECURITY_REPORT = {
     "mode": "OFFLINE_DETERMINISTIC",
     "policyId": "payments.attested-vendor.v1",
     "baselineDecision": "ALLOW",
-    "passed": 10,
-    "total": 10,
+    "passed": 13,
+    "total": 13,
     "allPassed": True,
     "scenarios": [
+        {"id": "recipient_mutation", "attack": "Recipient mutation", "expected": "BLOCK:mandate_destination_violation:no_permit", "observed": "BLOCK:mandate_destination_violation:no_permit", "passed": True},
+        {"id": "expired_permission", "attack": "Expired permission", "expected": "BLOCK:mandate_expired:no_permit", "observed": "BLOCK:mandate_expired:no_permit", "passed": True},
+        {"id": "missing_evidence", "attack": "Missing evidence", "expected": "HOLD:telegraph_evidence:no_permit", "observed": "HOLD:telegraph_evidence:no_permit", "passed": True},
         {"id": "baseline", "attack": "Valid exact permit/action executes once.", "expected": "EXECUTED:1", "observed": "EXECUTED:1", "passed": True},
         {"id": "permit_replay", "attack": "Replay a consumed permit.", "expected": "permit_already_consumed:1", "observed": "permit_already_consumed:1", "passed": True},
-        {"id": "amount_mutation", "attack": "Change 1 USDC to 2 USDC after authorization.", "expected": "action_hash_mismatch", "observed": "action_hash_mismatch", "passed": True},
+        {"id": "amount_mutation", "attack": "Change 1 USDC to 100 USDC after authorization.", "expected": "action_hash_mismatch", "observed": "action_hash_mismatch", "passed": True},
         {"id": "evidence_subject_swap", "attack": "Replace exact vendor evidence with evidence for another address.", "expected": "evidence_binding_mismatch", "observed": "evidence_binding_mismatch", "passed": True},
         {"id": "permit_forgery", "attack": "Forge the permit signature.", "expected": "invalid_permit_signature", "observed": "invalid_permit_signature", "passed": True},
         {"id": "expired_permit", "attack": "Use a permit after its TTL.", "expected": "permit_expired", "observed": "permit_expired", "passed": True},
@@ -241,7 +244,7 @@ async def security_lab(browser, width, height, suffix):
     await expect(lab.get_by_text("action_hash_mismatch", exact=True).first).to_be_visible()
     await lab.get_by_role("button", name="RUN SUITE", exact=False).click()
     await expect(lab.get_by_text("RAIL HELD", exact=True)).to_be_visible(timeout=3000)
-    await expect(lab.get_by_text("10/10", exact=True)).to_be_visible()
+    await expect(lab.get_by_text("13/13", exact=True)).to_be_visible()
     await no_overflow(page, f"Security Lab {width}px")
     await page.screenshot(path=str(ARTIFACTS / f"auctorail-security-lab-{suffix}.png"), full_page=True)
     assert "FORBIDDEN-LIVE-CALL" not in external_calls, external_calls

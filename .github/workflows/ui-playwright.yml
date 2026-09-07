@@ -88,10 +88,12 @@ jobs:
           fi
 
           # Historical schema identifier is intentionally stable across the rename.
-          node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("/tmp/security-lab.json","utf8"));if(r.schemaVersion!=="proofgate.attack-lab.v1"||r.allPassed!==true||r.total!==10)process.exit(1)'
+          node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("/tmp/security-lab.json","utf8"));if(r.schemaVersion!=="proofgate.attack-lab.v1"||r.allPassed!==true||r.total!==13)process.exit(1)'
 
       - name: Run final landing, demo, live, SDK and Security Lab audit
-        run: python qa/auctorail-final-playwright.py
+        run: |
+          python qa/auctorail-final-playwright.py
+          python qa/security-lab-polish-playwright.py
 
       - name: Upload Auctorail UI screenshots
         if: always()

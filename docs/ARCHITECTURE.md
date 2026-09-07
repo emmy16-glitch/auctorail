@@ -1,5 +1,7 @@
 # Auctorail architecture
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document describes the current Auctorail architecture, trust boundaries, authorization lifecycle, evidence acquisition path, permit model and protected execution flow.
 
 Auctorail is a **pre-execution authorization rail for autonomous agents**. Its purpose is to keep the authority to cause external effects outside the agent's direct control.
@@ -351,7 +353,7 @@ The canonical historical Refut result demonstrates that the lane has worked, but
 
 ## Auto-route and corroboration
 
-The first attempt can use Telegraph's ranked auto-route.
+The current LOW first attempt selects Refut through Telegraph's direct route; bounded fallback can use the ranked automatic route. Higher-tier routing follows its evidence plan.
 
 When policy requires additional distinct providers, Auctorail can target another ranked unused Miner for corroboration.
 
@@ -395,7 +397,7 @@ Current defaults:
 
 | Tier | Max spend | Deadline |
 | --- | ---: | ---: |
-| LOW | `0.035 USDC` | **12s** |
+| LOW | `0.035 USDC` | **20s** |
 | MEDIUM | `0.060 USDC` | `60s` |
 | HIGH | `0.100 USDC` | `90s` |
 
@@ -523,11 +525,11 @@ The architecture is intended to maintain:
 
 ## Current validation
 
-Latest green `main`:
+Local verification snapshot (2026-09-07):
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 7400 / 7400 deterministic adversarial fuzz cases contained
 0 unauthorized executions / authorizations in those fuzz suites
 0 production dependency vulnerabilities reported by npm audit

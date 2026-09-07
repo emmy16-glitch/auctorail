@@ -158,7 +158,7 @@ positive results:    1
 confidence:          >= 0.70
 max fraud attempts:  3
 max evidence spend:  0.035 USDC
-overall deadline:    12 seconds
+overall deadline:    20 seconds
 ```
 
 The historical real artifact remains useful proof of the lane, but **current runtime authorization still evaluates current action/evidence**. A historical success is never hard-coded as permanent permission.

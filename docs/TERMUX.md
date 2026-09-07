@@ -119,8 +119,8 @@ npm run ci
 Current expected validated suite:
 
 ```text
-53 test files
-268 tests
+54 test files
+281 tests
 ```
 
 ## Security fuzz suites
@@ -185,7 +185,7 @@ Intent:               FRAUD_DETECTION
 confidence floor:     0.70
 max fraud attempts:   3
 max evidence spend:   0.035 USDC
-overall deadline:     12 seconds
+overall deadline:     20 seconds
 ```
 
 If evidence does not meet the requirements, `HOLD` is expected fail-closed behavior.
@@ -278,7 +278,7 @@ The exact root response may be application-specific; the important question is w
 
 ## If live authorization takes too long
 
-Current LOW overall evidence window is 12 seconds.
+Current LOW overall evidence window is 20 seconds.
 
 If a deployed/local path waits much longer:
 

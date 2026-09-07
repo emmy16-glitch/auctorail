@@ -1,5 +1,7 @@
 # Auctorail locked decisions and design record
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This file records important product/security decisions that should not be casually changed because they define the trust model.
 
 Some decisions originated when the project was named ProofGate. The current product name is **Auctorail**. Historical protocol identifiers are preserved where compatibility/provenance requires it.
@@ -105,7 +107,7 @@ MEDIUM  > 5 to 50 USDC
 HIGH    > 50 USDC
 ```
 
-Current LOW deadline is **12 seconds**, not the older 35-second value.
+Current LOW deadline is **20 seconds**, not the older 35-second value.
 
 ## D11 — Stronger evidence cannot bypass execution ceiling
 
@@ -140,7 +142,7 @@ HIGH    0.100 USDC
 Current overall deadlines:
 
 ```text
-LOW     12s
+LOW     20s
 MEDIUM  60s
 HIGH    90s
 ```

@@ -1,5 +1,7 @@
 # Auctorail product story
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document explains Auctorail in the clearest possible product language. It is intended for judges, reviewers, collaborators, press/social posts, demo preparation and anyone who needs to understand the value before reading the architecture.
 
 ## The problem

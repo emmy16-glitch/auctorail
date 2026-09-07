@@ -1,5 +1,7 @@
 # Auctorail responsive UI and browser QA notes
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document records the responsive-layout rules for the current redesigned Auctorail web product.
 
 The UI is not the authorization security boundary, but poor responsive behavior can make technical results unreadable, hide important decision states, or make the product look broken during a demo.

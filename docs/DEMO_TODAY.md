@@ -1,5 +1,7 @@
 # Auctorail demo-day operating guide
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This is the practical checklist to use immediately before recording, presenting, or submitting Auctorail.
 
 It is intentionally operational. For the narrative, read `HACKATHON_DEMO.md`. For architecture, read `ARCHITECTURE.md`.
@@ -53,8 +55,8 @@ npm run security:fuzz:general
 Current expected green validation snapshot:
 
 ```text
-53 test files
-268 / 268 tests
+54 test files
+281 / 281 tests
 7400 deterministic adversarial cases contained
 0 unauthorized executions / authorizations in fuzz suites
 0 production dependency vulnerabilities reported
@@ -161,7 +163,7 @@ Intent:               FRAUD_DETECTION
 confidence floor:     0.70
 max attempts:         3
 max evidence spend:   0.035 USDC
-overall deadline:     12 seconds
+overall deadline:     20 seconds
 ```
 
 The deployed API also bounds individual Telegraph HTTP calls.
@@ -213,7 +215,7 @@ You can say:
 - Permit replay is rejected.
 - The repository contains genuine Telegraph/x402 payment evidence.
 - The repository contains one protected Base Sepolia USDC execution.
-- Current deterministic validation has 268 passing tests and 7400 adversarial fuzz cases contained.
+- Current deterministic validation has 281 passing tests and 7400 adversarial fuzz cases contained.
 
 ## Claims to avoid
 
@@ -338,7 +340,7 @@ For an X post:
 - [ ] Verify/public proof accessible;
 - [ ] no secret values visible;
 - [ ] live wallet/budget checked if using live mode;
-- [ ] know the current LOW deadline is 12s;
+- [ ] know the current LOW deadline is 20s;
 - [ ] know the exact canonical transaction facts;
 - [ ] narration rehearsed once;
 - [ ] fallback plan ready.

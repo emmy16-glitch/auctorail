@@ -36,10 +36,13 @@ type AttackPreset = {
 };
 
 const PRESETS: AttackPreset[] = [
-  { id: "amount_mutation", category: "action", label: "Modify payment amount", description: "Change the payment amount after a valid authorization has been created.", original: "1.00 USDC", mutated: "2.00 USDC", boundary: "Action Binding", stoppedAt: "Permit validation" },
+  { id: "recipient_mutation", category: "action", label: "Change payment recipient", description: "Request payment to a wallet the principal never delegated.", original: "Approved Vendor", mutated: "Attacker wallet", boundary: "Permission", stoppedAt: "Recipient delegation" },
+  { id: "expired_permission", category: "permit", label: "Use expired permission", description: "Request authority after the principal's permission expires.", original: "Active permission", mutated: "Expired permission", boundary: "Permission", stoppedAt: "Mandate expiry" },
+  { id: "missing_evidence", category: "evidence", label: "Remove required evidence", description: "Missing evidence must produce HOLD and no permit.", original: "Bound evidence", mutated: "No evidence", boundary: "Evidence", stoppedAt: "Policy evaluation" },
+  { id: "amount_mutation", category: "action", label: "Modify payment amount", description: "Change the payment amount after a valid authorization has been created.", original: "1.00 USDC", mutated: "100.00 USDC", boundary: "Action Binding", stoppedAt: "Permit validation" },
   { id: "mandate_substitution", category: "action", label: "Change mandate version", description: "Rebind the permit to a different mandate version after authorization.", original: "Mandate v1", mutated: "Mandate v2", boundary: "Action Binding", stoppedAt: "Permit validation" },
   { id: "permit_replay", category: "permit", label: "Replay consumed permit", description: "Reuse a permit after the authorized action has already consumed it.", original: "Fresh permit", mutated: "Consumed permit", boundary: "Permit", stoppedAt: "Consumption guard" },
-  { id: "permit_forgery", category: "permit", label: "Forge permit signature", description: "Alter the HMAC signature on an otherwise valid permit.", original: "Valid signature", mutated: "Forged signature", boundary: "Permit", stoppedAt: "Signature verification" },
+  { id: "permit_forgery", category: "permit", label: "Forge permit signature", description: "Alter the Ed25519 signature on an otherwise valid permit.", original: "Valid signature", mutated: "Forged signature", boundary: "Permit", stoppedAt: "Signature verification" },
   { id: "expired_permit", category: "permit", label: "Use expired permit", description: "Attempt execution after the permit's 30-second TTL.", original: "Within 30s TTL", mutated: "31s after mint", boundary: "Permit", stoppedAt: "Expiry validation" },
   { id: "decision_tamper", category: "permit", label: "Tamper authorization decision", description: "Alter the authorization decision after the permit has been minted.", original: "Original decision hash", mutated: "Modified decision reason", boundary: "Permit", stoppedAt: "Decision binding" },
   { id: "evidence_subject_swap", category: "evidence", label: "Swap evidence subject", description: "Replace vendor evidence with evidence bound to another address.", original: "Auctorail Vendor", mutated: "Different vendor", boundary: "Evidence", stoppedAt: "Evidence binding" },
@@ -51,6 +54,13 @@ const PRESETS: AttackPreset[] = [
 const CATEGORY_TAG: Record<Category, string> = {
   action: "ACTION BINDING", permit: "PERMIT", evidence: "EVIDENCE", receipt: "RECEIPT"
 };
+
+function resultLabel(result: SecurityLabScenario): string {
+  if (!result.passed) return "FAILED";
+  if (result.id === "missing_evidence") return "HOLD";
+  if (result.id === "receipt_tamper") return "TAMPER DETECTED";
+  return "BLOCKED";
+}
 
 function nowLabel() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
@@ -69,13 +79,36 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
   const cancelRef = useRef(0);
   const selected = PRESETS.find((item) => item.id === presetId) ?? PRESETS[0];
 
-  useEffect(() => () => { cancelRef.current += 1; }, []);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { cancelRef.current += 1; requestRef.current?.abort(); }, []);
 
   async function fetchReport(): Promise<SecurityLabReport> {
-    const response = await fetch(`${apiBase}/api/security-lab`, { method: "POST" });
-    const body = await response.json() as SecurityLabReport & { error?: string };
-    if (!response.ok) throw new Error(body.error ?? "security_lab_failed");
-    return body;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(`${apiBase}/api/security-lab`, { method: "POST", signal: controller.signal });
+      const body = await response.json() as SecurityLabReport & { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "security_lab_failed");
+      if (body.schemaVersion !== "proofgate.attack-lab.v1" || body.mode !== "OFFLINE_DETERMINISTIC" ||
+          !Array.isArray(body.scenarios) || body.scenarios.length === 0 ||
+          body.scenarios.some(item => !item || typeof item.id !== "string" || typeof item.observed !== "string" || typeof item.expected !== "string" || typeof item.attack !== "string" || typeof item.passed !== "boolean" || item.passed !== (item.expected === item.observed)) ||
+          new Set(body.scenarios.map(item => item.id)).size !== body.scenarios.length ||
+          PRESETS.some(preset => !body.scenarios.some(item => item.id === preset.id))) {
+        throw new Error("security_lab_invalid_report");
+      }
+      const attacks = body.scenarios.filter(item => item.id !== "baseline");
+      const passed = attacks.filter(item => item.passed).length;
+      const allPassed = body.baselineDecision === "ALLOW" && body.scenarios.find(item => item.id === "baseline")?.passed === true && passed === attacks.length;
+      if (body.total !== attacks.length || body.passed !== passed || body.allPassed !== allPassed) throw new Error("security_lab_invalid_report");
+      return body;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("Security Lab timed out. Please retry.");
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestRef.current === controller) requestRef.current = null;
+    }
   }
 
   function animateLines(lines: LogLine[], stepMs: number, onDone: () => void) {
@@ -90,26 +123,26 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
       setLogStep(i);
       setLogLines(lines.slice(0, i));
       if (i < lines.length) window.setTimeout(tick, stepMs);
-      else window.setTimeout(onDone, 420);
+      else window.setTimeout(() => { if (token === cancelRef.current) onDone(); }, 420);
     };
     window.setTimeout(tick, 120);
   }
 
   async function runSuite() {
     if (running) return;
-    setRunning("suite"); setError(null); setFinishedRun(null);
+    setRunning("suite"); setError(null); setFinishedRun(null); setReport(null); setLogLines([]);
     try {
       const body = await fetchReport();
       setReport(body);
       const attacks = body.scenarios.filter((item) => item.id !== "baseline");
       const lines: LogLine[] = [
-        { t: "+0.0s", text: `suite --all ${attacks.length} --network base-sepolia --harness`, tone: "info", cmd: true },
+        { t: "01", text: `suite --all ${attacks.length} --offline --harness`, tone: "info", cmd: true },
         ...attacks.map((item, index) => ({
-          t: `+${(0.25 + (index + 1) * 0.18).toFixed(2)}s`,
-          text: `[${index + 1}/${attacks.length}] ${item.id} — ${item.passed ? "BLOCKED" : "FAILED"} (${item.observed})`,
+          t: String(index + 2).padStart(2, "0"),
+          text: `[${index + 1}/${attacks.length}] ${item.id} — ${resultLabel(item)} (${item.observed})`,
           tone: (item.passed ? "ok" : "bad") as StepTone
         })),
-        { t: `+${(0.25 + (attacks.length + 1) * 0.18).toFixed(2)}s`, text: `${body.passed}/${body.total} boundaries held — RAIL HELD`, tone: "ok" }
+        { t: String(attacks.length + 2).padStart(2, "0"), text: `${body.passed}/${body.total} checks passed — ${body.allPassed ? "RAIL HELD" : "BOUNDARY FAILED"}`, tone: body.allPassed ? "ok" : "bad" }
       ];
       animateLines(lines, 125, () => { setRunning(null); setFinishedRun({ kind: "suite", time: nowLabel() }); });
     } catch (caught) {
@@ -129,20 +162,20 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
   }, [finishedRun, report, selected]);
 
   async function runSingleFor(preset: AttackPreset) {
-    setPresetId(preset.id);
     if (running) return;
-    setRunning("single"); setError(null); setFinishedRun(null);
+    setPresetId(preset.id);
+    setRunning("single"); setError(null); setFinishedRun(null); setReport(null); setLogLines([]);
     try {
       const body = await fetchReport();
       const result = body.scenarios.find((item) => item.id === preset.id);
       if (!result) throw new Error("attack_scenario_missing");
       setReport(body);
       const lines: LogLine[] = [
-        { t: "+0.0s", text: `attack --id ${preset.id} --network base-sepolia --harness`, tone: "info", cmd: true },
-        { t: "+0.2s", text: "baseline loaded — deterministic authorization (ALLOW)", tone: "info" },
-        { t: "+0.5s", text: `mutation applied — ${preset.original} → ${preset.mutated}`, tone: "warn" },
-        { t: "+0.8s", text: `${preset.boundary.toLowerCase()} recheck — ${result.observed}`, tone: "bad" },
-        { t: "+1.1s", text: `boundary held at ${preset.stoppedAt.toLowerCase()} — no execution authority accepted`, tone: "ok" }
+        { t: "01", text: `attack --id ${preset.id} --offline --harness`, tone: "info", cmd: true },
+        { t: "02", text: `baseline loaded — deterministic authorization (${body.baselineDecision})`, tone: "info" },
+        { t: "03", text: `mutation applied — ${preset.original} → ${preset.mutated}`, tone: "warn" },
+        { t: "04", text: `${preset.boundary.toLowerCase()} recheck — ${result.observed}`, tone: "bad" },
+        { t: "05", text: result.passed ? `expected check passed — ${resultLabel(result)} (${result.observed})` : `BOUNDARY FAILED — expected ${result.expected}`, tone: result.passed ? "ok" : "bad" }
       ];
       animateLines(lines, 240, () => { setRunning(null); setFinishedRun({ kind: "single", time: nowLabel() }); });
     } catch (caught) {
@@ -160,7 +193,7 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         <div>
           <span className="eyebrow">SECURITY LAB · DETERMINISTIC</span>
           <h1>Try to break Auctorail.</h1>
-          <p className="lab-lede">Pick an attack and the lab runs it — or run the full suite and watch every boundary hold automatically. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
+          <p className="lab-lede">Pick an attack and the lab runs it — or run the full suite and inspect every observed result. This lab proves enforcement boundaries without pretending to be a live Miner run.</p>
         </div>
         <div className="note">
           <span style={{ fontSize: 20, color: "var(--accent)", display: "grid", placeItems: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: 8 }} aria-hidden="true">△</span>
@@ -222,11 +255,11 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
             {finishedRun?.kind === "single" && lastResult ? (
               <>
                 <div className={`verdict-display ${lastResult.passed ? "rose" : "yellow"}`}>
-                  {lastResult.passed ? "ATTACK BLOCKED" : "BOUNDARY FAILED"}
+                  {lastResult.passed ? (lastResult.id === "missing_evidence" ? "HOLD · NO PERMIT" : lastResult.id === "receipt_tamper" ? "TAMPER DETECTED" : "ATTACK BLOCKED") : "BOUNDARY FAILED"}
                 </div>
                 <p className="verdict-copy" style={{ margin: 0 }}>
                   {lastResult.passed
-                    ? `Auctorail stopped this mutated request before protected execution. The rail held at ${selected.stoppedAt.toLowerCase()}.`
+                    ? `The ${selected.stoppedAt.toLowerCase()} check returned the expected result. ${lastResult.id === "receipt_tamper" ? "The altered simulated receipt failed integrity verification." : lastResult.id === "missing_evidence" ? "Required evidence is missing; no permit was issued." : "No unauthorized effect was accepted by this offline check."}`
                     : "The expected security boundary did not hold — inspect the trace."}
                 </p>
                 <div className="kv" style={{ marginTop: 14, maxWidth: 560 }}>
@@ -239,10 +272,10 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
               </>
             ) : finishedRun?.kind === "suite" && report ? (
               <>
-                <div className="verdict-display mint"><span>RAIL HELD</span> <span className="verdict-count">{report.passed}/{report.total}</span></div>
+                <div className={`verdict-display ${report.allPassed ? "mint" : "yellow"}`}><span>{report.allPassed ? "RAIL HELD" : "BOUNDARY FAILED"}</span> <span className="verdict-count">{report.passed}/{report.total}</span></div>
                 <p className="verdict-copy" style={{ margin: 0 }}>
                   {report.allPassed
-                    ? "Every deterministic attack was rejected by its expected security boundary. The authorization rail held under all ten mutations."
+                    ? `All ${report.total} deterministic checks returned their expected result, including fail-closed HOLD and receipt integrity.`
                     : "The full suite did not hold — review the scenario report below."}
                 </p>
               </>
@@ -266,7 +299,7 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
                 {recent.map((item) => (
                   <div key={item.id}>
                     <span>{item.attack}</span>
-                    <b className={item.passed ? "ok" : "fail"}>{item.passed ? "BLOCKED" : "FAILED"}</b>
+                    <b className={item.passed ? "ok" : "fail"}>{resultLabel(item)}</b>
                   </div>
                 ))}
               </div>
@@ -277,7 +310,7 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
         <aside aria-label="Attack details">
           <div className="demo-request-panel">
             <div className="drp-title"><strong>MUTATION · {CATEGORY_TAG[selected.category]}</strong></div>
-            <pre>{`authorized : ${selected.original}\nmutated    : ${selected.mutated}\nrecipient  : Auctorail Vendor\nmandate    : INV-4471\nwindow     : 1 hour`}</pre>
+            <pre>{`authorized : ${selected.original}\nmutated    : ${selected.mutated}\nfixture    : offline attested-vendor policy\npermit TTL : 30 seconds`}</pre>
             <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
               <span className="mono" style={{ fontSize: 11.5, color: "var(--text-3)" }}>BOUNDARY&nbsp;&nbsp;&nbsp;{selected.boundary}</span>
               <span className="mono" style={{ fontSize: 11.5, color: "var(--text-3)" }}>STOPPED AT&nbsp;{selected.stoppedAt}</span>
@@ -286,9 +319,9 @@ export function SecurityLabScreen({ apiBase }: SecurityLabScreenProps) {
           <div className="demo-result-panel">
             <span className="eyebrow" style={{ display: "block", marginBottom: 6 }}>SUITE SCORE</span>
             <div className={`drp-result ${suiteScore ? (report?.allPassed ? "mint" : "rose") : ""}`}>
-              {report ? (suiteScore ? `RAIL HELD ${report.passed}/${report.total}` : `${report.passed}/${report.total} · AWAITING SUITE`) : "AWAITING RUN"}
+              {report ? (suiteScore ? `${report.allPassed ? "RAIL HELD" : "BOUNDARY FAILED"} ${report.passed}/${report.total}` : `${report.passed}/${report.total} · AWAITING SUITE`) : "AWAITING RUN"}
             </div>
-            <small>{report?.allPassed ? "Every attack was rejected by the expected security boundary." : "Run the suite to verify every invariant."}</small>
+            <small>{report?.allPassed ? "Every check returned its expected result." : "Run the suite to verify every invariant."}</small>
           </div>
         </aside>
       </div>

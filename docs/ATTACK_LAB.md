@@ -52,11 +52,11 @@ This keeps adversarial validation repeatable and avoids spending funds to test e
 
 ## Current validation snapshot
 
-Latest green `main`:
+Local verification snapshot (2026-09-07):
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 ```
 
 Fuzz suites:
@@ -231,7 +231,7 @@ Increase the maximum evidence window beyond the frozen plan.
 
 Expected: rejected.
 
-This test is especially important after the current LOW deadline changed from 35 seconds to **12 seconds**.
+This test is especially important after the current LOW deadline changed from 35 seconds to **20 seconds**.
 
 ### Duplicate-Miner Sybil count
 
@@ -410,3 +410,19 @@ The expected answer should be no.
 ## Final adversarial-testing principle
 
 **Auctorail's security value is visible when changing one protected semantic breaks the old authorization. The system should fail closed around uncertainty, reject replay, and never allow evidence or client input to expand principal authority.**
+
+## Public Security Lab scenarios
+
+The server returns 13 adversarial checks plus a valid one-execution baseline. It uses the actual attested-vendor policy and permit verifier with offline evidence and an ephemeral Ed25519 key. The live payment lane uses the adaptive policy; this harness does not claim to reproduce live Miner availability.
+
+| Scenario | Observed engine result | Interpretation |
+| --- | --- | --- |
+| Replay | `permit_already_consumed:1` | Second execution refused; callback ran once. |
+| Amount 1 → 100 USDC | `action_hash_mismatch` | Exact authorized amount changed. |
+| Recipient mutation | `BLOCK:mandate_destination_violation:no_permit` | Recipient not delegated. |
+| Expired permission | `BLOCK:mandate_expired:no_permit` | Principal's mandate expired. |
+| Missing evidence | `HOLD:telegraph_evidence:no_permit` | Evidence unavailable; minting rejected. |
+
+Other checks cover forged signatures, permit expiry, decision tampering, mandate substitution, evidence subject swap, negative Miner verdict, runtime attestation tampering and receipt integrity. The last detects an altered simulated receipt; it is not proof of preventing an already completed payment.
+
+Production packaging includes `artifacts/vendor/ProofGateVendor.json`. `npm run verify:package` copies the utility function outside the checkout and invokes its real HTTP handler under `NODE_ENV=production`, so missing files and signer restrictions cannot hide behind browser mocks.

@@ -1,5 +1,7 @@
 # Auctorail judging-criteria evidence map
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document maps Auctorail's strongest implemented and publicly verifiable evidence to the kinds of criteria commonly used in the Telegraph hackathon: usefulness, real Telegraph integration, technical depth, security/robustness, product quality, originality and completeness.
 
 It is written to help reviewers find evidence quickly without relying on marketing language.
@@ -167,8 +169,8 @@ Security invariants include:
 ### Current deterministic validation
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 ```
 
 Fuzz suites:

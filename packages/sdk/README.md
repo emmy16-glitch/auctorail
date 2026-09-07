@@ -154,10 +154,10 @@ Exact subject:        required
 Exact chain:          required
 Max fraud attempts:   3
 Max evidence spend:   0.035 USDC
-Overall deadline:     12 seconds
+Overall deadline:     20 seconds
 ```
 
-The 12-second deadline is the current value. Older documentation that says 35 seconds is stale.
+The 20-second deadline is the current value. Older documentation that says 35 seconds is stale.
 
 If valid evidence cannot be obtained inside the bounded plan, the expected safe result is `HOLD`, not an automatic `ALLOW`.
 
@@ -457,8 +457,8 @@ unless a real public package is actually published later.
 Current green repository validation includes:
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 7400 / 7400 deterministic adversarial cases contained
 ```
 

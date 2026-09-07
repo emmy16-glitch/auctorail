@@ -1,5 +1,7 @@
 # Auctorail security model
 
+> Current main: see [runtime audit and demo runbook](CURRENT_STATUS.md) for the existing Ed25519 → EIP-712 PermitGate path, web persistence limitations, 13-check Security Lab, and dated verification.
+
 This document explains the security problem Auctorail is trying to solve, the trust boundaries it enforces, what the system assumes, what it does not assume, and how the main controls work together.
 
 Auctorail is a **pre-execution authorization layer for autonomous agents**. Its primary security goal is not to make an AI model “behave.” Its goal is to ensure that a model or agent cannot cause a protected external effect unless a trusted authorization path has explicitly approved the exact action.
@@ -169,7 +171,7 @@ Every acquisition path is bounded by:
 - exact payment-network/asset controls for x402;
 - evidence binding rules.
 
-The LOW-risk path currently has a 12-second evidence window. The deployed API also bounds individual Telegraph HTTP calls so one slow upstream call cannot occupy the whole authorization lifecycle.
+The LOW-risk path currently has a 20-second evidence window. The deployed API also bounds individual Telegraph HTTP calls so one slow upstream call cannot occupy the whole authorization lifecycle.
 
 ## Evidence is not trusted merely because it arrived successfully
 
@@ -357,8 +359,8 @@ The design instead minimizes the amount of trust placed in the agent and creates
 Current `main` validation includes:
 
 ```text
-53 test files
-268 / 268 tests passed
+54 test files
+281 / 281 tests passed
 7400 / 7400 deterministic adversarial fuzz cases contained
 0 unauthorized executions / authorizations in those fuzz suites
 0 uncaught fuzz errors
