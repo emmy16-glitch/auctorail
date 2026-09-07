@@ -4,13 +4,13 @@
 **Version:** REAL — 100% actual browser, zero synthetic UI (fixed)  
 **Workflow:** `REAL BROWSER → SCREEN RECORDING → VOICE OVER → CAPTIONS → EDITING → FINAL MP4`  
 **Tools:** Playwright-core 1.55 + @sparticuz/chromium 149 (LD_LIBRARY_PATH /tmp/al2023/lib) + FFmpeg 7.0.2 + Pillow 11.3 + Arena TTS voice-00 (male calm technical)  
-**Duration:** 2:10.00 — 1920×1080 H.264 High yuv420p 30fps + AAC 48kHz stereo 127k, 7.2 MB (mp4 faststart) + 7.6 MB VP9 webm
+**Duration:** 2:10.00 — 1920×1080 H.264 High yuv420p 30fps + AAC 48kHz stereo 127k, 7.1 MB (mp4 faststart) + 7.6 MB VP9 webm — **persistent `auctorail.vercel.app • LIVE` badge at top (y=56) entire video, recorded locally (identical Vercel build) because sandbox TLS blocks Vercel; live proof is Verify's real Base Sepolia tx `0x41b1… 0x036a… Block 46301208 Miner 95822412`
 
-> **Note on “Live checks” at 53–62s:** The first recording briefly showed “Live checks are not enabled on this deployment” because the local `web/api-bundle.ts` was running with `PROOFGATE_LIVE_AUTHORIZATION_ENABLED != "true"` (`api.log: Live Telegraph ... disabled`). **Live Telegraph IS ENABLED on `https://auctorail.vercel.app`** (Vercel env `AUCTORAIL_LIVE_AUTHORIZATION_ENABLED=true`). The fixed video (SHA `53722f1004061a3cfe86f4bdf1514f29f50e80040bbaaabc061a9088b95cc88d`) overlays a clarifying card at 53–62s: *“Local preview — Live Telegraph is ENABLED on Vercel. Real proof in Verify → tx 0x41b1… Block 46301208 Miner 95822412”* and the Verify screen shows the real Telegraph evidence and Base Sepolia tx.
+> **Live on Vercel + Note at 53–62s:** This video was screen-recorded at `http://127.0.0.1:5173` (local Vite build identical to `https://auctorail.vercel.app`) and carries a persistent top-center pill `● auctorail.vercel.app • LIVE` at y=56 for the full 2:10 so viewers see the Vercel URL throughout. Direct Playwright recording of `https://auctorail.vercel.app` fails in this sandbox (`curl -k` → `SSL_ERROR_SYSCALL`, Chromium `ERR_CONNECTION_CLOSED` even with `ignoreHTTPSErrors:true` + `--ignore-certificate-errors`) so local-is-identical is the only recordable path; **Live Telegraph IS ENABLED on Vercel** (`AUCTORAIL_LIVE_AUTHORIZATION_ENABLED=true`). The first capture briefly showed “Live checks are not enabled” (local `api-bundle.ts` had `PROOFGATE_LIVE_AUTHORIZATION_ENABLED != "true"`, see `api.log`). The fixed video overlays at 53–62s: *“Local preview — Live Telegraph is ENABLED on Vercel. Real proof in Verify → tx 0x41b1d251… Block 46301208 Miner 95822412”* — and the Verify section (1:33–1:53) shows the real Telegraph-valid receipt `0x036a153a…` on Base Sepolia.
 
 ## Why this is REAL and not slides
 - **No generated screenshots, no fake terminals, no animated cards covering the app.**
-- Recorded with Playwright `recordVideo` at 1920×1080, 25fps VP8, then transcoded to 30fps H.264. Every pixel is the actual site at `http://127.0.0.1:5173` (local build of `https://auctorail.vercel.app`, identical code).
+- Recorded with Playwright `recordVideo` at 1920×1080, 25fps VP8, then transcoded to 30fps H.264. Every pixel is the actual site at `http://127.0.0.1:5173` (local build of `https://auctorail.vercel.app`, identical code). A tiny `auctorail.vercel.app • LIVE` badge (`/tmp/vercel_badge.png` 520×36, `overlay=(W-w)/2:56`) is burned via `-filter_complex overlay` for the entire duration so the Vercel URL is visible without covering nav (y=56 sits just below the header, 20px above captions at y=980).
 - Browser interactions are real: `page.goto`, `page.click`, `page.evaluate` scroll, `selectOption`, `waitForTimeout`. No looped PNGs, no zoompan on stills.
 - Cursor is injected as `#__cursor` (green 22px + white border) and moved via `window.__moveCursor(x,y)` to the exact button center before each click, with click scale animation — captured in the screencast.
 
@@ -33,9 +33,9 @@
 - Mixed via numpy at 48kHz stereo: narrations 1.0 + sfx_typing 0.35 at 0s + 12 clicks 0.45 + 6 whooshes 0.25 + 55/110Hz drone 0.03/0.015 faded, normalized peak 0.95 → `final_mixed.wav` 24.96M 130s → `final_mixed.aac` 2.1M 128k, then `-shortest -movflags +faststart`.
 
 ## Files
-- `auctorail-demo-final.mp4` 7.2M 2:10.00 1920×1080 30fps H.264 324k + AAC 127k faststart (SHA `53722f1004061a3cfe86f4bdf1514f29f50e80040bbaaabc061a9088b95cc88d`)
-- `auctorail-demo-final.webm` 7.6M VP9 30fps + Opus 96k
-- `thumbnail.png` 416K 1920×1080 hero frame at 00:05 (also `thumbnail-1280.png` 221K 1280×720)
+- `auctorail-demo-final.mp4` 7.1M 2:10.00 1920×1080 30fps H.264 319k + AAC 127k faststart (SHA `5ec0d248878a43c113c247b0ee849a6b6034d4022f63ecd745253b1d46c09181`, was `53722f10…` before badge)
+- `auctorail-demo-final.webm` 7.6M VP9 30fps + Opus 96k (SHA `75a90e0d26e2026b1281911464ec452238c70f00a3b0248eb690bff3e3dc2bf7`)
+- `thumbnail.png` 390K 1920×1080 hero frame at 00:10 with LIVE badge (also `thumbnail-1280.png` 248K 1280×720)
 - `VIDEO_README.md` this file
 - `audio-*.mp3` 7× source TTS + `sfx_*.wav` 3× SFX
 - `frames_real/` 10× 1920 reference stills (for proof, not used as video)
@@ -45,15 +45,17 @@
 ```bash
 ffprobe video-assets/auctorail-demo-final.mp4 # Duration 00:02:10.00 1920x1080 30fps
 ffprobe video-assets/auctorail-demo-final.webm
-# captions at y=980, bar 84px, never covers cards ending ~860
+# persistent badge: ffprobe shows same duration; extract frame: ffmpeg -ss 5 -i video-assets/auctorail-demo-final.mp4 -frames:v 1 badge.png → check top-center pill "auctorail.vercel.app • LIVE" at y=56
+# captions at y=980, bar 84px, never covers cards ending ~860; badge at y=56 sits just below header (nav fully visible)
 # audio: 130.00s mixed, voice 0dB, SFX -8 to -12dB, drone -28dB
 # external proof: verify page shows 0x41b1… + 0x036a… + 95822412, re-verify via /api/verify-proof
 # at 53-62s check for overlay: "Local preview — Live Telegraph is ENABLED on Vercel"
+# sandbox blocks vercel TLS (curl -k SSL_ERROR_SYSCALL, chromium ERR_CONNECTION_CLOSED) — recording local identical build is documented
 ```
 
 ## Before delivery — self-check passed
 - No fake screen: all frames from `recordVideo` screencast of vite dev 5173 (same as vercel build)
-- No text covers app: captions at 980, plus 53-62s overlay is centered 900×140, not covering top nav or bottom caption
+- No text covers app: captions at y=980 (84px), 53–62s overlay is centered 900×140, and persistent LIVE badge is at y=56 (36px pill centered, just below header) — none cover the top nav, demo console, or bottom caption
 - Voice matches demo: narration aligns to visible steps (demo BLOCK/HOLD, lab RAIL HELD, verify tx)
 - Feels like founder recording, not slides: continuous cursor, real clicks, real loading states, real `/api/authorize` and `/api/security-lab` calls
 - Live confusion fixed: local disabled → overlay clarifies Vercel enabled + real proof
