@@ -6,7 +6,10 @@ import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_USDC
 } from "../src/core/action-contract.js";
-import { FileOperationJournal } from "../src/executor/operation-journal.js";
+import {
+  FileOperationJournal,
+  type OperationKind
+} from "../src/executor/operation-journal.js";
 
 const NETWORK = {
   name: "base-sepolia",
@@ -117,8 +120,9 @@ async function signAndBroadcastOnce(input: {
   provider: ethers.JsonRpcProvider;
   rpc: string;
   request: ethers.TransactionRequest;
-  kind: string;
+  kind: OperationKind;
   target: string;
+  purpose: string;
 }): Promise<{
   transactionHash: string;
   receipt: ethers.TransactionReceipt;
@@ -157,6 +161,7 @@ async function signAndBroadcastOnce(input: {
     target: input.target,
     transactionHash,
     metadata: {
+      purpose: input.purpose,
       chainId: BASE_SEPOLIA_CHAIN_ID,
       sender: input.wallet.address,
       nonce,
@@ -282,8 +287,9 @@ const deployed = await signAndBroadcastOnce({
   provider,
   rpc,
   request: deploymentRequest,
-  kind: "permit_gate_deployment",
-  target: expectedAddress
+  kind: "contract_deployment",
+  target: expectedAddress,
+  purpose: "auctorail_permit_gate_deployment"
 });
 
 const code = await provider.getCode(expectedAddress);
@@ -324,8 +330,9 @@ if (requestedFundRaw > 0n) {
       ]),
       value: 0n
     },
-    kind: "permit_gate_funding",
-    target: expectedAddress
+    kind: "onchain_execution",
+    target: expectedAddress,
+    purpose: "auctorail_permit_gate_initial_funding"
   });
 
   funding = {
