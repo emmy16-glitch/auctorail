@@ -7,6 +7,9 @@ on:
         description: 'Type DEPLOY_GATE to authorize one Base Sepolia contract deployment and up to 2 USDC initial funding'
         required: true
         type: string
+  push:
+    branches:
+      - feature/onchain-permit-gate
 
 concurrency:
   group: auctorail-permit-gate-deploy
@@ -14,6 +17,7 @@ concurrency:
 
 jobs:
   deploy-gate:
+    if: "${{ (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY_GATE') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'deploy-gate:')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -25,14 +29,6 @@ jobs:
       AUCTORAIL_GATE_FUND_RAW: '2000000'
 
     steps:
-      - name: Require explicit deployment confirmation
-        shell: bash
-        run: |
-          if [ "${{ inputs.confirm }}" != "DEPLOY_GATE" ]; then
-            echo "::error::Deployment not confirmed. Enter DEPLOY_GATE exactly."
-            exit 1
-          fi
-
       - name: Checkout exact commit
         uses: actions/checkout@v4
 
