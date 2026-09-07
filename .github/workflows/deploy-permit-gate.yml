@@ -57,8 +57,8 @@ jobs:
       - name: Load only the deployment key from Vercel API
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
           const url = new URL(`https://api.vercel.com/v10/projects/${process.env.VERCEL_PROJECT_ID}/env`);
           url.searchParams.set('decrypt', 'true');
           url.searchParams.set('teamId', process.env.VERCEL_TEAM_ID);
