@@ -38,6 +38,9 @@ jobs:
           npm run vendor:verify
           git diff --exit-code -- artifacts/vendor/ProofGateVendor.json artifacts/vendor/ProofGateVendor.build.json
 
+      - name: Compile Auctorail on-chain permit gate
+        run: npm run gate:compile
+
       - name: Verify SDK, typecheck, test, and build web UI
         run: npm run ci
 
