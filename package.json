@@ -79,6 +79,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "jsdom": "^30.0.1",
     "pg": "^8.23.0",
+    "playwright": "1.55.0",
     "puppeteer": "^25.10.0",
     "puppeteer-core": "^25.10.0",
     "react": "^19.2.8",
