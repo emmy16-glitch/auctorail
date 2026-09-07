@@ -13,6 +13,11 @@ mkdirSync(staticOutput, { recursive: true });
 mkdirSync(paymentFunction, { recursive: true });
 mkdirSync(utilityFunction, { recursive: true });
 
+// The payment runtime can bootstrap the immutable Base Sepolia permit gate
+// without ever exporting the executor private key. Compile the exact pinned
+// source before bundling, then package only the public artifact with the
+// serverless function.
+execFileSync("npm", ["run", "gate:compile"], { cwd: root, stdio: "inherit" });
 execFileSync("npm", ["run", "web:build"], { cwd: root, stdio: "inherit" });
 cpSync(join(root, "dist"), staticOutput, { recursive: true });
 
@@ -166,6 +171,16 @@ if (existsSync(dataDirectory)) {
   cpSync(dataDirectory, join(paymentFunction, "data"), { recursive: true });
   cpSync(dataDirectory, join(utilityFunction, "data"), { recursive: true });
 }
+
+const permitGateArtifacts = join(root, "artifacts", "permit-gate");
+if (!existsSync(permitGateArtifacts)) {
+  throw new Error("Auctorail permit-gate artifact missing after pinned compilation");
+}
+cpSync(
+  permitGateArtifacts,
+  join(paymentFunction, "artifacts", "permit-gate"),
+  { recursive: true }
+);
 
 writeFileSync(
   join(output, "config.json"),
